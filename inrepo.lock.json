@@ -1,0 +1,12 @@
+{
+  "lockfileVersion": 1,
+  "modules": {
+    "c15t": {
+      "source": "c15t",
+      "gitUrl": "https://github.com/c15t/c15t.git",
+      "commit": "4332f2764268c1037bd1a29524d9b028a80e088f",
+      "ref": null,
+      "updatedAt": "2026-04-21T15:34:54.941Z"
+    }
+  }
+}
