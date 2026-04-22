@@ -36,7 +36,7 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.19.17",
-    "rolldown": "^1.0.0-rc.16",
+    "rolldown": "^1.0.0-rc.17",
     "typescript": "^6.0.3"
   },
   "dependencies": {
