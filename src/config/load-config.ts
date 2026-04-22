@@ -32,8 +32,11 @@ function rootKeepFromParsed(parsed: unknown, label: string): string[] {
 function normalizePackagesArray(raw: unknown): unknown[] {
   if (raw == null) return [];
   if (Array.isArray(raw)) return raw;
-  if (typeof raw === 'object' && raw !== null && Array.isArray((raw as { packages?: unknown }).packages)) {
-    return (raw as { packages: unknown[] }).packages;
+  if (typeof raw === 'object' && raw !== null) {
+    const pkgs = (raw as { packages?: unknown }).packages;
+    if (pkgs == null) return [];
+    if (Array.isArray(pkgs)) return pkgs;
+    throw new Error('Config "packages" must be a JSON array');
   }
   throw new Error('Config must be a JSON array or an object with a "packages" array');
 }

@@ -28,7 +28,7 @@ function printHelp(): void {
 Usage:
   inrepo sync
   inrepo verify
-  inrepo add [-D|--dev] <name> [--git <url>] [--ref <ref>] [--save]
+  inrepo add [-D|--dev] <name> [--git <url>] [--ref <ref>] [--no-save]
 
 Commands:
   sync     Read inrepo.json (or package.json "inrepo"), clone/update packages, and set package.json dependencies (or devDependencies when "dev": true) to file:inrepo_modules/... entries.
@@ -39,7 +39,7 @@ Options (add):
   -D, --dev     Wire package.json#devDependencies instead of #dependencies
   --git <url>   Git clone URL (optional if npm registry has a GitHub repository field)
   --ref <ref>   Branch, tag, or commit SHA to pin
-  --save        Also upsert config: inrepo.json if it exists, otherwise package.json "inrepo"
+  --no-save     Do not upsert config and skip first-time setup (by default, add records the entry in inrepo.json — or package.json "inrepo" — after a successful checkout)
 
 Config:
   On the first sync or add in a project without inrepo.json or package.json "inrepo", you are prompted where config should live (or set INREPO_CONFIG=inrepo.json|package.json, or INREPO_NONINTERACTIVE=1 with one of those files already present).
@@ -59,24 +59,26 @@ type AddArgs = {
 };
 
 function parseAddArgs(argv: string[]): AddArgs {
-  let save = false;
+  let save = true;
   let dev = false;
   let git: string | undefined;
   let ref: string | undefined;
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--save') {
-      save = true;
+    if (a === '--no-save') {
+      save = false;
     } else if (a === '-D' || a === '--dev') {
       dev = true;
     } else if (a === '--git') {
-      const v = argv[++i];
-      if (v == null || v.startsWith('-')) throw new Error('--git requires a URL');
+      const raw = argv[++i];
+      const v = raw == null ? null : raw.trim();
+      if (v == null || v === '' || v.startsWith('-')) throw new Error('--git requires a URL');
       git = v;
     } else if (a === '--ref') {
-      const v = argv[++i];
-      if (v == null || v.startsWith('-')) throw new Error('--ref requires a value');
+      const raw = argv[++i];
+      const v = raw == null ? null : raw.trim();
+      if (v == null || v === '' || v.startsWith('-')) throw new Error('--ref requires a value');
       ref = v;
     } else if (a.startsWith('-')) {
       throw new Error(`Unknown option: ${a}`);
@@ -173,7 +175,44 @@ async function cmdVerify(cwd: string): Promise<void> {
 
 async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
   const args = parseAddArgs(argv);
-  await ensureInrepoInitialized(cwd);
+  // First-time setup is only required when we're going to persist the entry.
+  // `--no-save` is an explicit "one-off vendor" — it has no business creating
+  // an empty inrepo.json or rejecting the run for lack of a TTY.
+  if (args.save) {
+    await ensureInrepoInitialized(cwd);
+  }
+
+  let globalExclude: string[] = [];
+  let globalKeep: string[] = [];
+  let pkgExclude: string[] | undefined;
+  let pkgKeep: string[] | undefined;
+  try {
+    const cfg = await loadConfig(cwd);
+    globalExclude = cfg.exclude;
+    globalKeep = cfg.keep;
+    const entry = cfg.packages.find((p) => p.name === args.name);
+    pkgExclude = entry?.exclude;
+    pkgKeep = entry?.keep;
+  } catch (e) {
+    if (!isLoadConfigNotFoundError(e)) throw e;
+    globalExclude = await loadGlobalExclude(cwd);
+    globalKeep = await loadGlobalKeep(cwd);
+  }
+
+  await materializePackage(
+    cwd,
+    {
+      name: args.name,
+      git: args.git,
+      ref: args.ref,
+      dev: args.dev,
+      exclude: pkgExclude,
+      keep: pkgKeep,
+    },
+    globalExclude,
+    globalKeep,
+  );
+
   if (args.save) {
     const entry: InrepoJsonEntry = {
       name: args.name,
@@ -191,35 +230,6 @@ async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
       await upsertPackageJsonInrepo(cwd, entry);
     }
   }
-  let globalExclude: string[] = [];
-  let globalKeep: string[] = [];
-  let pkgExclude: string[] | undefined;
-  let pkgKeep: string[] | undefined;
-  try {
-    const cfg = await loadConfig(cwd);
-    globalExclude = cfg.exclude;
-    globalKeep = cfg.keep;
-    const entry = cfg.packages.find((p) => p.name === args.name);
-    pkgExclude = entry?.exclude;
-    pkgKeep = entry?.keep;
-  } catch (e) {
-    if (!isLoadConfigNotFoundError(e)) throw e;
-    globalExclude = await loadGlobalExclude(cwd);
-    globalKeep = await loadGlobalKeep(cwd);
-  }
-  await materializePackage(
-    cwd,
-    {
-      name: args.name,
-      git: args.git,
-      ref: args.ref,
-      dev: args.dev,
-      exclude: pkgExclude,
-      keep: pkgKeep,
-    },
-    globalExclude,
-    globalKeep,
-  );
 }
 
 async function main(): Promise<void> {

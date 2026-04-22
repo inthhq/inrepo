@@ -15,19 +15,22 @@ const STUB = `{
 function packageJsonHasInrepoKey(cwd: string): boolean {
   const pkgPath = packageJsonPath(cwd);
   if (!existsSync(pkgPath)) return false;
-  try {
-    const raw = readFileSync(pkgPath, 'utf8');
-    if (!raw.trim()) return false;
-    const pkg = JSON.parse(raw) as Record<string, unknown>;
-    return (
-      pkg != null &&
-      typeof pkg === 'object' &&
-      'inrepo' in pkg &&
-      pkg.inrepo != null
-    );
-  } catch {
-    return false;
+  const raw = readFileSync(pkgPath, 'utf8');
+  if (!raw.trim()) {
+    throw new Error('Invalid package.json: file is empty');
   }
+  let pkg: unknown;
+  try {
+    pkg = JSON.parse(raw);
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    throw new Error(`Invalid package.json: ${err.message}`);
+  }
+  if (pkg == null || typeof pkg !== 'object' || Array.isArray(pkg)) {
+    throw new Error('Invalid package.json: expected a JSON object at the root');
+  }
+  const obj = pkg as Record<string, unknown>;
+  return 'inrepo' in obj && obj.inrepo != null;
 }
 
 async function writeInrepoJsonStub(cwd: string): Promise<void> {
