@@ -6,5 +6,6 @@ export type LoadedConfig = {
   exclude: string[];
   /** Path prefixes to keep under each vendored module when non-empty (before `exclude`). */
   keep: string[];
-  source: 'inrepo.json' | 'package.json';
+  /** Basename of the resolved config file (e.g. `inrepo.json`, `inrepo.yaml`, `inrepo.ts`) or `package.json`. */
+  source: string;
 };

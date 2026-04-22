@@ -53,6 +53,16 @@ Typical flow:
 
 **`inrepo add <name>`** vendors a single package (optional **`-D`** / **`--dev`** for devDependencies, **`--git`**, **`--ref`**, **`--save`** to record the entry in **`inrepo.json`** if that file exists, otherwise in **`package.json`** under **`"inrepo"`**).
 
+## Configuration
+
+Config loading uses [c12](https://unjs.io/packages/c12). The schema (`packages`, optional root `exclude`/`keep`) is unchanged; the surface around it follows c12 conventions:
+
+- **File location:** `inrepo.{ext}` at the project root, or `.config/inrepo.{ext}`. Supported extensions: `.json`, `.jsonc`, `.json5`, `.yaml`, `.yml`, `.toml`, `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, `.cts`. The first match wins. `inrepo.json` remains the documented default and is still what `add --save` and the first-run prompt write.
+- **`package.json#inrepo`:** plain JSON object or array, used only when no `inrepo.*` file exists. The package.json branch does **not** support `extends` or non-JSON formats.
+- **`extends`:** any `inrepo.*` file may declare `extends: "./base"` (string or array) to merge layered configs via [defu](https://github.com/unjs/defu) — local paths and npm packages work out of the box. **Remote sources** (`gh:`, `github:`, `gitlab:`, `bitbucket:`, `https:`) require [`giget`](https://github.com/unjs/giget) to be installed separately; c12 errors with an install hint if it is missing.
+- **Strict top-level keys:** after layers merge, only `packages`, `exclude`, and `keep` are allowed. Unknown keys (typos, stray `extends` aliases, `$env`-style blocks) are rejected with a clear error.
+- **No `.env`, no `$env` blocks:** c12 dotenv loading is disabled and `envName` is turned off, so `$development` / `$production` / `$env` keys are not applied. Do not rely on them in inrepo config.
+
 ## Documentation
 
 - [Repository home](https://github.com/inthhq/inrepo) — source, issues, and changelog over time
