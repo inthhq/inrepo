@@ -21,10 +21,15 @@
   "packageManager": "bun@1.3.12",
   "scripts": {
     "build": "rolldown -c rolldown.config.ts",
+    "changeset": "changeset",
+    "ci:publish": "bunx changeset tag && bun publish",
+    "ci:version": "changeset version",
     "dev": "rolldown -c rolldown.config.ts --watch",
+    "release": "bun run build && changeset publish",
     "typecheck": "tsc --noEmit",
-    "test": "bun test",
-    "test:watch": "bun test --watch",
+    "test": "bun test ./src",
+    "test:watch": "bun test --watch ./src",
+    "version": "changeset version && bun install",
     "prepublishOnly": "bun run build"
   },
   "engines": {
@@ -38,6 +43,7 @@
   ],
   "license": "MIT",
   "devDependencies": {
+    "@changesets/cli": "^2.30.0",
     "@types/node": "^22.19.17",
     "@types/safe-regex": "^1.1.6",
     "rolldown": "^1.0.0-rc.17",
