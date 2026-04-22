@@ -179,7 +179,7 @@ async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
       name: args.name,
       git: args.git,
       ref: args.ref,
-      dev: args.dev ? true : false,
+      dev: args.dev,
     };
     if (existsSync(inrepoConfigPath(cwd))) {
       await upsertInrepoJson(cwd, entry);

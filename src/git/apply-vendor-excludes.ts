@@ -1,7 +1,12 @@
 import { existsSync } from 'node:fs';
 import { realpath, rm } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { createRequire } from 'node:module';
+import { isAbsolute, sep } from 'node:path';
+import { assertSafeUnderDest } from './vendor-path-utils.js';
 import { listRelativePathsRecursive, pathDepth } from './vendor-tree-paths.js';
+
+const require = createRequire(import.meta.url);
+const safeRegex = require('safe-regex') as (re: RegExp) => boolean;
 
 /**
  * Parse `/body/flags` style entries (flags optional, a–z only).
@@ -15,23 +20,18 @@ function tryParseSlashDelimitedRegex(trimmed: string): RegExp | null {
   const flags = trimmed.slice(last + 1);
   if (flags && !/^[a-z]*$/.test(flags)) return null;
   if (!body) return null;
+  let re: RegExp;
   try {
-    return new RegExp(body, flags);
+    re = new RegExp(body, flags);
   } catch {
     return null;
   }
-}
-
-function assertSafeUnderDest(destRoot: string, relPosix: string): string {
-  const abs = resolve(destRoot, ...relPosix.split('/'));
-  const rel = relative(destRoot, abs);
-  if (rel === '') {
-    throw new Error(`Refusing to exclude the entire vendor directory: ${JSON.stringify(relPosix)}`);
+  if (!safeRegex(re)) {
+    throw new Error(
+      `Exclude regex is potentially unsafe (ReDoS risk): ${JSON.stringify(trimmed)}`,
+    );
   }
-  if (rel.startsWith('..') || isAbsolute(rel)) {
-    throw new Error(`Unsafe exclude path (outside vendor dir): ${JSON.stringify(relPosix)}`);
-  }
-  return abs;
+  return re;
 }
 
 /**

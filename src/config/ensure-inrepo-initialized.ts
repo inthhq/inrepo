@@ -105,7 +105,7 @@ export async function ensureInrepoInitialized(cwd: string): Promise<void> {
 
   const rl = readline.createInterface({ input, output });
   try {
-    const defaultChoice = hasPackageJson ? '1' : '1';
+    const defaultChoice = '1';
     const line = (await rl.question(`Enter 1${hasPackageJson ? ' or 2' : ''} [${defaultChoice}]: `)).trim();
     const ans = line || defaultChoice;
     if (ans === '1') {

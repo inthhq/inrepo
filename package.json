@@ -48,7 +48,10 @@
           "/^(?!docs\\/|packages\\/).*/"
         ]
       }
-      
     ]
+  },
+  "dependencies": {
+    "c15t": "file:inrepo_modules/c15t",
+    "safe-regex": "^2.1.1"
   }
 }

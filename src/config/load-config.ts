@@ -117,14 +117,16 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
 }
 
 /**
- * Root `exclude` list only (no `packages` required). Used by `inrepo add` so global
- * excludes apply even when sync has not been run.
+ * Parsed root for global `exclude` / `keep`: prefer inrepo.json, else package.json#inrepo object.
+ * Returns null when there is nothing to read (same empty-array behavior as before).
  */
-export async function loadGlobalExclude(cwd: string): Promise<string[]> {
+async function readGlobalInrepoRaw(
+  cwd: string,
+): Promise<{ parsed: unknown; source: 'inrepo.json' | 'package.json' } | null> {
   const inrepoPath = inrepoConfigPath(cwd);
   if (existsSync(inrepoPath)) {
     const contents = await readFile(inrepoPath, 'utf8');
-    if (!contents.trim()) return [];
+    if (!contents.trim()) return null;
     let parsed: unknown;
     try {
       parsed = JSON.parse(contents) as unknown;
@@ -132,11 +134,11 @@ export async function loadGlobalExclude(cwd: string): Promise<string[]> {
       const err = e instanceof Error ? e : new Error(String(e));
       throw new Error(`Invalid JSON in inrepo.json: ${err.message}`);
     }
-    return rootExcludeFromParsed(parsed, 'inrepo.json "exclude"');
+    return { parsed, source: 'inrepo.json' };
   }
 
   const pkgPath = packageJsonPath(cwd);
-  if (!existsSync(pkgPath)) return [];
+  if (!existsSync(pkgPath)) return null;
   let pkgJson: unknown;
   try {
     pkgJson = JSON.parse(await readFile(pkgPath, 'utf8')) as unknown;
@@ -144,47 +146,35 @@ export async function loadGlobalExclude(cwd: string): Promise<string[]> {
     const err = e instanceof Error ? e : new Error(String(e));
     throw new Error(`Invalid package.json: ${err.message}`);
   }
-  if (pkgJson == null || typeof pkgJson !== 'object') return [];
+  if (pkgJson == null || typeof pkgJson !== 'object') return null;
   const inrepo = (pkgJson as Record<string, unknown>).inrepo;
   if (inrepo == null || typeof inrepo !== 'object' || Array.isArray(inrepo)) {
-    return [];
+    return null;
   }
-  return rootExcludeFromParsed(inrepo, 'package.json "inrepo.exclude"');
+  return { parsed: inrepo, source: 'package.json' };
+}
+
+/**
+ * Root `exclude` list only (no `packages` required). Used by `inrepo add` so global
+ * excludes apply even when sync has not been run.
+ */
+export async function loadGlobalExclude(cwd: string): Promise<string[]> {
+  const ctx = await readGlobalInrepoRaw(cwd);
+  if (!ctx) return [];
+  const label =
+    ctx.source === 'inrepo.json' ? 'inrepo.json "exclude"' : 'package.json "inrepo.exclude"';
+  return rootExcludeFromParsed(ctx.parsed, label);
 }
 
 /**
  * Root `keep` list only. Used by `inrepo add` when full `loadConfig` is unavailable.
  */
 export async function loadGlobalKeep(cwd: string): Promise<string[]> {
-  const inrepoPath = inrepoConfigPath(cwd);
-  if (existsSync(inrepoPath)) {
-    const contents = await readFile(inrepoPath, 'utf8');
-    if (!contents.trim()) return [];
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(contents) as unknown;
-    } catch (e) {
-      const err = e instanceof Error ? e : new Error(String(e));
-      throw new Error(`Invalid JSON in inrepo.json: ${err.message}`);
-    }
-    return rootKeepFromParsed(parsed, 'inrepo.json "keep"');
-  }
-
-  const pkgPath = packageJsonPath(cwd);
-  if (!existsSync(pkgPath)) return [];
-  let pkgJson: unknown;
-  try {
-    pkgJson = JSON.parse(await readFile(pkgPath, 'utf8')) as unknown;
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e));
-    throw new Error(`Invalid package.json: ${err.message}`);
-  }
-  if (pkgJson == null || typeof pkgJson !== 'object') return [];
-  const inrepo = (pkgJson as Record<string, unknown>).inrepo;
-  if (inrepo == null || typeof inrepo !== 'object' || Array.isArray(inrepo)) {
-    return [];
-  }
-  return rootKeepFromParsed(inrepo, 'package.json "inrepo.keep"');
+  const ctx = await readGlobalInrepoRaw(cwd);
+  if (!ctx) return [];
+  const label =
+    ctx.source === 'inrepo.json' ? 'inrepo.json "keep"' : 'package.json "inrepo.keep"';
+  return rootKeepFromParsed(ctx.parsed, label);
 }
 
 /** True when loadConfig failed because no config file/field exists (safe to fall back to globals-only). */

@@ -1,19 +1,7 @@
 import { existsSync } from 'node:fs';
 import { realpath, rm } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { assertSafeUnderDest } from './vendor-path-utils.js';
 import { listRelativePathsRecursive, pathDepth } from './vendor-tree-paths.js';
-
-function assertSafeUnderDest(destRoot: string, relPosix: string): string {
-  const abs = resolve(destRoot, ...relPosix.split('/'));
-  const rel = relative(destRoot, abs);
-  if (rel === '') {
-    throw new Error(`Refusing to remove the entire vendor directory: ${JSON.stringify(relPosix)}`);
-  }
-  if (rel.startsWith('..') || isAbsolute(rel)) {
-    throw new Error(`Unsafe path (outside vendor dir): ${JSON.stringify(relPosix)}`);
-  }
-  return abs;
-}
 
 function normalizeKeepPrefixes(prefixes: string[]): string[] {
   return [...new Set(prefixes.map((p) => p.replace(/\\/g, '/').replace(/\/+$/, '')).filter(Boolean))];
