@@ -10,6 +10,7 @@ import {
 } from './load-config.js';
 import { ensureInrepoInitialized } from './ensure-inrepo-initialized.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
+import { type EnvSnapshot, restoreEnv, snapshotEnv } from '../test-utils/test-env.js';
 
 describe('loadConfig', () => {
   let cwd: string;
@@ -235,25 +236,19 @@ describe('loadGlobalExclude / loadGlobalKeep', () => {
 });
 
 describe('ensureInrepoInitialized + loadConfig integration', () => {
-  const ENV_KEYS = ['INREPO_CONFIG', 'INREPO_NONINTERACTIVE', 'CI'] as const;
   let cwd: string;
-  let envSnap: Record<string, string | undefined>;
+  let envSnap: EnvSnapshot;
 
   beforeEach(async () => {
     cwd = await makeTmpDir('inrepo-integration-');
-    envSnap = {};
-    for (const k of ENV_KEYS) envSnap[k] = process.env[k];
+    envSnap = snapshotEnv();
     process.env.INREPO_NONINTERACTIVE = '1';
     delete process.env.INREPO_CONFIG;
     delete process.env.CI;
   });
 
   afterEach(async () => {
-    for (const k of ENV_KEYS) {
-      const v = envSnap[k];
-      if (v === undefined) delete process.env[k];
-      else process.env[k] = v;
-    }
+    restoreEnv(envSnap);
     await cleanupTmpDir(cwd);
   });
 

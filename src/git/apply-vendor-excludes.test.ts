@@ -64,9 +64,21 @@ describe('applyVendorExcludes', () => {
     );
   });
 
-  test('rejects absolute literal paths', async () => {
+  test('rejects POSIX-style absolute paths via the leading-slash regex check', async () => {
+    // "/abs/path" parses as `/abs/` with flags="path", which is rejected as an
+    // invalid slash-style regex (flags must be a-z only and the body must be a
+    // valid RegExp). The error message comes from the leading-slash branch, not
+    // from the absolute-path branch, so we assert the precise text here.
     await expect(applyVendorExcludes(dest, ['/abs/path'])).rejects.toThrow(
-      /Invalid exclude regex|Exclude path must be relative/,
+      /Invalid exclude regex \(expected \/pattern\/ or \/pattern\/flags\)/,
+    );
+  });
+
+  test('rejects Windows-style absolute paths with the relative-path error', async () => {
+    // "C:\\foo\\bar" does not start with "/", so the leading-slash branch is
+    // skipped and the cross-platform absolute-path guard fires instead.
+    await expect(applyVendorExcludes(dest, ['C:\\foo\\bar'])).rejects.toThrow(
+      /Exclude path must be relative to the module root/,
     );
   });
 

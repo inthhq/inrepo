@@ -71,12 +71,14 @@ function parseAddArgs(argv: string[]): AddArgs {
     } else if (a === '-D' || a === '--dev') {
       dev = true;
     } else if (a === '--git') {
-      const v = argv[++i];
-      if (v == null || v.startsWith('-')) throw new Error('--git requires a URL');
+      const raw = argv[++i];
+      const v = raw == null ? null : raw.trim();
+      if (v == null || v === '' || v.startsWith('-')) throw new Error('--git requires a URL');
       git = v;
     } else if (a === '--ref') {
-      const v = argv[++i];
-      if (v == null || v.startsWith('-')) throw new Error('--ref requires a value');
+      const raw = argv[++i];
+      const v = raw == null ? null : raw.trim();
+      if (v == null || v === '' || v.startsWith('-')) throw new Error('--ref requires a value');
       ref = v;
     } else if (a.startsWith('-')) {
       throw new Error(`Unknown option: ${a}`);

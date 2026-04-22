@@ -24,12 +24,11 @@ function packageJsonHasInrepoKey(cwd: string): boolean {
     const err = e instanceof Error ? e : new Error(String(e));
     throw new Error(`Invalid package.json: ${err.message}`);
   }
-  return (
-    pkg != null &&
-    typeof pkg === 'object' &&
-    'inrepo' in (pkg as Record<string, unknown>) &&
-    (pkg as Record<string, unknown>).inrepo != null
-  );
+  if (pkg == null || typeof pkg !== 'object' || Array.isArray(pkg)) {
+    throw new Error('Invalid package.json: expected a JSON object at the root');
+  }
+  const obj = pkg as Record<string, unknown>;
+  return 'inrepo' in obj && obj.inrepo != null;
 }
 
 async function writeInrepoJsonStub(cwd: string): Promise<void> {

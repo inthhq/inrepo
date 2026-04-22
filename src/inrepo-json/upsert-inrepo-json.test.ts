@@ -31,7 +31,7 @@ describe('upsertInrepoJson', () => {
     expect(data.$schema).toBe(defaultInrepoJsonSchemaRef);
   });
 
-  test('appends to bare-array config (drops $schema since array root has no place for it)', async () => {
+  test('appends to bare-array config and promotes it to an object root with default $schema', async () => {
     await writeFile(path, JSON.stringify([{ name: 'a' }]) + '\n', 'utf8');
     await upsertInrepoJson(cwd, { name: 'b' });
     const data = await readJson(path);

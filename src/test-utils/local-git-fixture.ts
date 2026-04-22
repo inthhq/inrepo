@@ -3,6 +3,8 @@ import { mkdir, writeFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { makeTmpDir } from './tmp-dir.js';
 
+const NULL_DEVICE = process.platform === 'win32' ? 'NUL' : '/dev/null';
+
 function runGit(args: string[], cwd?: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
@@ -13,8 +15,8 @@ function runGit(args: string[], cwd?: string): Promise<string> {
         GIT_AUTHOR_EMAIL: 'test@example.com',
         GIT_COMMITTER_NAME: 'Inrepo Test',
         GIT_COMMITTER_EMAIL: 'test@example.com',
-        GIT_CONFIG_GLOBAL: '/dev/null',
-        GIT_CONFIG_SYSTEM: '/dev/null',
+        GIT_CONFIG_GLOBAL: NULL_DEVICE,
+        GIT_CONFIG_SYSTEM: NULL_DEVICE,
       },
       stdio: ['ignore', 'pipe', 'pipe'],
     });

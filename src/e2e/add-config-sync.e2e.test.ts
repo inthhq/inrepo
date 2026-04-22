@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { readFile, writeFile } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { bootstrapHostPackageJson, envFor, readJson } from '../test-utils/e2e-harness.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
 import { runCli } from '../test-utils/run-cli.js';
 import {
@@ -9,11 +10,7 @@ import {
   type LocalGitFixture,
 } from '../test-utils/local-git-fixture.js';
 
-const NON_INTERACTIVE_ENV = { INREPO_NONINTERACTIVE: '1', INREPO_CONFIG: 'inrepo.json' } as const;
-
-async function readJson(path: string): Promise<Record<string, unknown>> {
-  return JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
-}
+const NON_INTERACTIVE_ENV = envFor('inrepo.json');
 
 describe('CLI: add ↔ config sync (e2e)', () => {
   let fx: LocalGitFixture;
@@ -29,11 +26,7 @@ describe('CLI: add ↔ config sync (e2e)', () => {
 
   beforeEach(async () => {
     cwd = await makeTmpDir('inrepo-e2e-addsync-');
-    await writeFile(
-      join(cwd, 'package.json'),
-      JSON.stringify({ name: 'host', version: '0.0.0' }, null, 2) + '\n',
-      'utf8',
-    );
+    await bootstrapHostPackageJson(cwd);
   });
 
   afterEach(async () => {
@@ -131,7 +124,7 @@ describe('CLI: add ↔ config sync (e2e)', () => {
 
     const r = await runCli(['add', '--git', fx.url, 'upstream'], {
       cwd,
-      env: { INREPO_NONINTERACTIVE: '1', INREPO_CONFIG: 'package.json' },
+      env: envFor('package.json'),
     });
     expect(r.exitCode).toBe(0);
 

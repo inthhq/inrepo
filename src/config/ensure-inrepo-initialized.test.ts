@@ -5,26 +5,11 @@ import { join } from 'node:path';
 import { ensureInrepoInitialized } from './ensure-inrepo-initialized.js';
 import { defaultInrepoJsonSchemaRef } from '../inrepo-json/default-inrepo-json-schema-ref.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
-
-const ENV_KEYS = ['INREPO_CONFIG', 'INREPO_NONINTERACTIVE', 'CI'] as const;
-
-function snapshotEnv(): Record<string, string | undefined> {
-  const out: Record<string, string | undefined> = {};
-  for (const k of ENV_KEYS) out[k] = process.env[k];
-  return out;
-}
-
-function restoreEnv(snap: Record<string, string | undefined>): void {
-  for (const k of ENV_KEYS) {
-    const v = snap[k];
-    if (v === undefined) delete process.env[k];
-    else process.env[k] = v;
-  }
-}
+import { type EnvSnapshot, restoreEnv, snapshotEnv } from '../test-utils/test-env.js';
 
 describe('ensureInrepoInitialized (non-interactive)', () => {
   let cwd: string;
-  let envSnap: Record<string, string | undefined>;
+  let envSnap: EnvSnapshot;
 
   beforeEach(async () => {
     cwd = await makeTmpDir('inrepo-init-');

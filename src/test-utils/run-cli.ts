@@ -26,7 +26,7 @@ export async function runCli(args: string[], opts: RunCliOptions): Promise<RunCl
     else env[k] = v;
   }
 
-  const proc = Bun.spawn(['bun', CLI_PATH, ...args], {
+  const proc = Bun.spawn([process.execPath, CLI_PATH, ...args], {
     cwd: opts.cwd,
     env,
     stdin: opts.stdin == null ? 'ignore' : 'pipe',
