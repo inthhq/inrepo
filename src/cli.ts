@@ -2,7 +2,12 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { ensureInrepoInitialized } from './config/ensure-inrepo-initialized.js';
-import { loadConfig, loadGlobalExclude, loadGlobalKeep } from './config/load-config.js';
+import {
+  isLoadConfigNotFoundError,
+  loadConfig,
+  loadGlobalExclude,
+  loadGlobalKeep,
+} from './config/load-config.js';
 import { resolveGitUrlFromNpm } from './registry/resolve-git-url-from-npm.js';
 import { applyVendorExcludes } from './git/apply-vendor-excludes.js';
 import { applyVendorKeep } from './git/apply-vendor-keep.js';
@@ -167,8 +172,8 @@ async function cmdVerify(cwd: string): Promise<void> {
 }
 
 async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
-  await ensureInrepoInitialized(cwd);
   const args = parseAddArgs(argv);
+  await ensureInrepoInitialized(cwd);
   if (args.save) {
     const entry = {
       name: args.name,
@@ -193,7 +198,8 @@ async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
     const entry = cfg.packages.find((p) => p.name === args.name);
     pkgExclude = entry?.exclude;
     pkgKeep = entry?.keep;
-  } catch {
+  } catch (e) {
+    if (!isLoadConfigNotFoundError(e)) throw e;
     globalExclude = await loadGlobalExclude(cwd);
     globalKeep = await loadGlobalKeep(cwd);
   }

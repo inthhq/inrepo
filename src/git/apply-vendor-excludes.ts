@@ -82,7 +82,12 @@ export async function applyVendorExcludes(dest: string, paths: string[]): Promis
   if (regexes.length > 0) {
     const allRel = await listRelativePathsRecursive(destRoot);
     for (const relPosix of allRel) {
-      if (regexes.some((r) => r.test(relPosix))) {
+      if (
+        regexes.some((r) => {
+          r.lastIndex = 0;
+          return r.test(relPosix);
+        })
+      ) {
         toRemove.add(relPosix);
       }
     }

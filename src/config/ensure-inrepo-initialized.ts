@@ -45,7 +45,7 @@ async function writePackageJsonInrepoStub(cwd: string): Promise<void> {
   if (pkg == null || typeof pkg !== 'object') {
     throw new Error('package.json must contain a JSON object');
   }
-  if ('inrepo' in pkg) return;
+  if (pkg.inrepo != null) return;
   pkg.inrepo = { packages: [] };
   await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
 }

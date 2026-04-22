@@ -186,3 +186,13 @@ export async function loadGlobalKeep(cwd: string): Promise<string[]> {
   }
   return rootKeepFromParsed(inrepo, 'package.json "inrepo.keep"');
 }
+
+/** True when loadConfig failed because no config file/field exists (safe to fall back to globals-only). */
+export function isLoadConfigNotFoundError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const m = e.message;
+  return (
+    m.includes('No inrepo.json or package.json found') ||
+    m.includes('No inrepo.json and package.json has no "inrepo" field.')
+  );
+}

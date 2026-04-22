@@ -26,6 +26,17 @@ function isKept(relPosix: string, prefixes: string[]): boolean {
   return false;
 }
 
+/** Directory prefixes along rel (e.g. "a/b/c" -> ["a", "a/b"]). */
+function ancestorDirectoryRels(relPosix: string): string[] {
+  const parts = relPosix.split('/');
+  if (parts.length <= 1) return [];
+  const out: string[] = [];
+  for (let i = 0; i < parts.length - 1; i++) {
+    out.push(parts.slice(0, i + 1).join('/'));
+  }
+  return out;
+}
+
 /**
  * Remove every path under `dest` that is not under one of the `keep` prefixes (equality or `prefix/`).
  * Runs before {@link applyVendorExcludes}. Prefixes use POSIX `/`.
@@ -51,7 +62,15 @@ export async function applyVendorKeep(dest: string, prefixes: string[]): Promise
     );
   }
 
-  const toRemove = allRel.filter((r) => !isKept(r, normalized));
+  const protectedRel = new Set<string>();
+  for (const s of survivors) {
+    protectedRel.add(s);
+    for (const a of ancestorDirectoryRels(s)) {
+      protectedRel.add(a);
+    }
+  }
+
+  const toRemove = allRel.filter((r) => !isKept(r, normalized) && !protectedRel.has(r));
   const sorted = [...new Set(toRemove)].sort((a, b) => pathDepth(b) - pathDepth(a));
   const seenAbs = new Set<string>();
 
