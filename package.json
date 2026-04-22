@@ -39,19 +39,7 @@
     "rolldown": "^1.0.0-rc.16",
     "typescript": "^6.0.3"
   },
-  "inrepo": {
-    "packages": [
-      {
-        "name": "c15t",
-        "git": "https://github.com/c15t/c15t.git",
-        "exclude": [
-          "/^(?!docs\\/|packages\\/).*/"
-        ]
-      }
-    ]
-  },
   "dependencies": {
-    "c15t": "file:inrepo_modules/c15t",
     "safe-regex": "^2.1.1"
   }
 }
