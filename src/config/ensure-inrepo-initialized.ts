@@ -16,7 +16,9 @@ function packageJsonHasInrepoKey(cwd: string): boolean {
   const pkgPath = packageJsonPath(cwd);
   if (!existsSync(pkgPath)) return false;
   const raw = readFileSync(pkgPath, 'utf8');
-  if (!raw.trim()) return false;
+  if (!raw.trim()) {
+    throw new Error('Invalid package.json: file is empty');
+  }
   let pkg: unknown;
   try {
     pkg = JSON.parse(raw);

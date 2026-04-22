@@ -39,7 +39,7 @@ Options (add):
   -D, --dev     Wire package.json#devDependencies instead of #dependencies
   --git <url>   Git clone URL (optional if npm registry has a GitHub repository field)
   --ref <ref>   Branch, tag, or commit SHA to pin
-  --no-save     Do not upsert config (by default, add records the entry in inrepo.json — or package.json "inrepo" — after a successful checkout)
+  --no-save     Do not upsert config and skip first-time setup (by default, add records the entry in inrepo.json — or package.json "inrepo" — after a successful checkout)
 
 Config:
   On the first sync or add in a project without inrepo.json or package.json "inrepo", you are prompted where config should live (or set INREPO_CONFIG=inrepo.json|package.json, or INREPO_NONINTERACTIVE=1 with one of those files already present).
@@ -175,7 +175,12 @@ async function cmdVerify(cwd: string): Promise<void> {
 
 async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
   const args = parseAddArgs(argv);
-  await ensureInrepoInitialized(cwd);
+  // First-time setup is only required when we're going to persist the entry.
+  // `--no-save` is an explicit "one-off vendor" — it has no business creating
+  // an empty inrepo.json or rejecting the run for lack of a TTY.
+  if (args.save) {
+    await ensureInrepoInitialized(cwd);
+  }
 
   let globalExclude: string[] = [];
   let globalKeep: string[] = [];
