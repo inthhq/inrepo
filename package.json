@@ -15,7 +15,8 @@
     "inrepo": "dist/cli.mjs"
   },
   "files": [
-    "dist"
+    "dist",
+    "inrepo.schema.json"
   ],
   "packageManager": "bun@1.3.12",
   "scripts": {
