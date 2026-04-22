@@ -91,8 +91,19 @@ describe('CLI: help and argument validation (e2e)', () => {
     expect(r.stderr).toMatch(/first-time setup needs an interactive terminal/);
   });
 
-  test('sync with empty packages array reports a friendly empty-config error', async () => {
+  test('sync with empty inrepo.json packages array reports a friendly empty-config error', async () => {
     await writeFile(join(cwd, 'inrepo.json'), JSON.stringify({ packages: [] }), 'utf8');
+    const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/empty "packages" array/);
+  });
+
+  test('sync with empty package.json#inrepo packages array reports the same error', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ name: 'host', inrepo: { packages: [] } }),
+      'utf8',
+    );
     const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/empty "packages" array/);
@@ -109,5 +120,12 @@ describe('CLI: help and argument validation (e2e)', () => {
     const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/Invalid JSON in inrepo\.json/);
+  });
+
+  test('sync with malformed package.json surfaces a clear error', async () => {
+    await writeFile(join(cwd, 'package.json'), '{ broken', 'utf8');
+    const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/Invalid package\.json/);
   });
 });
