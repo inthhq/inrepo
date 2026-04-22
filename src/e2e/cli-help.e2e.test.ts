@@ -128,4 +128,12 @@ describe('CLI: help and argument validation (e2e)', () => {
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/Invalid package\.json/);
   });
+
+  test('sync with empty package.json surfaces a clear "file is empty" error (not a first-time-setup hint)', async () => {
+    await writeFile(join(cwd, 'package.json'), '   \n', 'utf8');
+    const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/Invalid package\.json: file is empty/);
+    expect(r.stderr).not.toMatch(/first-time setup needs an interactive terminal/);
+  });
 });

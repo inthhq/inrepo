@@ -61,7 +61,9 @@ describe('CLI: add ↔ config sync (e2e)', () => {
     ]);
   });
 
-  test('add --no-save vendors but leaves inrepo.json untouched (and warns subsequent sync about missing entry)', async () => {
+  test('add --no-save vendors without creating inrepo.json or touching package.json#inrepo', async () => {
+    // --no-save is an explicit "one-off vendor": it should not run first-time
+    // setup (no inrepo.json stub) and it should not record the entry anywhere.
     const r = await runCli(['add', '--no-save', '--git', fx.url, 'upstream'], {
       cwd,
       env: NON_INTERACTIVE_ENV,
@@ -69,12 +71,25 @@ describe('CLI: add ↔ config sync (e2e)', () => {
     expect(r.exitCode).toBe(0);
     expect(existsSync(join(cwd, 'inrepo_modules', 'upstream', 'README.md'))).toBe(true);
 
-    const cfg = await readJson(join(cwd, 'inrepo.json'));
-    expect(cfg.packages).toEqual([]);
+    expect(existsSync(join(cwd, 'inrepo.json'))).toBe(false);
+    const pkg = await readJson(join(cwd, 'package.json'));
+    expect(pkg.inrepo).toBeUndefined();
 
+    // Sync afterwards still complains that there's no config — that's the
+    // intended trade-off for opting out of persistence.
     const sync = await runCli(['sync'], { cwd, env: NON_INTERACTIVE_ENV });
     expect(sync.exitCode).toBe(1);
-    expect(sync.stderr).toMatch(/empty "packages" array/);
+  });
+
+  test('add --no-save works without INREPO_CONFIG and without a TTY (no first-time-setup error)', async () => {
+    const r = await runCli(['add', '--no-save', '--git', fx.url, 'upstream'], {
+      cwd,
+      env: { INREPO_NONINTERACTIVE: '1', INREPO_CONFIG: undefined },
+    });
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).not.toMatch(/first-time setup needs an interactive terminal/);
+    expect(existsSync(join(cwd, 'inrepo_modules', 'upstream', 'README.md'))).toBe(true);
+    expect(existsSync(join(cwd, 'inrepo.json'))).toBe(false);
   });
 
   test('failed materialize leaves inrepo.json untouched (no phantom config entry)', async () => {
