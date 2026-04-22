@@ -1,2 +1,3 @@
-/** Default JSON Schema `$schema` for `inrepo.json` (path relative to project root). */
-export const defaultInrepoJsonSchemaRef = './inrepo.schema.json';
+/** Default JSON Schema `$schema` for `inrepo.json` (URL editors and tooling can resolve). */
+export const defaultInrepoJsonSchemaRef =
+  'https://raw.githubusercontent.com/inthhq/inrepo/main/inrepo.schema.json';

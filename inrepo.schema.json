@@ -14,8 +14,8 @@
       "minLength": 1,
       "description": "Path prefix relative to the vendored module root (no leading slash, no \"..\" segments, no Windows drive prefix). Backslashes are normalized at runtime.",
       "allOf": [
-        { "not": { "pattern": "^/" } },
-        { "not": { "pattern": "(^|/)\\.\\.(/|$)" } },
+        { "not": { "pattern": "^[\\\\/]" } },
+        { "not": { "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)" } },
         { "not": { "pattern": "^[A-Za-z]:[/\\\\]" } }
       ]
     },

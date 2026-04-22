@@ -17,9 +17,12 @@ export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Pro
     packages: Record<string, unknown>[];
     exclude?: unknown;
     keep?: unknown;
+    /** Set when the file had a non-empty string `$schema` (trimmed). */
     schemaRef?: string;
-    /** Top-level key order from object-shaped config (stable round-trip for `$schema` placement). */
-    topLevelKeyOrder?: string[];
+    /** Object.keys order from object-shaped config (stable round-trip, includes unknown keys). */
+    fullKeyOrder?: string[];
+    /** Shallow snapshot of the parsed root object (object form only); preserves unknown top-level keys. */
+    rootSnapshot?: Record<string, unknown>;
   } = {
     packages: [],
   };
@@ -43,12 +46,10 @@ export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Pro
           keep?: unknown;
           $schema?: unknown;
         };
-        const topLevelKeyOrder = Object.keys(obj).filter(
-          (k) => k === 'packages' || k === 'exclude' || k === 'keep' || k === '$schema',
-        );
         data = {
           packages: obj.packages,
-          topLevelKeyOrder,
+          fullKeyOrder: Object.keys(obj),
+          rootSnapshot: { ...obj },
         };
         if ('exclude' in obj) data.exclude = obj.exclude;
         if ('keep' in obj) data.keep = obj.keep;
@@ -78,23 +79,28 @@ export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Pro
     data.packages.push(next);
   }
 
-  const schemaRef = data.schemaRef ?? defaultInrepoJsonSchemaRef;
+  const fallbackSchemaRef = data.schemaRef ?? defaultInrepoJsonSchemaRef;
 
   let out: Record<string, unknown>;
-  if (data.topLevelKeyOrder && data.topLevelKeyOrder.length > 0) {
+  if (data.fullKeyOrder && data.rootSnapshot) {
     out = {};
-    for (const k of data.topLevelKeyOrder) {
+    for (const k of data.fullKeyOrder) {
       if (k === 'packages') out.packages = data.packages;
       else if (k === 'exclude' && 'exclude' in data) out.exclude = data.exclude;
       else if (k === 'keep' && 'keep' in data) out.keep = data.keep;
-      else if (k === '$schema') out.$schema = schemaRef;
+      else if (k === '$schema') {
+        if (data.schemaRef !== undefined) out.$schema = data.schemaRef;
+        else if ('$schema' in data.rootSnapshot) out.$schema = data.rootSnapshot.$schema;
+      } else {
+        out[k] = data.rootSnapshot[k];
+      }
     }
-    if (!('$schema' in out)) out.$schema = schemaRef;
+    if (!('$schema' in out)) out.$schema = fallbackSchemaRef;
   } else {
     out = { packages: data.packages };
     if ('exclude' in data) out.exclude = data.exclude;
     if ('keep' in data) out.keep = data.keep;
-    out.$schema = schemaRef;
+    out.$schema = fallbackSchemaRef;
   }
 
   await writeFile(path, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
