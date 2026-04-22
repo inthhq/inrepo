@@ -12,7 +12,9 @@ export type InrepoJsonEntry = {
 /** Upsert a package entry into inrepo.json (creates `{ "packages": [...] }` if missing). */
 export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Promise<void> {
   const path = inrepoConfigPath(cwd);
-  let data: { packages: Record<string, unknown>[] } = { packages: [] };
+  let data: { packages: Record<string, unknown>[]; exclude?: unknown; keep?: unknown } = {
+    packages: [],
+  };
 
   if (existsSync(path)) {
     const raw = await readFile(path, 'utf8');
@@ -27,7 +29,14 @@ export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Pro
       if (Array.isArray(parsed)) {
         data = { packages: parsed as Record<string, unknown>[] };
       } else if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { packages?: unknown }).packages)) {
-        data = { packages: (parsed as { packages: Record<string, unknown>[] }).packages };
+        const obj = parsed as {
+          packages: Record<string, unknown>[];
+          exclude?: unknown;
+          keep?: unknown;
+        };
+        data = { packages: obj.packages };
+        if ('exclude' in obj) data.exclude = obj.exclude;
+        if ('keep' in obj) data.keep = obj.keep;
       } else {
         throw new Error('inrepo.json must be a JSON array or { "packages": [...] }');
       }
@@ -51,5 +60,8 @@ export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Pro
     data.packages.push(next);
   }
 
-  await writeFile(path, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+  const out: Record<string, unknown> = { packages: data.packages };
+  if ('exclude' in data) out.exclude = data.exclude;
+  if ('keep' in data) out.keep = data.keep;
+  await writeFile(path, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
 }

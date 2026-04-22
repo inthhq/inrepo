@@ -4,6 +4,22 @@ import { inrepoConfigPath } from '../paths/inrepo-config-path.js';
 import { packageJsonPath } from '../paths/package-json-path.js';
 import type { InrepoPackage } from '../types/inrepo-package.js';
 import type { LoadedConfig } from '../types/loaded-config.js';
+import { validateExcludeList } from './validate-exclude-list.js';
+import { validateKeepList } from './validate-keep-list.js';
+
+function rootExcludeFromParsed(parsed: unknown, label: string): string[] {
+  if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return [];
+  }
+  return validateExcludeList((parsed as Record<string, unknown>).exclude, label);
+}
+
+function rootKeepFromParsed(parsed: unknown, label: string): string[] {
+  if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return [];
+  }
+  return validateKeepList((parsed as Record<string, unknown>).keep, label);
+}
 
 function normalizePackagesArray(raw: unknown): unknown[] {
   if (raw == null) return [];
@@ -42,6 +58,12 @@ function validatePackage(entry: unknown, index: number): InrepoPackage {
     }
     pkg.dev = rec.dev;
   }
+  if (rec.exclude != null) {
+    pkg.exclude = validateExcludeList(rec.exclude, `packages[${index}].exclude`);
+  }
+  if (rec.keep != null) {
+    pkg.keep = validateKeepList(rec.keep, `packages[${index}].keep`);
+  }
   return pkg;
 }
 
@@ -62,7 +84,9 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
     }
     const packagesRaw = Array.isArray(parsed) ? parsed : normalizePackagesArray(parsed);
     const packages = packagesRaw.map((p, i) => validatePackage(p, i));
-    return { packages, source: 'inrepo.json' };
+    const exclude = rootExcludeFromParsed(parsed, 'inrepo.json "exclude"');
+    const keep = rootKeepFromParsed(parsed, 'inrepo.json "keep"');
+    return { packages, exclude, keep, source: 'inrepo.json' };
   }
 
   const pkgPath = packageJsonPath(cwd);
@@ -87,5 +111,78 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
   }
   const packagesRaw = Array.isArray(inrepo) ? inrepo : normalizePackagesArray(inrepo);
   const packages = packagesRaw.map((p, i) => validatePackage(p, i));
-  return { packages, source: 'package.json' };
+  const exclude = rootExcludeFromParsed(inrepo, 'package.json "inrepo.exclude"');
+  const keep = rootKeepFromParsed(inrepo, 'package.json "inrepo.keep"');
+  return { packages, exclude, keep, source: 'package.json' };
+}
+
+/**
+ * Root `exclude` list only (no `packages` required). Used by `inrepo add` so global
+ * excludes apply even when sync has not been run.
+ */
+export async function loadGlobalExclude(cwd: string): Promise<string[]> {
+  const inrepoPath = inrepoConfigPath(cwd);
+  if (existsSync(inrepoPath)) {
+    const contents = await readFile(inrepoPath, 'utf8');
+    if (!contents.trim()) return [];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(contents) as unknown;
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      throw new Error(`Invalid JSON in inrepo.json: ${err.message}`);
+    }
+    return rootExcludeFromParsed(parsed, 'inrepo.json "exclude"');
+  }
+
+  const pkgPath = packageJsonPath(cwd);
+  if (!existsSync(pkgPath)) return [];
+  let pkgJson: unknown;
+  try {
+    pkgJson = JSON.parse(await readFile(pkgPath, 'utf8')) as unknown;
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    throw new Error(`Invalid package.json: ${err.message}`);
+  }
+  if (pkgJson == null || typeof pkgJson !== 'object') return [];
+  const inrepo = (pkgJson as Record<string, unknown>).inrepo;
+  if (inrepo == null || typeof inrepo !== 'object' || Array.isArray(inrepo)) {
+    return [];
+  }
+  return rootExcludeFromParsed(inrepo, 'package.json "inrepo.exclude"');
+}
+
+/**
+ * Root `keep` list only. Used by `inrepo add` when full `loadConfig` is unavailable.
+ */
+export async function loadGlobalKeep(cwd: string): Promise<string[]> {
+  const inrepoPath = inrepoConfigPath(cwd);
+  if (existsSync(inrepoPath)) {
+    const contents = await readFile(inrepoPath, 'utf8');
+    if (!contents.trim()) return [];
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(contents) as unknown;
+    } catch (e) {
+      const err = e instanceof Error ? e : new Error(String(e));
+      throw new Error(`Invalid JSON in inrepo.json: ${err.message}`);
+    }
+    return rootKeepFromParsed(parsed, 'inrepo.json "keep"');
+  }
+
+  const pkgPath = packageJsonPath(cwd);
+  if (!existsSync(pkgPath)) return [];
+  let pkgJson: unknown;
+  try {
+    pkgJson = JSON.parse(await readFile(pkgPath, 'utf8')) as unknown;
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    throw new Error(`Invalid package.json: ${err.message}`);
+  }
+  if (pkgJson == null || typeof pkgJson !== 'object') return [];
+  const inrepo = (pkgJson as Record<string, unknown>).inrepo;
+  if (inrepo == null || typeof inrepo !== 'object' || Array.isArray(inrepo)) {
+    return [];
+  }
+  return rootKeepFromParsed(inrepo, 'package.json "inrepo.keep"');
 }
