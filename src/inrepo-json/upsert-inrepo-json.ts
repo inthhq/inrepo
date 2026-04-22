@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { inrepoConfigPath } from '../paths/inrepo-config-path.js';
+import { defaultInrepoJsonSchemaRef } from './default-inrepo-json-schema-ref.js';
 
 export type InrepoJsonEntry = {
   name: string;
@@ -9,10 +10,17 @@ export type InrepoJsonEntry = {
   dev?: boolean;
 };
 
-/** Upsert a package entry into inrepo.json (creates `{ "packages": [...] }` if missing). */
+/** Upsert a package entry into inrepo.json. Adds `$schema` at the end when the file did not already define it. */
 export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Promise<void> {
   const path = inrepoConfigPath(cwd);
-  let data: { packages: Record<string, unknown>[]; exclude?: unknown; keep?: unknown } = {
+  let data: {
+    packages: Record<string, unknown>[];
+    exclude?: unknown;
+    keep?: unknown;
+    schemaRef?: string;
+    /** Top-level key order from object-shaped config (stable round-trip for `$schema` placement). */
+    topLevelKeyOrder?: string[];
+  } = {
     packages: [],
   };
 
@@ -33,10 +41,20 @@ export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Pro
           packages: Record<string, unknown>[];
           exclude?: unknown;
           keep?: unknown;
+          $schema?: unknown;
         };
-        data = { packages: obj.packages };
+        const topLevelKeyOrder = Object.keys(obj).filter(
+          (k) => k === 'packages' || k === 'exclude' || k === 'keep' || k === '$schema',
+        );
+        data = {
+          packages: obj.packages,
+          topLevelKeyOrder,
+        };
         if ('exclude' in obj) data.exclude = obj.exclude;
         if ('keep' in obj) data.keep = obj.keep;
+        if (typeof obj.$schema === 'string' && obj.$schema.trim()) {
+          data.schemaRef = obj.$schema.trim();
+        }
       } else {
         throw new Error('inrepo.json must be a JSON array or { "packages": [...] }');
       }
@@ -60,8 +78,24 @@ export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Pro
     data.packages.push(next);
   }
 
-  const out: Record<string, unknown> = { packages: data.packages };
-  if ('exclude' in data) out.exclude = data.exclude;
-  if ('keep' in data) out.keep = data.keep;
+  const schemaRef = data.schemaRef ?? defaultInrepoJsonSchemaRef;
+
+  let out: Record<string, unknown>;
+  if (data.topLevelKeyOrder && data.topLevelKeyOrder.length > 0) {
+    out = {};
+    for (const k of data.topLevelKeyOrder) {
+      if (k === 'packages') out.packages = data.packages;
+      else if (k === 'exclude' && 'exclude' in data) out.exclude = data.exclude;
+      else if (k === 'keep' && 'keep' in data) out.keep = data.keep;
+      else if (k === '$schema') out.$schema = schemaRef;
+    }
+    if (!('$schema' in out)) out.$schema = schemaRef;
+  } else {
+    out = { packages: data.packages };
+    if ('exclude' in data) out.exclude = data.exclude;
+    if ('keep' in data) out.keep = data.keep;
+    out.$schema = schemaRef;
+  }
+
   await writeFile(path, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
 }

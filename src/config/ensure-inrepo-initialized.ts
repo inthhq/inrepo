@@ -2,11 +2,13 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { stdin as input, stdout as output } from 'node:process';
 import * as readline from 'node:readline/promises';
+import { defaultInrepoJsonSchemaRef } from '../inrepo-json/default-inrepo-json-schema-ref.js';
 import { inrepoConfigPath } from '../paths/inrepo-config-path.js';
 import { packageJsonPath } from '../paths/package-json-path.js';
 
 const STUB = `{
-  "packages": []
+  "packages": [],
+  "$schema": "${defaultInrepoJsonSchemaRef}"
 }
 `;
 
@@ -60,8 +62,12 @@ function isNonInteractive(): boolean {
 }
 
 function nonInteractiveHint(): string {
+  const example = JSON.stringify({
+    packages: [],
+    $schema: defaultInrepoJsonSchemaRef,
+  });
   return (
-    'Create inrepo.json with {"packages":[]}, or add "inrepo": {"packages":[]} to package.json. ' +
+    `Create inrepo.json with ${example}, or add "inrepo": {"packages":[]} to package.json. ` +
     'Alternatively set INREPO_CONFIG=inrepo.json or INREPO_CONFIG=package.json (non-interactive setup).'
   );
 }

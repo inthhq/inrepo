@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/inthhq/inrepo/blob/main/inrepo.schema.json",
+  "title": "inrepo.json",
+  "description": "Declarative config for the inrepo CLI (vendored git deps). Matches parsing in load-config.ts.",
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Non-empty after JSON parsing; the CLI also trims surrounding whitespace and rejects whitespace-only strings at runtime."
+    },
+    "keepPathString": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path prefix relative to the vendored module root (no leading slash, no \"..\" segments, no Windows drive prefix). Backslashes are normalized at runtime.",
+      "allOf": [
+        { "not": { "pattern": "^/" } },
+        { "not": { "pattern": "(^|/)\\.\\.(/|$)" } },
+        { "not": { "pattern": "^[A-Za-z]:[/\\\\]" } }
+      ]
+    },
+    "packageEntry": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "git": { "$ref": "#/$defs/nonEmptyString" },
+        "ref": { "$ref": "#/$defs/nonEmptyString" },
+        "dev": { "type": "boolean" },
+        "exclude": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" }
+        },
+        "keep": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/keepPathString" }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "Packages array",
+      "description": "Top-level array of package entries. Root-level \"exclude\" and \"keep\" are not read in this form; use the object form for those.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/packageEntry" }
+    },
+    {
+      "title": "Object with packages",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["packages"],
+      "properties": {
+        "packages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/packageEntry" }
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" }
+        },
+        "keep": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/keepPathString" }
+        }
+      }
+    }
+  ]
+}
