@@ -23,7 +23,7 @@
 
 | Package | Description | Key Features | Version |
 |---------|-------------|--------------|---------|
-| `inrepo` | Git vendoring CLI | Declarative config (`inrepo.json` or `package.json#inrepo`), `sync` / `verify` / `add`, npm name → GitHub URL resolution when `repository` is set, lockfile (`inrepo.lock.json`), strips `.git` after sync for plain-tree vendoring | [![npm](https://img.shields.io/npm/v/inrepo?style=flat-square)](https://www.npmjs.com/package/inrepo) |
+| `inrepo` | Git vendoring CLI | Declarative config (`inrepo.json` or `package.json#inrepo`), `sync` / `verify` / `add`, npm name → GitHub URL resolution when `repository` is set, lockfile (`inrepo.lock.json`), wires `dependencies` / `devDependencies`, strips `.git` after sync for plain-tree vendoring | [![npm](https://img.shields.io/npm/v/inrepo?style=flat-square)](https://www.npmjs.com/package/inrepo) |
 
 ## Quick start
 
@@ -43,11 +43,11 @@ node dist/cli.mjs --help
 
 Typical flow:
 
-1. Add config at the project root—either **`inrepo.json`** or a **`"inrepo"`** field in **`package.json`**—listing `{ "name", "git?", "ref?" }` entries (or a top-level JSON array of those objects).
-2. Run **`inrepo sync`** to clone or update into **`inrepo_modules/`**, update **`inrepo.lock.json`**, and wire **`package.json#packages`** to `file:inrepo_modules/...` where applicable.
+1. Add config at the project root—either **`inrepo.json`** or a **`"inrepo"`** field in **`package.json`**—listing `{ "name", "git?", "ref?", "dev?" }` entries (or a top-level JSON array of those objects). Set **`"dev": true`** on an entry to wire **`package.json#devDependencies`** on sync; omit it or use **`false`** for **`#dependencies`**.
+2. Run **`inrepo sync`** to clone or update into **`inrepo_modules/`**, update **`inrepo.lock.json`**, and upsert **`package.json`** **`dependencies`** or **`devDependencies`** with `file:inrepo_modules/...` where applicable (and remove any legacy **`package.json#packages`** entry for that name).
 3. Run **`inrepo verify`** in CI to ensure vendored trees match the lockfile.
 
-**`inrepo add <name>`** vendors a single package (optional **`--git`**, **`--ref`**, **`--save`** to append **`inrepo.json`**).
+**`inrepo add <name>`** vendors a single package (optional **`-D`** / **`--dev`** for devDependencies, **`--git`**, **`--ref`**, **`--save`** to append **`inrepo.json`**).
 
 ## Documentation
 

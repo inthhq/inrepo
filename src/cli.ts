@@ -10,7 +10,7 @@ import { upsertLockModule } from './lockfile/upsert-lock-module.js';
 import { verifyLock } from './verify/verify-lock.js';
 import { upsertInrepoJson } from './inrepo-json/upsert-inrepo-json.js';
 import { moduleDestPath } from './paths/module-dest-path.js';
-import { upsertRootPackageJsonFilePackage } from './package-json/upsert-vendored-package-ref.js';
+import { upsertRootPackageJsonDependency } from './package-json/upsert-vendored-package-ref.js';
 
 function printHelp(): void {
   console.log(`inrepo — vendor git dependencies into inrepo_modules/
@@ -18,21 +18,22 @@ function printHelp(): void {
 Usage:
   inrepo sync
   inrepo verify
-  inrepo add <name> [--git <url>] [--ref <ref>] [--save]
+  inrepo add [-D|--dev] <name> [--git <url>] [--ref <ref>] [--save]
 
 Commands:
-  sync     Read inrepo.json (or package.json "inrepo"), clone/update packages, and set package.json#packages to file:inrepo_modules/... entries.
+  sync     Read inrepo.json (or package.json "inrepo"), clone/update packages, and set package.json dependencies (or devDependencies when "dev": true) to file:inrepo_modules/... entries.
   verify   Check vendored dirs match inrepo.lock.json (git checkout, or .inrepo-vendor.json after sync strips .git).
-  add      Clone a single package by npm name (or --git URL) into inrepo_modules (updates package.json#packages when package.json exists).
+  add      Clone a single package by npm name (or --git URL) into inrepo_modules (updates package.json when package.json exists).
 
 Options (add):
+  -D, --dev     Wire package.json#devDependencies instead of #dependencies
   --git <url>   Git clone URL (optional if npm registry has a GitHub repository field)
   --ref <ref>   Branch, tag, or commit SHA to pin
   --save        Also upsert inrepo.json (creates file if needed)
 
 Config:
   Prefer inrepo.json at the project root; otherwise package.json field "inrepo".
-  Shape: { "packages": [ { "name", "git?", "ref?" } ] } or a bare JSON array of entries.
+  Shape: { "packages": [ { "name", "git?", "ref?", "dev?" } ] } or a bare JSON array of entries.
 `);
 }
 
@@ -41,10 +42,12 @@ type AddArgs = {
   git?: string;
   ref?: string;
   save: boolean;
+  dev: boolean;
 };
 
 function parseAddArgs(argv: string[]): AddArgs {
   let save = false;
+  let dev = false;
   let git: string | undefined;
   let ref: string | undefined;
   const positional: string[] = [];
@@ -52,6 +55,8 @@ function parseAddArgs(argv: string[]): AddArgs {
     const a = argv[i];
     if (a === '--save') {
       save = true;
+    } else if (a === '-D' || a === '--dev') {
+      dev = true;
     } else if (a === '--git') {
       const v = argv[++i];
       if (v == null || v.startsWith('-')) throw new Error('--git requires a URL');
@@ -70,12 +75,12 @@ function parseAddArgs(argv: string[]): AddArgs {
   if (positional.length > 1) {
     throw new Error(`Unexpected arguments: ${positional.slice(1).join(' ')}`);
   }
-  return { name: positional[0], save, git, ref };
+  return { name: positional[0], save, git, ref, dev };
 }
 
 async function materializePackage(
   cwd: string,
-  pkg: { name: string; git?: string; ref?: string },
+  pkg: { name: string; git?: string; ref?: string; dev?: boolean },
 ): Promise<void> {
   const gitUrl = pkg.git?.trim()
     ? pkg.git.trim()
@@ -100,7 +105,7 @@ async function materializePackage(
     updatedAt: new Date().toISOString(),
   });
 
-  await upsertRootPackageJsonFilePackage(cwd, pkg.name);
+  await upsertRootPackageJsonDependency(cwd, pkg.name, pkg.dev === true);
 
   console.log(`Synced "${pkg.name}" @ ${commit.slice(0, 7)} → ${dest}`);
 }
@@ -133,12 +138,14 @@ async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
       name: args.name,
       git: args.git,
       ref: args.ref,
+      dev: args.dev ? true : false,
     });
   }
   await materializePackage(cwd, {
     name: args.name,
     git: args.git,
     ref: args.ref,
+    dev: args.dev,
   });
 }
 

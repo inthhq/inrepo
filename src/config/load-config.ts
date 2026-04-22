@@ -36,6 +36,12 @@ function validatePackage(entry: unknown, index: number): InrepoPackage {
     }
     pkg.ref = rec.ref.trim();
   }
+  if (rec.dev != null) {
+    if (typeof rec.dev !== 'boolean') {
+      throw new Error(`packages[${index}].dev must be a boolean when set`);
+    }
+    pkg.dev = rec.dev;
+  }
   return pkg;
 }
 

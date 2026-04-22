@@ -6,6 +6,7 @@ export type InrepoJsonEntry = {
   name: string;
   git?: string;
   ref?: string;
+  dev?: boolean;
 };
 
 /** Upsert a package entry into inrepo.json (creates `{ "packages": [...] }` if missing). */
@@ -41,8 +42,12 @@ export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Pro
   if (entry.ref) next.ref = entry.ref;
 
   if (ix >= 0) {
-    data.packages[ix] = { ...data.packages[ix], ...next };
+    const merged = { ...data.packages[ix], ...next };
+    if (entry.dev === true) merged.dev = true;
+    else delete merged.dev;
+    data.packages[ix] = merged;
   } else {
+    if (entry.dev === true) next.dev = true;
     data.packages.push(next);
   }
 
