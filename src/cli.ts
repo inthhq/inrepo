@@ -40,7 +40,6 @@ Options (add):
   --git <url>   Git clone URL (optional if npm registry has a GitHub repository field)
   --ref <ref>   Branch, tag, or commit SHA to pin
   --no-save     Do not upsert config (by default, add records the entry in inrepo.json — or package.json "inrepo" — after a successful checkout)
-  --save        Force config upsert (default; kept for compatibility)
 
 Config:
   On the first sync or add in a project without inrepo.json or package.json "inrepo", you are prompted where config should live (or set INREPO_CONFIG=inrepo.json|package.json, or INREPO_NONINTERACTIVE=1 with one of those files already present).
@@ -67,9 +66,7 @@ function parseAddArgs(argv: string[]): AddArgs {
   const positional: string[] = [];
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === '--save') {
-      save = true;
-    } else if (a === '--no-save') {
+    if (a === '--no-save') {
       save = false;
     } else if (a === '-D' || a === '--dev') {
       dev = true;
