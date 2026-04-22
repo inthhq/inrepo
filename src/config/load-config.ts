@@ -7,6 +7,14 @@ import type { LoadedConfig } from '../types/loaded-config.js';
 import { validateExcludeList } from './validate-exclude-list.js';
 import { validateKeepList } from './validate-keep-list.js';
 
+/** Thrown when neither inrepo.json nor package.json declares inrepo config. */
+export class LoadConfigNotFoundError extends Error {
+  override readonly name = 'LoadConfigNotFoundError';
+  constructor(message: string) {
+    super(message);
+  }
+}
+
 function rootExcludeFromParsed(parsed: unknown, label: string): string[] {
   if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
     return [];
@@ -91,7 +99,7 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
 
   const pkgPath = packageJsonPath(cwd);
   if (!existsSync(pkgPath)) {
-    throw new Error(
+    throw new LoadConfigNotFoundError(
       'No inrepo.json or package.json found. Create inrepo.json or add an "inrepo" field to package.json.',
     );
   }
@@ -107,7 +115,7 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
   }
   const inrepo = (pkgJson as Record<string, unknown>).inrepo;
   if (inrepo == null) {
-    throw new Error('No inrepo.json and package.json has no "inrepo" field.');
+    throw new LoadConfigNotFoundError('No inrepo.json and package.json has no "inrepo" field.');
   }
   const packagesRaw = Array.isArray(inrepo) ? inrepo : normalizePackagesArray(inrepo);
   const packages = packagesRaw.map((p, i) => validatePackage(p, i));
@@ -179,10 +187,5 @@ export async function loadGlobalKeep(cwd: string): Promise<string[]> {
 
 /** True when loadConfig failed because no config file/field exists (safe to fall back to globals-only). */
 export function isLoadConfigNotFoundError(e: unknown): boolean {
-  if (!(e instanceof Error)) return false;
-  const m = e.message;
-  return (
-    m.includes('No inrepo.json or package.json found') ||
-    m.includes('No inrepo.json and package.json has no "inrepo" field.')
-  );
+  return e instanceof LoadConfigNotFoundError;
 }

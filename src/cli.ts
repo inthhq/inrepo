@@ -16,7 +16,7 @@ import { finalizeVendorCheckout } from './git/finalize-vendor-checkout.js';
 import { removeDestIfExists } from './git/remove-dest-if-exists.js';
 import { upsertLockModule } from './lockfile/upsert-lock-module.js';
 import { verifyLock } from './verify/verify-lock.js';
-import { upsertInrepoJson } from './inrepo-json/upsert-inrepo-json.js';
+import { upsertInrepoJson, type InrepoJsonEntry } from './inrepo-json/upsert-inrepo-json.js';
 import { upsertPackageJsonInrepo } from './inrepo-json/upsert-package-json-inrepo.js';
 import { inrepoConfigPath } from './paths/inrepo-config-path.js';
 import { moduleDestPath } from './paths/module-dest-path.js';
@@ -175,12 +175,16 @@ async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
   const args = parseAddArgs(argv);
   await ensureInrepoInitialized(cwd);
   if (args.save) {
-    const entry = {
+    const entry: InrepoJsonEntry = {
       name: args.name,
-      git: args.git,
-      ref: args.ref,
       dev: args.dev,
     };
+    if (args.git !== undefined && args.git !== '') {
+      entry.git = args.git;
+    }
+    if (args.ref !== undefined && args.ref !== '') {
+      entry.ref = args.ref;
+    }
     if (existsSync(inrepoConfigPath(cwd))) {
       await upsertInrepoJson(cwd, entry);
     } else {

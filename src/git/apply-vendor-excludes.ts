@@ -1,12 +1,9 @@
 import { existsSync } from 'node:fs';
 import { realpath, rm } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import { isAbsolute, sep } from 'node:path';
 import { assertSafeUnderDest } from './vendor-path-utils.js';
 import { listRelativePathsRecursive, pathDepth } from './vendor-tree-paths.js';
-
-const require = createRequire(import.meta.url);
-const safeRegex = require('safe-regex') as (re: RegExp) => boolean;
+import safeRegex from 'safe-regex';
 
 /**
  * Parse `/body/flags` style entries (flags optional, a–z only).
