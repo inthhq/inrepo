@@ -1,0 +1,98 @@
+import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { ensureInrepoInitialized } from './ensure-inrepo-initialized.js';
+import { defaultInrepoJsonSchemaRef } from '../inrepo-json/default-inrepo-json-schema-ref.js';
+import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
+
+const ENV_KEYS = ['INREPO_CONFIG', 'INREPO_NONINTERACTIVE', 'CI'] as const;
+
+function snapshotEnv(): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const k of ENV_KEYS) out[k] = process.env[k];
+  return out;
+}
+
+function restoreEnv(snap: Record<string, string | undefined>): void {
+  for (const k of ENV_KEYS) {
+    const v = snap[k];
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+}
+
+describe('ensureInrepoInitialized (non-interactive)', () => {
+  let cwd: string;
+  let envSnap: Record<string, string | undefined>;
+
+  beforeEach(async () => {
+    cwd = await makeTmpDir('inrepo-init-');
+    envSnap = snapshotEnv();
+    process.env.INREPO_NONINTERACTIVE = '1';
+    delete process.env.INREPO_CONFIG;
+    delete process.env.CI;
+  });
+
+  afterEach(async () => {
+    restoreEnv(envSnap);
+    await cleanupTmpDir(cwd);
+  });
+
+  test('no-ops when inrepo.json already exists', async () => {
+    await writeFile(join(cwd, 'inrepo.json'), '{"packages":[]}\n', 'utf8');
+    await ensureInrepoInitialized(cwd);
+    const raw = await readFile(join(cwd, 'inrepo.json'), 'utf8');
+    expect(raw).toBe('{"packages":[]}\n');
+  });
+
+  test('no-ops when package.json#inrepo is set', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ name: 'host', inrepo: { packages: [] } }) + '\n',
+      'utf8',
+    );
+    await ensureInrepoInitialized(cwd);
+    expect(existsSync(join(cwd, 'inrepo.json'))).toBe(false);
+  });
+
+  test('throws non-interactive hint when no config and no INREPO_CONFIG', async () => {
+    await expect(ensureInrepoInitialized(cwd)).rejects.toThrow(
+      /first-time setup needs an interactive terminal/,
+    );
+  });
+
+  test('INREPO_CONFIG=inrepo.json writes a stub with the default $schema', async () => {
+    process.env.INREPO_CONFIG = 'inrepo.json';
+    await ensureInrepoInitialized(cwd);
+    const raw = await readFile(join(cwd, 'inrepo.json'), 'utf8');
+    const parsed = JSON.parse(raw);
+    expect(parsed).toEqual({ packages: [], $schema: defaultInrepoJsonSchemaRef });
+  });
+
+  test('INREPO_CONFIG=package.json requires an existing package.json', async () => {
+    process.env.INREPO_CONFIG = 'package.json';
+    await expect(ensureInrepoInitialized(cwd)).rejects.toThrow(
+      /requires a package\.json in the project root/,
+    );
+  });
+
+  test('INREPO_CONFIG=package.json adds inrepo field to existing package.json', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ name: 'host' }) + '\n',
+      'utf8',
+    );
+    process.env.INREPO_CONFIG = 'package.json';
+    await ensureInrepoInitialized(cwd);
+    const pkg = JSON.parse(await readFile(join(cwd, 'package.json'), 'utf8'));
+    expect(pkg.inrepo).toEqual({ packages: [] });
+    expect(pkg.name).toBe('host');
+  });
+
+  test('INREPO_CONFIG is case-insensitive', async () => {
+    process.env.INREPO_CONFIG = 'INREPO.JSON';
+    await ensureInrepoInitialized(cwd);
+    expect(existsSync(join(cwd, 'inrepo.json'))).toBe(true);
+  });
+});

@@ -9,7 +9,8 @@ type LockfileShape = {
 };
 
 function assertLockModules(modules: unknown): Record<string, LockModule> {
-  if (modules == null || typeof modules !== 'object' || Array.isArray(modules)) {
+  if (modules == null) return {};
+  if (typeof modules !== 'object' || Array.isArray(modules)) {
     throw new Error('inrepo.lock.json "modules" must be an object');
   }
   return modules as Record<string, LockModule>;
@@ -31,7 +32,7 @@ export async function readLockfile(cwd: string): Promise<{
     const err = e instanceof Error ? e : new Error(String(e));
     throw new Error(`Invalid inrepo.lock.json: ${err.message}`);
   }
-  if (data == null || typeof data !== 'object') {
+  if (data == null || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error('inrepo.lock.json must be a JSON object');
   }
   const rec = data as LockfileShape;

@@ -23,6 +23,8 @@
     "build": "rolldown -c rolldown.config.ts",
     "dev": "rolldown -c rolldown.config.ts --watch",
     "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
     "prepublishOnly": "bun run build"
   },
   "engines": {

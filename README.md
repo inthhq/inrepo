@@ -51,7 +51,7 @@ Typical flow:
 4. Run **`inrepo sync`** to clone or update into **`inrepo_modules/`**, update **`inrepo.lock.json`**, and upsert **`package.json`** **`dependencies`** or **`devDependencies`** with `file:inrepo_modules/...` where applicable (and remove any legacy **`package.json#packages`** entry for that name).
 5. Run **`inrepo verify`** in CI to ensure vendored trees match the lockfile.
 
-**`inrepo add <name>`** vendors a single package (optional **`-D`** / **`--dev`** for devDependencies, **`--git`**, **`--ref`**, **`--save`** to record the entry in **`inrepo.json`** if that file exists, otherwise in **`package.json`** under **`"inrepo"`**).
+**`inrepo add <name>`** vendors a single package and, by default, records the entry in **`inrepo.json`** (or **`package.json`** under **`"inrepo"`**) after a successful checkout, so subsequent **`inrepo sync`** can replay it. Optional flags: **`-D`** / **`--dev`** for devDependencies, **`--git`**, **`--ref`**, **`--no-save`** to skip the config upsert (one-off vendoring).
 
 ## Documentation
 
