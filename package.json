@@ -1,6 +1,6 @@
 {
   "name": "inrepo",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Vendor upstream git repositories into inrepo_modules from declarative config",
   "type": "module",
   "repository": {
