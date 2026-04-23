@@ -389,22 +389,35 @@ async function cmdInteractive(cwd: string): Promise<void> {
 
   // The dispatched commands run inside this same Clack frame: pass
   // `suppressBanners` so they don't open competing intros/outros, and let
-  // `cmdInteractive` close the session with a single contextual outro.
-  if (action === 'sync') {
-    await cmdSync(cwd, { suppressBanners: true });
-    outro('Sync complete.');
-  } else if (action === 'verify') {
-    await cmdVerify(cwd, { suppressBanners: true });
-    if (process.exitCode === 1) {
-      cancel('inrepo verify: lockfile and checkouts disagree.');
+  // `cmdInteractive` close the session with a single contextual banner.
+  //
+  // The try/catch guarantees `intro('inrepo')` is always paired with a closing
+  // `cancel(...)` even when a dispatched command throws — otherwise the frame
+  // dangles on stdout while main() prints the error on stderr.
+  try {
+    if (action === 'sync') {
+      await cmdSync(cwd, { suppressBanners: true });
+      outro('Sync complete.');
+    } else if (action === 'verify') {
+      await cmdVerify(cwd, { suppressBanners: true });
+      if (process.exitCode === 1) {
+        cancel('inrepo verify: lockfile and checkouts disagree.');
+      } else {
+        outro('All vendored modules match the lockfile.');
+      }
     } else {
-      outro('All vendored modules match the lockfile.');
+      const args = await promptAddArgs({ suppressBanners: true });
+      if (args == null) {
+        cancel('Add cancelled.');
+        return;
+      }
+      await performAdd(cwd, args, { suppressBanners: true });
+      outro(`Recorded "${args.name}" in inrepo config.`);
     }
-  } else {
-    const args = await promptAddArgs({ suppressBanners: true });
-    if (args == null) return; // promptAddArgs already printed a cancel banner
-    await performAdd(cwd, args, { suppressBanners: true });
-    outro(`Recorded "${args.name}" in inrepo config.`);
+  } catch (e) {
+    const summary = e instanceof Error ? e.message.split('\n')[0] : String(e);
+    cancel(`inrepo ${action} failed: ${summary}`);
+    throw e;
   }
 }
 
@@ -418,13 +431,7 @@ async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | null> {
   if (!opts.suppressBanners) intro('inrepo add');
 
   const onCancel = (): null => {
-    if (opts.suppressBanners) {
-      // Caller owns the outer frame; emit a one-line message inside it
-      // instead of closing the frame with `cancel(...)`.
-      log.warn('Add cancelled.');
-    } else {
-      cancel('Cancelled.');
-    }
+    if (!opts.suppressBanners) cancel('Cancelled.');
     return null;
   };
 
