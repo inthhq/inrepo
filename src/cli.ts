@@ -43,6 +43,32 @@ import { upsertRootPackageJsonDependency } from './package-json/upsert-vendored-
 // e2e expectations like `r.stderr` matching warnings/errors).
 const ERR = { output: process.stderr } as const;
 
+// Trailing whitespace is part of the artwork (each row is a fixed width); keep
+// the lines verbatim and disable the editor's whitespace-trimming instinct by
+// concatenating with explicit `\n` rather than a template literal.
+const BANNER_LINES = [
+  '░██                                                        ',
+  '                                                           ',
+  '░██░████████     ░██░████  ░███████  ░████████   ░███████  ',
+  '░██░██    ░██    ░███     ░██    ░██ ░██    ░██ ░██    ░██ ',
+  '░██░██    ░██    ░██      ░█████████ ░██    ░██ ░██    ░██ ',
+  '░██░██    ░██    ░██      ░██        ░███   ░██ ░██    ░██ ',
+  '░██░██    ░██    ░██       ░███████  ░██░█████   ░███████  ',
+  '                                     ░██                   ',
+  '                                     ░██                   ',
+];
+
+// Track whether we've already shown the banner in this process so nested
+// dispatch (e.g. `cmdInteractive` → `cmdSync`) doesn't print it twice even if
+// callers forget to pass `suppressBanners`.
+let bannerShown = false;
+
+function printBanner(): void {
+  if (bannerShown) return;
+  bannerShown = true;
+  console.log(BANNER_LINES.join('\n'));
+}
+
 function printHelp(): void {
   console.log(`inrepo — vendor git dependencies into inrepo_modules/
 
@@ -206,6 +232,7 @@ async function materializePackage(
 }
 
 async function cmdInit(cwd: string): Promise<void> {
+  printBanner();
   if (isInrepoInitialized(cwd)) {
     log.info('inrepo is already initialized in this project.');
     return;
@@ -226,6 +253,7 @@ async function cmdInit(cwd: string): Promise<void> {
 type DispatchOpts = { suppressBanners?: boolean };
 
 async function cmdSync(cwd: string, opts: DispatchOpts = {}): Promise<void> {
+  if (!opts.suppressBanners) printBanner();
   await ensureInrepoInitialized(cwd);
   const { packages, exclude: globalExclude, keep: globalKeep } = await loadConfig(cwd);
   if (packages.length === 0) {
@@ -247,7 +275,10 @@ async function cmdSync(cwd: string, opts: DispatchOpts = {}): Promise<void> {
  * rather than reading `process.exitCode`, which is a global side-effect.
  */
 async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<boolean> {
-  if (!opts.suppressBanners) intro('inrepo verify');
+  if (!opts.suppressBanners) {
+    printBanner();
+    intro('inrepo verify');
+  }
   const s = spinner();
   s.start('Checking lockfile entries');
   let result;
@@ -277,6 +308,7 @@ async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<boolean>
 }
 
 async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): Promise<void> {
+  if (!opts.suppressBanners) printBanner();
   // First-time setup is only required when we're going to persist the entry.
   // `--no-save` is an explicit "one-off vendor" — it has no business creating
   // an empty inrepo.json or rejecting the run for lack of a TTY.
@@ -362,6 +394,7 @@ async function cmdInteractive(cwd: string): Promise<void> {
     if (!isLoadConfigNotFoundError(e)) throw e;
   }
 
+  printBanner();
   intro('inrepo');
 
   type Action = 'sync' | 'add' | 'verify' | 'exit';
