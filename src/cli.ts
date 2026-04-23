@@ -217,22 +217,30 @@ async function cmdInit(cwd: string): Promise<void> {
   );
 }
 
-async function cmdSync(cwd: string): Promise<void> {
+/**
+ * When `suppressBanners` is set we are running inside an outer Clack frame
+ * (e.g. `cmdInteractive`'s session intro/outro) and must not open a competing
+ * frame of our own. Spinners, `log.*`, and error reporting still render — only
+ * `intro` / `outro` / final `cancel` banners are suppressed.
+ */
+type DispatchOpts = { suppressBanners?: boolean };
+
+async function cmdSync(cwd: string, opts: DispatchOpts = {}): Promise<void> {
   await ensureInrepoInitialized(cwd);
   const { packages, exclude: globalExclude, keep: globalKeep } = await loadConfig(cwd);
   if (packages.length === 0) {
     throw new Error('Config has an empty "packages" array. Add at least one package.');
   }
 
-  intro(`inrepo sync — ${packages.length} package(s)`);
+  if (!opts.suppressBanners) intro(`inrepo sync — ${packages.length} package(s)`);
   for (const pkg of packages) {
     await materializePackage(cwd, pkg, globalExclude, globalKeep);
   }
-  outro(`Done. ${packages.length} package(s) synced.`);
+  if (!opts.suppressBanners) outro(`Done. ${packages.length} package(s) synced.`);
 }
 
-async function cmdVerify(cwd: string): Promise<void> {
-  intro('inrepo verify');
+async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<void> {
+  if (!opts.suppressBanners) intro('inrepo verify');
   const s = spinner();
   s.start('Checking lockfile entries');
   let result;
@@ -248,17 +256,19 @@ async function cmdVerify(cwd: string): Promise<void> {
     for (const line of result.errors) {
       log.error(line, ERR);
     }
-    cancel('inrepo verify: lockfile and checkouts disagree.');
+    if (!opts.suppressBanners) {
+      cancel('inrepo verify: lockfile and checkouts disagree.');
+    }
     process.exitCode = 1;
     return;
   }
 
   // Final stop message preserves the e2e contract: `inrepo verify: all lockfile entries match checkouts` on stdout.
   s.stop('inrepo verify: all lockfile entries match checkouts.');
-  outro('All vendored modules match the lockfile.');
+  if (!opts.suppressBanners) outro('All vendored modules match the lockfile.');
 }
 
-async function performAdd(cwd: string, args: AddArgs): Promise<void> {
+async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): Promise<void> {
   // First-time setup is only required when we're going to persist the entry.
   // `--no-save` is an explicit "one-off vendor" — it has no business creating
   // an empty inrepo.json or rejecting the run for lack of a TTY.
@@ -283,7 +293,7 @@ async function performAdd(cwd: string, args: AddArgs): Promise<void> {
     globalKeep = await loadGlobalKeep(cwd);
   }
 
-  intro(`inrepo add — ${args.name}${args.dev ? ' (dev)' : ''}`);
+  if (!opts.suppressBanners) intro(`inrepo add — ${args.name}${args.dev ? ' (dev)' : ''}`);
 
   await materializePackage(
     cwd,
@@ -317,11 +327,13 @@ async function performAdd(cwd: string, args: AddArgs): Promise<void> {
     }
   }
 
-  outro(
-    args.save
-      ? `Recorded "${args.name}" in inrepo config.`
-      : `Vendored "${args.name}" (not saved to config).`,
-  );
+  if (!opts.suppressBanners) {
+    outro(
+      args.save
+        ? `Recorded "${args.name}" in inrepo config.`
+        : `Vendored "${args.name}" (not saved to config).`,
+    );
+  }
 }
 
 async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
@@ -375,65 +387,73 @@ async function cmdInteractive(cwd: string): Promise<void> {
     return;
   }
 
-  outro(`Running: inrepo ${action}`);
-
+  // The dispatched commands run inside this same Clack frame: pass
+  // `suppressBanners` so they don't open competing intros/outros, and let
+  // `cmdInteractive` close the session with a single contextual outro.
   if (action === 'sync') {
-    await cmdSync(cwd);
+    await cmdSync(cwd, { suppressBanners: true });
+    outro('Sync complete.');
   } else if (action === 'verify') {
-    await cmdVerify(cwd);
+    await cmdVerify(cwd, { suppressBanners: true });
+    if (process.exitCode === 1) {
+      cancel('inrepo verify: lockfile and checkouts disagree.');
+    } else {
+      outro('All vendored modules match the lockfile.');
+    }
   } else {
-    const args = await promptAddArgs();
-    if (args == null) return; // user cancelled mid-prompt
-    await performAdd(cwd, args);
+    const args = await promptAddArgs({ suppressBanners: true });
+    if (args == null) return; // promptAddArgs already printed a cancel banner
+    await performAdd(cwd, args, { suppressBanners: true });
+    outro(`Recorded "${args.name}" in inrepo config.`);
   }
 }
 
 /**
  * Drive the four `add` inputs through Clack prompts. Returns null if the user
- * cancels at any point, in which case the caller should bail without further
- * output (Clack already printed a `cancel` banner).
+ * cancels at any point. When `suppressBanners` is true we are running inside
+ * an outer frame and must neither open our own intro/outro nor emit a closing
+ * `cancel` banner on cancellation — the caller handles framing.
  */
-async function promptAddArgs(): Promise<AddArgs | null> {
-  intro('inrepo add');
+async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | null> {
+  if (!opts.suppressBanners) intro('inrepo add');
+
+  const onCancel = (): null => {
+    if (opts.suppressBanners) {
+      // Caller owns the outer frame; emit a one-line message inside it
+      // instead of closing the frame with `cancel(...)`.
+      log.warn('Add cancelled.');
+    } else {
+      cancel('Cancelled.');
+    }
+    return null;
+  };
 
   const name = await text({
     message: 'Package name',
     placeholder: 'e.g. lodash or @scope/pkg',
     validate: (v) => (v == null || v.trim() === '' ? 'Package name is required' : undefined),
   });
-  if (isCancel(name)) {
-    cancel('Cancelled.');
-    return null;
-  }
+  if (isCancel(name)) return onCancel();
 
   const git = await text({
     message: 'Git URL (optional)',
     placeholder: 'leave blank to resolve from npm registry',
   });
-  if (isCancel(git)) {
-    cancel('Cancelled.');
-    return null;
-  }
+  if (isCancel(git)) return onCancel();
 
   const ref = await text({
     message: 'Ref (branch / tag / SHA, optional)',
     placeholder: 'leave blank for default branch',
   });
-  if (isCancel(ref)) {
-    cancel('Cancelled.');
-    return null;
-  }
+  if (isCancel(ref)) return onCancel();
 
   const dev = await confirm({
     message: 'Save under devDependencies?',
     initialValue: false,
   });
-  if (isCancel(dev)) {
-    cancel('Cancelled.');
-    return null;
-  }
+  if (isCancel(dev)) return onCancel();
 
-  outro('Starting vendor checkout');
+  if (!opts.suppressBanners) outro('Starting vendor checkout');
 
   const trimmedGit = typeof git === 'string' ? git.trim() : '';
   const trimmedRef = typeof ref === 'string' ? ref.trim() : '';
