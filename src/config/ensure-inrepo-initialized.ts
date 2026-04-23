@@ -1,7 +1,7 @@
+import { cancel, intro, isCancel, outro, select } from '@clack/prompts';
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { stdin as input, stdout as output } from 'node:process';
-import * as readline from 'node:readline/promises';
 import { defaultInrepoJsonSchemaRef } from '../inrepo-json/default-inrepo-json-schema-ref.js';
 import { inrepoConfigPath } from '../paths/inrepo-config-path.js';
 import { packageJsonPath } from '../paths/package-json-path.js';
@@ -64,6 +64,14 @@ function isNonInteractive(): boolean {
   );
 }
 
+/**
+ * Whether the current process can run interactive Clack prompts: a TTY on both
+ * stdin/stdout, not in CI, and not explicitly opted out via INREPO_NONINTERACTIVE.
+ */
+export function canPromptInteractively(): boolean {
+  return !isNonInteractive();
+}
+
 function nonInteractiveHint(): string {
   const example = JSON.stringify({
     packages: [],
@@ -73,6 +81,26 @@ function nonInteractiveHint(): string {
     `Create inrepo.json with ${example}, or add "inrepo": {"packages":[]} to package.json. ` +
     'Alternatively set INREPO_CONFIG=inrepo.json or INREPO_CONFIG=package.json (non-interactive setup).'
   );
+}
+
+/**
+ * Whether this project already has inrepo configuration in either supported
+ * location (dedicated `inrepo.json` or a `package.json#inrepo` field).
+ *
+ * Throws if `package.json` is present but malformed, so callers surface a
+ * clear error instead of silently treating the project as uninitialized.
+ */
+export function isInrepoInitialized(cwd: string): boolean {
+  if (existsSync(inrepoConfigPath(cwd))) return true;
+  return packageJsonHasInrepoKey(cwd);
+}
+
+/** Thrown when the user aborts first-time setup (e.g. Escape); the CLI exits without a generic error line. */
+export class InrepoSetupCancelledError extends Error {
+  constructor() {
+    super('First-time setup cancelled.');
+    this.name = 'InrepoSetupCancelledError';
+  }
 }
 
 /**
@@ -101,32 +129,41 @@ export async function ensureInrepoInitialized(cwd: string): Promise<void> {
   }
 
   const hasPackageJson = existsSync(packageJsonPath(cwd));
-  console.log('');
-  console.log('inrepo — first-time setup');
-  console.log('');
-  console.log('Where should vendoring configuration live?');
-  console.log('  1) inrepo.json (dedicated file at the project root)');
+
+  intro('inrepo — first-time setup');
+
+  type ConfigLocation = 'inrepo.json' | 'package.json';
+  const options: { value: ConfigLocation; label: string; hint: string }[] = [
+    {
+      value: 'inrepo.json',
+      label: 'inrepo.json',
+      hint: 'Dedicated file at the project root',
+    },
+  ];
   if (hasPackageJson) {
-    console.log('  2) package.json under the "inrepo" field');
-  } else {
-    console.log('  (package.json not found — only option 1 is available.)');
+    options.push({
+      value: 'package.json',
+      label: 'package.json',
+      hint: '"inrepo" field',
+    });
   }
 
-  const rl = readline.createInterface({ input, output });
-  try {
-    const defaultChoice = '1';
-    const line = (await rl.question(`Enter 1${hasPackageJson ? ' or 2' : ''} [${defaultChoice}]: `)).trim();
-    const ans = line || defaultChoice;
-    if (ans === '1') {
-      await writeInrepoJsonStub(cwd);
-      return;
-    }
-    if (ans === '2' && hasPackageJson) {
-      await writePackageJsonInrepoStub(cwd);
-      return;
-    }
-    throw new Error(hasPackageJson ? 'Enter 1 or 2.' : 'Enter 1.');
-  } finally {
-    rl.close();
+  const choice = await select<ConfigLocation>({
+    message: 'Where should vendoring configuration live?',
+    options,
+    initialValue: 'inrepo.json',
+  });
+
+  if (isCancel(choice)) {
+    cancel('First-time setup cancelled.');
+    throw new InrepoSetupCancelledError();
+  }
+
+  if (choice === 'inrepo.json') {
+    await writeInrepoJsonStub(cwd);
+    outro('Created inrepo.json with an empty packages list.');
+  } else {
+    await writePackageJsonInrepoStub(cwd);
+    outro('Added "inrepo" to package.json.');
   }
 }
