@@ -50,6 +50,7 @@
     "typescript": "^6.0.3"
   },
   "dependencies": {
+    "@clack/prompts": "^1.2.0",
     "safe-regex": "^2.1.1"
   }
 }

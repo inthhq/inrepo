@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
 import { runCli } from '../test-utils/run-cli.js';
@@ -31,10 +32,52 @@ describe('CLI: help and argument validation (e2e)', () => {
     expect(r.stdout).toMatch(/Usage:/);
   });
 
-  test('no args prints help and exits 1', async () => {
+  test('no args (non-TTY, uninitialized) prints help and exits 1', async () => {
+    // Spawned CLI runs without a TTY, so the bare-invocation auto-init path is
+    // skipped and we fall back to printing usage so CI scripts get a hint.
     const r = await runCli([], { cwd });
     expect(r.exitCode).toBe(1);
     expect(r.stdout).toMatch(/Usage:/);
+  });
+
+  test('no args (already initialized) prints help and exits 0', async () => {
+    await writeFile(join(cwd, 'inrepo.json'), '{"packages":[]}\n', 'utf8');
+    const r = await runCli([], { cwd });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/Usage:/);
+  });
+
+  test('init creates inrepo.json when given INREPO_CONFIG=inrepo.json', async () => {
+    const r = await runCli(['init'], {
+      cwd,
+      env: { INREPO_NONINTERACTIVE: '1', INREPO_CONFIG: 'inrepo.json' },
+    });
+    expect(r.exitCode).toBe(0);
+    expect(existsSync(join(cwd, 'inrepo.json'))).toBe(true);
+    const raw = await readFile(join(cwd, 'inrepo.json'), 'utf8');
+    expect(JSON.parse(raw).packages).toEqual([]);
+  });
+
+  test('init is a no-op when already initialized', async () => {
+    await writeFile(join(cwd, 'inrepo.json'), '{"packages":[]}\n', 'utf8');
+    const r = await runCli(['init'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/already initialized/);
+  });
+
+  test('init in non-TTY without INREPO_CONFIG fails with the setup hint', async () => {
+    const r = await runCli(['init'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/first-time setup needs an interactive terminal/);
+  });
+
+  test('init rejects extra args', async () => {
+    const r = await runCli(['init', 'extra'], {
+      cwd,
+      env: { INREPO_NONINTERACTIVE: '1', INREPO_CONFIG: 'inrepo.json' },
+    });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/init does not take arguments/);
   });
 
   test('unknown command exits 1 with message', async () => {
