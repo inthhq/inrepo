@@ -239,7 +239,14 @@ async function cmdSync(cwd: string, opts: DispatchOpts = {}): Promise<void> {
   if (!opts.suppressBanners) outro(`Done. ${packages.length} package(s) synced.`);
 }
 
-async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<void> {
+/**
+ * Returns `true` when every lockfile entry matches its checkout, `false`
+ * otherwise. Also sets `process.exitCode = 1` on failure so the standalone
+ * `inrepo verify` invocation surfaces the correct shell exit code via
+ * `main()`. Callers in interactive flows should branch on the return value
+ * rather than reading `process.exitCode`, which is a global side-effect.
+ */
+async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<boolean> {
   if (!opts.suppressBanners) intro('inrepo verify');
   const s = spinner();
   s.start('Checking lockfile entries');
@@ -260,12 +267,13 @@ async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<void> {
       cancel('inrepo verify: lockfile and checkouts disagree.');
     }
     process.exitCode = 1;
-    return;
+    return false;
   }
 
   // Final stop message preserves the e2e contract: `inrepo verify: all lockfile entries match checkouts` on stdout.
   s.stop('inrepo verify: all lockfile entries match checkouts.');
   if (!opts.suppressBanners) outro('All vendored modules match the lockfile.');
+  return true;
 }
 
 async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): Promise<void> {
@@ -399,11 +407,11 @@ async function cmdInteractive(cwd: string): Promise<void> {
       await cmdSync(cwd, { suppressBanners: true });
       outro('Sync complete.');
     } else if (action === 'verify') {
-      await cmdVerify(cwd, { suppressBanners: true });
-      if (process.exitCode === 1) {
-        cancel('inrepo verify: lockfile and checkouts disagree.');
-      } else {
+      const ok = await cmdVerify(cwd, { suppressBanners: true });
+      if (ok) {
         outro('All vendored modules match the lockfile.');
+      } else {
+        cancel('inrepo verify: lockfile and checkouts disagree.');
       }
     } else {
       const args = await promptAddArgs({ suppressBanners: true });
