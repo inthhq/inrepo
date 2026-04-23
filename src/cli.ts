@@ -10,8 +10,10 @@ import {
   spinner,
   text,
 } from '@clack/prompts';
+import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
+import { dirname, join, resolve } from 'node:path';
 import {
   canPromptInteractively,
   ensureInrepoInitialized,
@@ -25,18 +27,23 @@ import {
   loadGlobalKeep,
 } from './config/load-config.js';
 import { resolveGitUrlFromNpm } from './registry/resolve-git-url-from-npm.js';
-import { applyVendorExcludes } from './git/apply-vendor-excludes.js';
-import { applyVendorKeep } from './git/apply-vendor-keep.js';
-import { clonePackage } from './git/clone-package.js';
-import { finalizeVendorCheckout } from './git/finalize-vendor-checkout.js';
-import { removeDestIfExists } from './git/remove-dest-if-exists.js';
+import { readLockfile } from './lockfile/read-lockfile.js';
 import { upsertLockModule } from './lockfile/upsert-lock-module.js';
+import { assembleModuleTree } from './overlay/assemble-module.js';
+import { buildOverlay } from './overlay/build-overlay.js';
+import { ensurePristine } from './overlay/cache.js';
+import { compareTrees } from './overlay/compare-trees.js';
+import { readModuleState, writeModuleState } from './overlay/module-state.js';
+import { discardedDirPath, overlayDirPath } from './overlay/overlay-paths.js';
+import { hashTree } from './overlay/tree-hash.js';
+import { copyTree } from './overlay/tree-utils.js';
 import { verifyLock } from './verify/verify-lock.js';
 import { upsertInrepoJson, type InrepoJsonEntry } from './inrepo-json/upsert-inrepo-json.js';
 import { upsertPackageJsonInrepo } from './inrepo-json/upsert-package-json-inrepo.js';
 import { inrepoConfigPath } from './paths/inrepo-config-path.js';
 import { moduleDestPath } from './paths/module-dest-path.js';
 import { upsertRootPackageJsonDependency } from './package-json/upsert-vendored-package-ref.js';
+import type { LockModule } from './types/lock-module.js';
 
 // Route Clack output that represents diagnostics to stderr so it composes
 // cleanly with shell pipelines and CI log capture (and matches existing
@@ -75,15 +82,17 @@ function printHelp(): void {
 Usage:
   inrepo                                       (first-time init, then prints help)
   inrepo init
-  inrepo sync
+  inrepo sync [--force]
+  inrepo patch [<name>]
   inrepo verify
   inrepo add [-D|--dev] <name> [--git <url>] [--ref <ref>] [--no-save]
 
 Commands:
   init     Create an empty inrepo config (inrepo.json or package.json "inrepo"); no-op if already initialized.
-  sync     Read inrepo.json (or package.json "inrepo"), clone/update packages, and set package.json dependencies (or devDependencies when "dev": true) to file:inrepo_modules/... entries.
-  verify   Check vendored dirs match inrepo.lock.json (git checkout, or .inrepo-vendor.json after sync strips .git).
-  add      Clone a single package by npm name (or --git URL) into inrepo_modules (updates package.json when package.json exists).
+  sync     Build inrepo_modules from the pinned upstream lockfile state plus any committed files in inrepo_patches/.
+  patch    Capture edits from inrepo_modules back into committed overlay files under inrepo_patches/.
+  verify   Check vendored dirs match the lockfile plus any committed overlays.
+  add      Vendor or refresh a single package pin, then rebuild its generated checkout in inrepo_modules.
 
 Options (add):
   -D, --dev     Wire package.json#devDependencies instead of #dependencies
@@ -91,12 +100,20 @@ Options (add):
   --ref <ref>   Branch, tag, or commit SHA to pin
   --no-save     Do not upsert config and skip first-time setup (by default, add records the entry in inrepo.json — or package.json "inrepo" — after a successful checkout)
 
+Options (sync):
+  --force       Discard uncaptured edits in inrepo_modules after saving a backup under .inrepo/discarded/
+
 Config:
   On the first sync or add in a project without inrepo.json or package.json "inrepo", you are prompted where config should live (or set INREPO_CONFIG=inrepo.json|package.json, or INREPO_NONINTERACTIVE=1 with one of those files already present).
   Prefer inrepo.json at the project root; otherwise package.json field "inrepo".
   Shape: { "packages": [ { "name", "git?", "ref?", "dev?", "exclude?", "keep?" } ], "exclude?", "keep?" } or a bare JSON array of package entries (no root "exclude"/"keep" on bare arrays).
   Optional "keep": non-empty list of relative path prefixes — only those trees (and listed root files) remain; runs before "exclude".
   Each exclude entry is either a relative path (e.g. ".agents") or a slash-style regex "/pattern/flags" matched against paths under the module (forward slashes, e.g. /^(?!docs\\/|packages\\/).*/).
+
+Workflow:
+  Think of inrepo_modules/ as generated output and inrepo_patches/ as your team's fork layer.
+  Keep inrepo_modules/ and .inrepo/ in .gitignore; init recommends or adds those entries for you.
+  Typical loop: inrepo add|sync -> edit files in inrepo_modules/<name>/ -> inrepo patch <name> -> git commit -> teammates pull -> inrepo sync.
 `);
 }
 
@@ -107,6 +124,31 @@ type AddArgs = {
   save: boolean;
   dev: boolean;
 };
+
+type SyncArgs = {
+  force: boolean;
+};
+
+type PatchArgs = {
+  name?: string;
+};
+
+type PackageSpec = {
+  name: string;
+  git?: string;
+  ref?: string;
+  dev?: boolean;
+  exclude?: string[];
+  keep?: string[];
+};
+
+type MaterializeOptions = {
+  mode: 'sync' | 'add';
+  force: boolean;
+  lockEntry?: LockModule;
+};
+
+const EMPTY_TREE_HASH = createHash('sha256').update('', 'utf8').digest('hex');
 
 function parseAddArgs(argv: string[]): AddArgs {
   let save = true;
@@ -143,6 +185,35 @@ function parseAddArgs(argv: string[]): AddArgs {
   return { name: positional[0], save, git, ref, dev };
 }
 
+function parseSyncArgs(argv: string[]): SyncArgs {
+  let force = false;
+  for (const arg of argv) {
+    if (arg === '--force') {
+      force = true;
+      continue;
+    }
+    if (!arg.startsWith('-')) {
+      throw new Error('sync does not take arguments');
+    }
+    throw new Error(`Unknown option: ${arg}`);
+  }
+  return { force };
+}
+
+function parsePatchArgs(argv: string[]): PatchArgs {
+  const positional: string[] = [];
+  for (const arg of argv) {
+    if (arg.startsWith('-')) {
+      throw new Error(`Unknown option: ${arg}`);
+    }
+    positional.push(arg);
+  }
+  if (positional.length > 1) {
+    throw new Error(`Unexpected arguments: ${positional.slice(1).join(' ')}`);
+  }
+  return { name: positional[0] };
+}
+
 function mergedVendorExcludes(
   globalExclude: string[],
   pkg: { exclude?: string[] },
@@ -154,21 +225,64 @@ function mergedVendorKeeps(globalKeep: string[], pkg: { keep?: string[] }): stri
   return [...new Set([...globalKeep, ...(pkg.keep ?? [])])];
 }
 
+function normalizedRef(ref?: string | null): string | undefined {
+  const trimmed = ref?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+async function resolvePackageGitUrl(
+  pkg: PackageSpec,
+  fallbackGitUrl: string | undefined,
+  s: ReturnType<typeof spinner>,
+): Promise<string> {
+  if (pkg.git?.trim()) return pkg.git.trim();
+  if (fallbackGitUrl) return fallbackGitUrl;
+  s.message(`Resolving "${pkg.name}" from npm registry`);
+  return resolveGitUrlFromNpm(pkg.name);
+}
+
+async function makeSiblingStage(dest: string, prefix: string): Promise<string> {
+  const parent = dirname(dest);
+  await mkdir(parent, { recursive: true });
+  return mkdtemp(join(parent, prefix));
+}
+
+function discardTimestamp(): string {
+  return new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
+}
+
+async function snapshotDiscardedModule(cwd: string, name: string, dest: string): Promise<string> {
+  const backup = discardedDirPath(cwd, name, discardTimestamp());
+  await copyTree(dest, backup, { treatMissingAsEmpty: true });
+  return backup;
+}
+
+function uncapturedEditsMessage(name: string): string {
+  return `uncaptured edits in "inrepo_modules/${name}"; run "inrepo patch ${name}" to capture, or "inrepo sync --force" to discard`;
+}
+
+function overlayConflictMessage(name: string): string {
+  return `both "inrepo_patches/${name}" and "inrepo_modules/${name}" changed since the last sync; run "inrepo sync" to rebuild or reconcile them manually`;
+}
+
+function hasTreeDrift(result: Awaited<ReturnType<typeof compareTrees>>): boolean {
+  return (
+    result.added.length > 0 ||
+    result.modified.length > 0 ||
+    result.removed.length > 0 ||
+    result.typeChanges.length > 0
+  );
+}
+
 async function materializePackage(
   cwd: string,
-  pkg: {
-    name: string;
-    git?: string;
-    ref?: string;
-    dev?: boolean;
-    exclude?: string[];
-    keep?: string[];
-  },
+  pkg: PackageSpec,
   globalExclude: string[],
   globalKeep: string[],
+  opts: MaterializeOptions,
 ): Promise<void> {
   const dest = moduleDestPath(cwd, pkg.name);
-  const ref = pkg.ref?.trim() || undefined;
+  const ref = normalizedRef(pkg.ref);
 
   // Pre-checkout warning needs to be on stderr (e2e contract). We emit it
   // before the spinner starts so it doesn't get tangled in spinner re-renders.
@@ -180,49 +294,113 @@ async function materializePackage(
   s.start(`Vendoring "${pkg.name}"`);
 
   try {
-    let gitUrl: string;
-    if (pkg.git?.trim()) {
-      gitUrl = pkg.git.trim();
-    } else {
-      s.message(`Resolving "${pkg.name}" from npm registry`);
-      gitUrl = await resolveGitUrlFromNpm(pkg.name);
-    }
-
-    s.message(`Cleaning ${dest}`);
-    await removeDestIfExists(dest);
-
-    s.message(`Cloning ${gitUrl}${ref ? ` @ ${ref}` : ''}`);
-    const { commit } = await clonePackage({ dest, gitUrl, ref });
-
     const keepList = mergedVendorKeeps(globalKeep, pkg);
-    if (keepList.length > 0) {
-      s.message(`Applying keep filter (${keepList.length} entr${keepList.length === 1 ? 'y' : 'ies'})`);
-      await applyVendorKeep(dest, keepList);
-    }
-
     const excludeList = mergedVendorExcludes(globalExclude, pkg);
-    if (excludeList.length > 0) {
-      s.message(`Applying excludes (${excludeList.length} entr${excludeList.length === 1 ? 'y' : 'ies'})`);
-      await applyVendorExcludes(dest, excludeList);
+    let gitUrl = await resolvePackageGitUrl(pkg, opts.lockEntry?.gitUrl, s);
+    const usePinnedLock =
+      opts.mode === 'sync' &&
+      opts.lockEntry != null &&
+      opts.lockEntry.gitUrl === gitUrl &&
+      opts.lockEntry.ref === (ref ?? null);
+
+    s.message(
+      usePinnedLock
+        ? `Preparing pristine cache @ ${opts.lockEntry?.commit.slice(0, 7)}`
+        : `Preparing pristine cache${ref ? ` @ ${ref}` : ''}`,
+    );
+    const pristine = await ensurePristine({
+      cwd,
+      name: pkg.name,
+      gitUrl,
+      ref: ref ?? null,
+      commit: usePinnedLock ? opts.lockEntry?.commit ?? null : null,
+      keep: keepList,
+      exclude: excludeList,
+    });
+    gitUrl = pristine.gitUrl;
+
+    const overlayHash = await hashTree(overlayDirPath(cwd, pkg.name));
+    const stage = await makeSiblingStage(dest, '.inrepo-next-');
+
+    try {
+      s.message('Assembling generated vendor tree');
+      await assembleModuleTree({
+        cwd,
+        name: pkg.name,
+        pristineRoot: pristine.dir,
+        commit: pristine.commit,
+        gitUrl,
+        targetRoot: stage,
+      });
+
+      const stageHash = await hashTree(stage);
+      const state = await readModuleState(cwd, pkg.name);
+      const currentModuleHash = existsSync(dest) ? await hashTree(dest) : EMPTY_TREE_HASH;
+
+      if (existsSync(dest)) {
+        if (state) {
+          const overlayChanged = overlayHash !== state.overlayHash;
+          const moduleChanged = currentModuleHash !== state.moduleHash;
+          if (!opts.force && overlayChanged && moduleChanged) {
+            throw new Error(overlayConflictMessage(pkg.name));
+          }
+          if (!opts.force && !overlayChanged && moduleChanged) {
+            throw new Error(uncapturedEditsMessage(pkg.name));
+          }
+        } else {
+          const drift = await compareTrees(stage, dest);
+          const hasDrift =
+            drift.added.length > 0 ||
+            drift.modified.length > 0 ||
+            drift.removed.length > 0 ||
+            drift.typeChanges.length > 0;
+          if (!opts.force && hasDrift) {
+            throw new Error(uncapturedEditsMessage(pkg.name));
+          }
+        }
+
+        if (opts.force && currentModuleHash !== stageHash) {
+          s.message('Saving discarded working tree');
+          const backup = await snapshotDiscardedModule(cwd, pkg.name, dest);
+          log.warn(`Saved discarded checkout: ${backup}`, ERR);
+        }
+
+        s.message(`Replacing ${dest}`);
+        await rm(dest, { recursive: true, force: true });
+      }
+
+      await rename(stage, dest);
+      await writeModuleState(cwd, pkg.name, {
+        overlayHash,
+        moduleHash: stageHash,
+      });
+    } catch (error) {
+      await rm(stage, { recursive: true, force: true });
+      throw error;
     }
 
-    s.message('Finalizing vendor checkout');
-    await finalizeVendorCheckout(dest, { commit, gitUrl });
-
-    s.message('Updating lockfile');
-    await upsertLockModule(cwd, pkg.name, {
-      source: pkg.name,
-      gitUrl,
-      commit,
-      ref: ref ?? null,
-      updatedAt: new Date().toISOString(),
-    });
+    if (
+      opts.mode === 'add' ||
+      !opts.lockEntry ||
+      opts.lockEntry.commit !== pristine.commit ||
+      opts.lockEntry.gitUrl !== gitUrl ||
+      opts.lockEntry.ref !== (ref ?? null)
+    ) {
+      s.message('Updating lockfile');
+      await upsertLockModule(cwd, pkg.name, {
+        source: pkg.name,
+        gitUrl,
+        commit: pristine.commit,
+        ref: ref ?? null,
+        updatedAt: new Date().toISOString(),
+      });
+    }
 
     s.message('Updating package.json');
     await upsertRootPackageJsonDependency(cwd, pkg.name, pkg.dev === true);
 
     // Final stop message preserves the e2e contract: `Synced "<name>" @ <sha7>` on stdout.
-    s.stop(`Synced "${pkg.name}" @ ${commit.slice(0, 7)} → ${dest}`);
+    s.stop(`Synced "${pkg.name}" @ ${pristine.commit.slice(0, 7)} → ${dest}`);
   } catch (e) {
     // Keep the spinner failure terse; the full error is printed by the
     // top-level catch in main() so we don't duplicate the message.
@@ -240,7 +418,7 @@ async function cmdInit(cwd: string): Promise<void> {
   await ensureInrepoInitialized(cwd);
   // ensureInrepoInitialized already prints intro/outro on success.
   log.message(
-    'Next: run `inrepo add <name>` to vendor a package, or edit the config and run `inrepo sync`.',
+    'Next: run `inrepo add <name>` to pin a package, or edit the config and run `inrepo sync`; later use `inrepo patch <name>` to capture shared changes.',
   );
 }
 
@@ -252,17 +430,23 @@ async function cmdInit(cwd: string): Promise<void> {
  */
 type DispatchOpts = { suppressBanners?: boolean };
 
-async function cmdSync(cwd: string, opts: DispatchOpts = {}): Promise<void> {
+async function cmdSync(cwd: string, argv: string[] = [], opts: DispatchOpts = {}): Promise<void> {
+  const args = parseSyncArgs(argv);
   if (!opts.suppressBanners) printBanner();
   await ensureInrepoInitialized(cwd);
   const { packages, exclude: globalExclude, keep: globalKeep } = await loadConfig(cwd);
+  const { modules } = await readLockfile(cwd);
   if (packages.length === 0) {
     throw new Error('Config has an empty "packages" array. Add at least one package.');
   }
 
   if (!opts.suppressBanners) intro(`inrepo sync — ${packages.length} package(s)`);
   for (const pkg of packages) {
-    await materializePackage(cwd, pkg, globalExclude, globalKeep);
+    await materializePackage(cwd, pkg, globalExclude, globalKeep, {
+      mode: 'sync',
+      force: args.force,
+      lockEntry: modules[pkg.name],
+    });
   }
   if (!opts.suppressBanners) outro(`Done. ${packages.length} package(s) synced.`);
 }
@@ -307,6 +491,143 @@ async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<boolean>
   return true;
 }
 
+async function cmdPatch(cwd: string, argv: string[], opts: DispatchOpts = {}): Promise<void> {
+  const args = parsePatchArgs(argv);
+  if (!opts.suppressBanners) printBanner();
+
+  let configPackages: PackageSpec[] = [];
+  let globalExclude: string[] = [];
+  let globalKeep: string[] = [];
+  try {
+    const cfg = await loadConfig(cwd);
+    configPackages = cfg.packages;
+    globalExclude = cfg.exclude;
+    globalKeep = cfg.keep;
+  } catch (e) {
+    if (!isLoadConfigNotFoundError(e)) throw e;
+    globalExclude = await loadGlobalExclude(cwd);
+    globalKeep = await loadGlobalKeep(cwd);
+  }
+
+  const { modules } = await readLockfile(cwd);
+  const configByName = new Map(configPackages.map((pkg) => [pkg.name, pkg] as const));
+
+  const packageList: PackageSpec[] = args.name
+    ? [
+        configByName.get(args.name) ?? {
+          name: args.name,
+          git: modules[args.name]?.gitUrl,
+          ref: modules[args.name]?.ref ?? undefined,
+        },
+      ]
+    : configPackages.length > 0
+      ? configPackages
+      : Object.keys(modules)
+          .sort()
+          .map((name) => ({
+            name,
+            git: modules[name]?.gitUrl,
+            ref: modules[name]?.ref ?? undefined,
+          }));
+
+  if (packageList.length === 0) {
+    throw new Error('Nothing to patch: no configured or locked packages.');
+  }
+  if (args.name && !configByName.has(args.name) && !modules[args.name]) {
+    throw new Error(`No configured or locked package named "${args.name}".`);
+  }
+
+  if (!opts.suppressBanners) intro(`inrepo patch — ${packageList.length} package(s)`);
+
+  for (const pkg of packageList) {
+    const lockEntry = modules[pkg.name];
+    if (!lockEntry) {
+      throw new Error(
+        `Cannot patch "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`,
+      );
+    }
+
+    const dest = moduleDestPath(cwd, pkg.name);
+    const s = spinner();
+    s.start(`Capturing "${pkg.name}"`);
+
+    try {
+      if (!existsSync(dest)) {
+        throw new Error(`Missing directory for "${pkg.name}": ${dest}`);
+      }
+
+      const keepList = mergedVendorKeeps(globalKeep, pkg);
+      const excludeList = mergedVendorExcludes(globalExclude, pkg);
+
+      s.message(`Preparing pristine cache @ ${lockEntry.commit.slice(0, 7)}`);
+      const pristine = await ensurePristine({
+        cwd,
+        name: pkg.name,
+        gitUrl: lockEntry.gitUrl,
+        ref: lockEntry.ref,
+        commit: lockEntry.commit,
+        keep: keepList,
+        exclude: excludeList,
+      });
+
+      const state = await readModuleState(cwd, pkg.name);
+      const overlayHashBefore = await hashTree(overlayDirPath(cwd, pkg.name));
+      const moduleHash = await hashTree(dest);
+
+      if (state) {
+        const overlayChanged = overlayHashBefore !== state.overlayHash;
+        const moduleChanged = moduleHash !== state.moduleHash;
+        if (overlayChanged && moduleChanged) {
+          throw new Error(overlayConflictMessage(pkg.name));
+        }
+        if (overlayChanged) {
+          throw new Error(
+            `overlay for "${pkg.name}" changed since the last sync; run "inrepo sync" before patching`,
+          );
+        }
+      } else if (overlayHashBefore !== EMPTY_TREE_HASH) {
+        const stage = await makeSiblingStage(dest, '.inrepo-patch-check-');
+        try {
+          await assembleModuleTree({
+            cwd,
+            name: pkg.name,
+            pristineRoot: pristine.dir,
+            commit: pristine.commit,
+            gitUrl: lockEntry.gitUrl,
+            targetRoot: stage,
+          });
+          const drift = await compareTrees(stage, dest);
+          if (hasTreeDrift(drift)) {
+            throw new Error(
+              `overlay for "${pkg.name}" exists but this checkout has no sync state; run "inrepo sync" before patching`,
+            );
+          }
+        } finally {
+          await rm(stage, { recursive: true, force: true });
+        }
+      }
+
+      s.message('Writing committed overlay');
+      await buildOverlay({
+        pristineRoot: pristine.dir,
+        moduleRoot: dest,
+        overlayRoot: overlayDirPath(cwd, pkg.name),
+      });
+      const overlayHashAfter = await hashTree(overlayDirPath(cwd, pkg.name));
+      await writeModuleState(cwd, pkg.name, {
+        overlayHash: overlayHashAfter,
+        moduleHash,
+      });
+      s.stop(`Patched "${pkg.name}" → ${overlayDirPath(cwd, pkg.name)}`);
+    } catch (e) {
+      s.error(`Failed to patch "${pkg.name}"`);
+      throw e;
+    }
+  }
+
+  if (!opts.suppressBanners) outro(`Done. ${packageList.length} package(s) patched.`);
+}
+
 async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): Promise<void> {
   if (!opts.suppressBanners) printBanner();
   // First-time setup is only required when we're going to persist the entry.
@@ -320,6 +641,7 @@ async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): 
   let globalKeep: string[] = [];
   let pkgExclude: string[] | undefined;
   let pkgKeep: string[] | undefined;
+  const { modules } = await readLockfile(cwd);
   try {
     const cfg = await loadConfig(cwd);
     globalExclude = cfg.exclude;
@@ -347,6 +669,11 @@ async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): 
     },
     globalExclude,
     globalKeep,
+    {
+      mode: 'add',
+      force: false,
+      lockEntry: modules[args.name],
+    },
   );
 
   if (args.save) {
@@ -397,7 +724,7 @@ async function cmdInteractive(cwd: string): Promise<void> {
   printBanner();
   intro('inrepo');
 
-  type Action = 'sync' | 'add' | 'verify' | 'exit';
+  type Action = 'sync' | 'add' | 'verify' | 'patch' | 'exit';
   // The default action is always `add`. Sync is destructive enough that it
   // should be a deliberate choice, never something a stray Enter triggers.
   const action = await select<Action>({
@@ -419,6 +746,11 @@ async function cmdInteractive(cwd: string): Promise<void> {
         label: 'Verify lockfile',
         hint: 'check vendored dirs match the lockfile',
       },
+      {
+        value: 'patch',
+        label: 'Patch packages',
+        hint: 'capture edits into inrepo_patches',
+      },
       { value: 'exit', label: 'Exit' },
     ],
   });
@@ -437,7 +769,7 @@ async function cmdInteractive(cwd: string): Promise<void> {
   // dangles on stdout while main() prints the error on stderr.
   try {
     if (action === 'sync') {
-      await cmdSync(cwd, { suppressBanners: true });
+      await cmdSync(cwd, [], { suppressBanners: true });
       outro('Sync complete.');
     } else if (action === 'verify') {
       const ok = await cmdVerify(cwd, { suppressBanners: true });
@@ -446,6 +778,9 @@ async function cmdInteractive(cwd: string): Promise<void> {
       } else {
         cancel('inrepo verify: lockfile and checkouts disagree.');
       }
+    } else if (action === 'patch') {
+      await cmdPatch(cwd, [], { suppressBanners: true });
+      outro('Patch capture complete.');
     } else {
       const args = await promptAddArgs({ suppressBanners: true });
       if (args == null) {
@@ -545,8 +880,9 @@ async function main(): Promise<void> {
       if (rest.length) throw new Error('init does not take arguments');
       await cmdInit(cwd);
     } else if (cmd === 'sync') {
-      if (rest.length) throw new Error('sync does not take arguments');
-      await cmdSync(cwd);
+      await cmdSync(cwd, rest);
+    } else if (cmd === 'patch') {
+      await cmdPatch(cwd, rest);
     } else if (cmd === 'verify') {
       if (rest.length) throw new Error('verify does not take arguments');
       await cmdVerify(cwd);

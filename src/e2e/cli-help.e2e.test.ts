@@ -56,6 +56,8 @@ describe('CLI: help and argument validation (e2e)', () => {
     expect(existsSync(join(cwd, 'inrepo.json'))).toBe(true);
     const raw = await readFile(join(cwd, 'inrepo.json'), 'utf8');
     expect(JSON.parse(raw).packages).toEqual([]);
+    expect(await readFile(join(cwd, '.gitignore'), 'utf8')).toBe('inrepo_modules/\n.inrepo/\n');
+    expect(r.stdout).toMatch(/\.gitignore/);
   });
 
   test('init is a no-op when already initialized', async () => {

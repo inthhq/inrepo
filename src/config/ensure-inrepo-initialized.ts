@@ -1,6 +1,7 @@
-import { cancel, intro, isCancel, outro, select } from '@clack/prompts';
+import { cancel, confirm, intro, isCancel, log, outro, select } from '@clack/prompts';
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
 import { defaultInrepoJsonSchemaRef } from '../inrepo-json/default-inrepo-json-schema-ref.js';
 import { inrepoConfigPath } from '../paths/inrepo-config-path.js';
@@ -11,6 +12,10 @@ const STUB = `{
   "$schema": "${defaultInrepoJsonSchemaRef}"
 }
 `;
+
+const GITIGNORE_LINES = ['inrepo_modules/', '.inrepo/'] as const;
+const GITIGNORE_RECOMMENDATION =
+  'Keep "inrepo_modules/" and ".inrepo/" in .gitignore (init recommends or adds them; never ignore "inrepo_patches/").';
 
 function packageJsonHasInrepoKey(cwd: string): boolean {
   const pkgPath = packageJsonPath(cwd);
@@ -53,6 +58,38 @@ async function writePackageJsonInrepoStub(cwd: string): Promise<void> {
   if (pkg.inrepo != null) return;
   pkg.inrepo = { packages: [] };
   await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
+}
+
+async function appendGitignoreLines(
+  cwd: string,
+  opts: { interactive: boolean },
+): Promise<string[]> {
+  const path = join(cwd, '.gitignore');
+  const raw = existsSync(path) ? await readFile(path, 'utf8') : '';
+  const existing = new Set(raw.split(/\r?\n/));
+  const missing = GITIGNORE_LINES.filter((line) => !existing.has(line));
+  if (missing.length === 0) return [];
+
+  if (opts.interactive) {
+    const shouldAppend = await confirm({
+      message: `Add these lines to .gitignore?\n${missing.map((line) => `  ${line}`).join('\n')}`,
+      initialValue: true,
+    });
+    if (isCancel(shouldAppend) || shouldAppend !== true) {
+      return [];
+    }
+  }
+
+  const prefix = raw === '' ? '' : raw.endsWith('\n') ? '' : '\n';
+  await writeFile(path, `${raw}${prefix}${missing.join('\n')}\n`, 'utf8');
+  return missing;
+}
+
+function logGitignoreRecommendation(added: string[]): void {
+  if (added.length > 0) {
+    log.info(`Added to .gitignore: ${added.join(', ')}`);
+  }
+  log.message(GITIGNORE_RECOMMENDATION);
 }
 
 function isNonInteractive(): boolean {
@@ -121,6 +158,8 @@ export async function ensureInrepoInitialized(cwd: string): Promise<void> {
     } else {
       await writeInrepoJsonStub(cwd);
     }
+    const added = await appendGitignoreLines(cwd, { interactive: false });
+    logGitignoreRecommendation(added);
     return;
   }
 
@@ -161,9 +200,13 @@ export async function ensureInrepoInitialized(cwd: string): Promise<void> {
 
   if (choice === 'inrepo.json') {
     await writeInrepoJsonStub(cwd);
+    const added = await appendGitignoreLines(cwd, { interactive: true });
     outro('Created inrepo.json with an empty packages list.');
+    logGitignoreRecommendation(added);
   } else {
     await writePackageJsonInrepoStub(cwd);
+    const added = await appendGitignoreLines(cwd, { interactive: true });
     outro('Added "inrepo" to package.json.');
+    logGitignoreRecommendation(added);
   }
 }
