@@ -13,9 +13,15 @@ const STUB = `{
 }
 `;
 
-const GITIGNORE_LINES = ['inrepo_modules/', '.inrepo/'] as const;
+const GITIGNORE_LINES = ['/inrepo_modules/', '/.inrepo/'] as const;
 const GITIGNORE_RECOMMENDATION =
-  'Keep "inrepo_modules/" and ".inrepo/" in .gitignore (init recommends or adds them; never ignore "inrepo_patches/").';
+  'Keep "/inrepo_modules/" and "/.inrepo/" in .gitignore (init recommends or adds them; never ignore "inrepo_patches/").';
+
+function normalizeGitignoreLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return trimmed;
+  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
+}
 
 function packageJsonHasInrepoKey(cwd: string): boolean {
   const pkgPath = packageJsonPath(cwd);
@@ -52,7 +58,7 @@ async function writePackageJsonInrepoStub(cwd: string): Promise<void> {
     const err = e instanceof Error ? e : new Error(String(e));
     throw new Error(`Invalid package.json: ${err.message}`);
   }
-  if (pkg == null || typeof pkg !== 'object') {
+  if (pkg == null || typeof pkg !== 'object' || Array.isArray(pkg)) {
     throw new Error('package.json must contain a JSON object');
   }
   if (pkg.inrepo != null) return;
@@ -66,8 +72,8 @@ async function appendGitignoreLines(
 ): Promise<string[]> {
   const path = join(cwd, '.gitignore');
   const raw = existsSync(path) ? await readFile(path, 'utf8') : '';
-  const existing = new Set(raw.split(/\r?\n/));
-  const missing = GITIGNORE_LINES.filter((line) => !existing.has(line));
+  const existing = new Set(raw.split(/\r?\n/).map(normalizeGitignoreLine));
+  const missing = GITIGNORE_LINES.filter((line) => !existing.has(normalizeGitignoreLine(line)));
   if (missing.length === 0) return [];
 
   if (opts.interactive) {

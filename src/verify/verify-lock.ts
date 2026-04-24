@@ -179,10 +179,12 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         errors.push(`"${name}": could not read ${VENDOR_MARKER}: ${err.message}`);
+        await rm(stage, { recursive: true, force: true });
         continue;
       }
       if (!marker) {
         errors.push(`"${name}": invalid or empty ${VENDOR_MARKER}`);
+        await rm(stage, { recursive: true, force: true });
         continue;
       }
       if (marker.commit !== entry.commit.toLowerCase()) {

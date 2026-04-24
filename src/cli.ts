@@ -37,6 +37,7 @@ import { readModuleState, writeModuleState } from './overlay/module-state.js';
 import { discardedDirPath, overlayDirPath } from './overlay/overlay-paths.js';
 import { hashTree } from './overlay/tree-hash.js';
 import { copyTree } from './overlay/tree-utils.js';
+import { normalizeGithubHttpsUrl } from './registry/normalize-github-https-url.js';
 import { verifyLock } from './verify/verify-lock.js';
 import { upsertInrepoJson, type InrepoJsonEntry } from './inrepo-json/upsert-inrepo-json.js';
 import { upsertPackageJsonInrepo } from './inrepo-json/upsert-package-json-inrepo.js';
@@ -230,6 +231,32 @@ function normalizedRef(ref?: string | null): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function normalizeGitUrlForComparison(raw: string | undefined | null): string | null {
+  if (!raw?.trim()) return null;
+
+  const trimmed = raw.trim().replace(/^git\+/i, '');
+  const github = normalizeGithubHttpsUrl(trimmed);
+  if (github) return github;
+
+  const scpLike = /^(?<user>[^@]+@)?(?<host>[^:/]+):(?<path>.+)$/.exec(trimmed);
+  if (scpLike?.groups) {
+    const user = scpLike.groups.user ?? '';
+    const host = scpLike.groups.host.toLowerCase();
+    const path = scpLike.groups.path.replace(/\.git$/i, '');
+    return `${user}${host}:${path}`;
+  }
+
+  try {
+    const parsed = new URL(trimmed);
+    parsed.hostname = parsed.hostname.toLowerCase();
+    parsed.pathname = parsed.pathname.replace(/\.git$/i, '');
+    const normalized = parsed.toString();
+    return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
+  } catch {
+    return trimmed.replace(/\.git$/i, '');
+  }
+}
+
 async function resolvePackageGitUrl(
   pkg: PackageSpec,
   fallbackGitUrl: string | undefined,
@@ -297,10 +324,11 @@ async function materializePackage(
     const keepList = mergedVendorKeeps(globalKeep, pkg);
     const excludeList = mergedVendorExcludes(globalExclude, pkg);
     let gitUrl = await resolvePackageGitUrl(pkg, opts.lockEntry?.gitUrl, s);
+    const resolvedLockGitUrl = normalizeGitUrlForComparison(opts.lockEntry?.gitUrl);
     const usePinnedLock =
       opts.mode === 'sync' &&
       opts.lockEntry != null &&
-      opts.lockEntry.gitUrl === gitUrl &&
+      resolvedLockGitUrl === normalizeGitUrlForComparison(gitUrl) &&
       opts.lockEntry.ref === (ref ?? null);
 
     s.message(

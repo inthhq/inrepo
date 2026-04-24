@@ -53,7 +53,7 @@ describe('ensureInrepoInitialized (non-interactive)', () => {
     const raw = await readFile(join(cwd, 'inrepo.json'), 'utf8');
     const parsed = JSON.parse(raw);
     expect(parsed).toEqual({ packages: [], $schema: defaultInrepoJsonSchemaRef });
-    expect(await readFile(join(cwd, '.gitignore'), 'utf8')).toBe('inrepo_modules/\n.inrepo/\n');
+    expect(await readFile(join(cwd, '.gitignore'), 'utf8')).toBe('/inrepo_modules/\n/.inrepo/\n');
   });
 
   test('INREPO_CONFIG=package.json requires an existing package.json', async () => {
@@ -74,7 +74,22 @@ describe('ensureInrepoInitialized (non-interactive)', () => {
     const pkg = JSON.parse(await readFile(join(cwd, 'package.json'), 'utf8'));
     expect(pkg.inrepo).toEqual({ packages: [] });
     expect(pkg.name).toBe('host');
-    expect(await readFile(join(cwd, '.gitignore'), 'utf8')).toBe('inrepo_modules/\n.inrepo/\n');
+    expect(await readFile(join(cwd, '.gitignore'), 'utf8')).toBe('/inrepo_modules/\n/.inrepo/\n');
+  });
+
+  test('does not duplicate root-anchored .gitignore entries', async () => {
+    await writeFile(join(cwd, '.gitignore'), '/inrepo_modules/\n/.inrepo/\n', 'utf8');
+    process.env.INREPO_CONFIG = 'inrepo.json';
+    await ensureInrepoInitialized(cwd);
+    expect(await readFile(join(cwd, '.gitignore'), 'utf8')).toBe('/inrepo_modules/\n/.inrepo/\n');
+  });
+
+  test('rejects array-valued package.json roots for package.json setup', async () => {
+    await writeFile(join(cwd, 'package.json'), '[]\n', 'utf8');
+    process.env.INREPO_CONFIG = 'package.json';
+    await expect(ensureInrepoInitialized(cwd)).rejects.toThrow(
+      /Invalid package\.json: expected a JSON object at the root/,
+    );
   });
 
   test('INREPO_CONFIG is case-insensitive', async () => {

@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
+import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { verifyLock } from './verify-lock.js';
 import { writeLockfile } from '../lockfile/write-lockfile.js';
@@ -131,6 +132,19 @@ describe('verifyLock', () => {
     const r = await verifyLock(cwd);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.errors.some((line) => /vendored tree does not match lockfile \+ overlay/.test(line))).toBe(true);
+  });
+
+  test('cleans staged verify trees when the vendor marker is invalid', async () => {
+    await seedGeneratedModule(cwd, fx!);
+    await writeFile(join(cwd, 'inrepo_modules', 'upstream', '.inrepo-vendor.json'), 'null\n', 'utf8');
+
+    const r = await verifyLock(cwd);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors[0]).toMatch(/invalid or empty \.inrepo-vendor\.json/);
+
+    const verifyRoot = join(cwd, '.inrepo', 'verify');
+    expect(existsSync(verifyRoot)).toBe(true);
+    expect(await readdir(verifyRoot)).toEqual([]);
   });
 
   test('passes for a real git checkout when HEAD and origin match the lock entry', async () => {

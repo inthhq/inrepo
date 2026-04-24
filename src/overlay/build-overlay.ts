@@ -85,9 +85,7 @@ export async function buildOverlay(opts: {
     return { compare, deletions };
   } finally {
     if (existsSync(stageRoot)) {
-      await import('node:fs/promises').then(({ rm }) =>
-        rm(stageRoot, { recursive: true, force: true }),
-      );
+      await rm(stageRoot, { recursive: true, force: true });
     }
   }
 }
