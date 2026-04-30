@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   bootstrapHostPackageJson,
@@ -209,6 +209,32 @@ for (const mode of MODES) {
 
       const cfg = await readConfig(cwd, mode);
       expect(cfg.packages).toEqual([]);
+    });
+
+    test('add recovers a dangling untracked checkout by snapshotting and replacing it', async () => {
+      await writeConfig(cwd, mode, { packages: [] });
+      const moduleDir = join(cwd, 'inrepo_modules', 'upstream');
+      await mkdir(moduleDir, { recursive: true });
+      await writeFile(join(moduleDir, 'local.txt'), 'left behind by an interrupted add\n', 'utf8');
+
+      const r = await runCli(['add', '--git', fx.url, 'upstream'], {
+        cwd,
+        env: envFor(mode),
+      });
+      expect(r.exitCode).toBe(0);
+      expect(r.stderr).toMatch(/Saved checkout backup:/);
+      expect(existsSync(join(moduleDir, 'README.md'))).toBe(true);
+      expect(existsSync(join(moduleDir, 'local.txt'))).toBe(false);
+
+      const backupRoot = join(cwd, '.inrepo', 'backups');
+      const backups = await readdir(backupRoot);
+      expect(backups.length).toBe(1);
+      expect(await readFile(join(backupRoot, backups[0], 'local.txt'), 'utf8')).toBe(
+        'left behind by an interrupted add\n',
+      );
+
+      const cfg = await readConfig(cwd, mode);
+      expect(cfg.packages).toEqual([{ name: 'upstream', git: fx.url }]);
     });
   });
 }

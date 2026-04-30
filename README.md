@@ -61,6 +61,7 @@ Think about the on-disk state in three layers:
 - **`inrepo.lock.json`** chooses the exact upstream commit.
 - **`inrepo_patches/<name>/`** stores your team's committed customizations as real files plus a `.inrepo-deletions` list.
 - **`inrepo_modules/<name>/`** is generated output built from those two inputs.
+- **`.inrepo/cache/`** and **`.inrepo/backups/`** are private cache and recovery state, not committed source.
 
 That means the usual collaboration loop is:
 

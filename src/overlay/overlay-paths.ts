@@ -45,19 +45,19 @@ export function overlayDeletionsPath(cwd: string, name: string): string {
   return join(overlayDirPath(cwd, name), '.inrepo-deletions');
 }
 
-export function pristineDirPath(cwd: string, name: string): string {
-  return packageTreePath(join(cwd, '.inrepo', 'pristine'), name);
+export function cacheDirPath(cwd: string, name: string): string {
+  return packageTreePath(join(cwd, '.inrepo', 'cache'), name);
 }
 
-export function pristineMetaPath(cwd: string, name: string): string {
-  return join(pristineDirPath(cwd, name), '.pristine-meta.json');
+export function cacheMetaPath(cwd: string, name: string): string {
+  return join(cacheDirPath(cwd, name), '.cache-meta.json');
 }
 
 export function moduleStatePath(cwd: string, name: string): string {
   return packageTreePath(join(cwd, '.inrepo', 'state'), name) + '.json';
 }
 
-export function discardedDirPath(cwd: string, name: string, iso: string): string {
+export function backupDirPath(cwd: string, name: string, iso: string): string {
   const safeName = name.replaceAll('/', '__');
-  return join(cwd, '.inrepo', 'discarded', `${safeName}-${iso}`);
+  return join(cwd, '.inrepo', 'backups', `${safeName}-${iso}`);
 }
