@@ -81,7 +81,7 @@ for (const mode of MODES) {
       expect(r.stderr).toMatch(/uncaptured edits in "inrepo_modules\/upstream"/);
     });
 
-    test('sync --force snapshots discarded work before rebuilding', async () => {
+    test('sync --force snapshots a backup before rebuilding', async () => {
       expect((await runCli(['sync'], { cwd, env: envFor(mode) })).exitCode).toBe(0);
 
       const moduleDir = join(cwd, 'inrepo_modules', 'upstream');
@@ -90,11 +90,11 @@ for (const mode of MODES) {
       const r = await runCli(['sync', '--force'], { cwd, env: envFor(mode) });
       expect(r.exitCode).toBe(0);
 
-      const discardedRoot = join(cwd, '.inrepo', 'discarded');
-      const backups = await readdir(discardedRoot);
+      const backupRoot = join(cwd, '.inrepo', 'backups');
+      const backups = await readdir(backupRoot);
       expect(backups.length).toBe(1);
       expect(
-        await readFile(join(discardedRoot, backups[0], 'src', 'index.ts'), 'utf8'),
+        await readFile(join(backupRoot, backups[0], 'src', 'index.ts'), 'utf8'),
       ).toBe('export const v = 55;\n');
     });
 

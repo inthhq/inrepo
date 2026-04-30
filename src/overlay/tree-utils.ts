@@ -26,7 +26,7 @@ export type TreeEntry = {
 export const DEFAULT_IGNORED_BASENAMES = new Set([
   '.git',
   '.inrepo-vendor.json',
-  '.pristine-meta.json',
+  '.cache-meta.json',
 ]);
 
 export function isExecutableMode(mode: number): boolean {

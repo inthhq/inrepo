@@ -5,7 +5,7 @@ import { applyVendorExcludes } from '../git/apply-vendor-excludes.js';
 import { applyVendorKeep } from '../git/apply-vendor-keep.js';
 import { clonePackage } from '../git/clone-package.js';
 import { filtersHash } from './filters-hash.js';
-import { pristineDirPath, pristineMetaPath } from './overlay-paths.js';
+import { cacheDirPath, cacheMetaPath } from './overlay-paths.js';
 
 type PristineMeta = {
   commit: string;
@@ -19,10 +19,10 @@ function parsePristineMeta(raw: string, path: string): PristineMeta {
     parsed = JSON.parse(raw) as unknown;
   } catch (e) {
     const err = e instanceof Error ? e : new Error(String(e));
-    throw new Error(`Invalid pristine metadata in ${path}: ${err.message}`);
+    throw new Error(`Invalid cache metadata in ${path}: ${err.message}`);
   }
   if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error(`Invalid pristine metadata in ${path}: expected an object`);
+    throw new Error(`Invalid cache metadata in ${path}: expected an object`);
   }
   const rec = parsed as Record<string, unknown>;
   if (
@@ -30,7 +30,7 @@ function parsePristineMeta(raw: string, path: string): PristineMeta {
     typeof rec.filtersHash !== 'string' ||
     typeof rec.gitUrl !== 'string'
   ) {
-    throw new Error(`Invalid pristine metadata in ${path}: missing required fields`);
+    throw new Error(`Invalid cache metadata in ${path}: missing required fields`);
   }
   return {
     commit: rec.commit,
@@ -53,8 +53,8 @@ export async function ensurePristine(opts: {
   keep: string[];
   exclude: string[];
 }): Promise<{ dir: string; commit: string; gitUrl: string }> {
-  const dir = pristineDirPath(opts.cwd, opts.name);
-  const metaPath = pristineMetaPath(opts.cwd, opts.name);
+  const dir = cacheDirPath(opts.cwd, opts.name);
+  const metaPath = cacheMetaPath(opts.cwd, opts.name);
   const expectedFiltersHash = filtersHash(opts.keep, opts.exclude);
   const cachedMeta = await readPristineMeta(metaPath);
 
@@ -69,10 +69,10 @@ export async function ensurePristine(opts: {
     return { dir, commit: cachedMeta.commit, gitUrl: cachedMeta.gitUrl };
   }
 
-  const parent = join(opts.cwd, '.inrepo', 'pristine');
+  const parent = join(opts.cwd, '.inrepo', 'cache');
   await mkdir(parent, { recursive: true });
   const stage = await mkdtemp(join(parent, '.tmp-'));
-  const stageMetaPath = join(stage, '.pristine-meta.json');
+  const stageMetaPath = join(stage, '.cache-meta.json');
 
   try {
     const cloneRef = opts.commit ?? opts.ref ?? undefined;

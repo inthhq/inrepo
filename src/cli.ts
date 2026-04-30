@@ -34,7 +34,7 @@ import { buildOverlay } from './overlay/build-overlay.js';
 import { ensurePristine } from './overlay/cache.js';
 import { compareTrees } from './overlay/compare-trees.js';
 import { readModuleState, writeModuleState } from './overlay/module-state.js';
-import { discardedDirPath, overlayDirPath } from './overlay/overlay-paths.js';
+import { backupDirPath, overlayDirPath } from './overlay/overlay-paths.js';
 import { hashTree } from './overlay/tree-hash.js';
 import { copyTree } from './overlay/tree-utils.js';
 import { normalizeGithubHttpsUrl } from './registry/normalize-github-https-url.js';
@@ -102,7 +102,7 @@ Options (add):
   --no-save     Do not upsert config and skip first-time setup (by default, add records the entry in inrepo.json — or package.json "inrepo" — after a successful checkout)
 
 Options (sync):
-  --force       Discard uncaptured edits in inrepo_modules after saving a backup under .inrepo/discarded/
+  --force       Discard uncaptured edits in inrepo_modules after saving a backup under .inrepo/backups/
 
 Config:
   On the first sync or add in a project without inrepo.json or package.json "inrepo", you are prompted where config should live (or set INREPO_CONFIG=inrepo.json|package.json, or INREPO_NONINTERACTIVE=1 with one of those files already present).
@@ -274,12 +274,12 @@ async function makeSiblingStage(dest: string, prefix: string): Promise<string> {
   return mkdtemp(join(parent, prefix));
 }
 
-function discardTimestamp(): string {
+function backupTimestamp(): string {
   return new Date().toISOString().replaceAll(':', '-').replaceAll('.', '-');
 }
 
-async function snapshotDiscardedModule(cwd: string, name: string, dest: string): Promise<string> {
-  const backup = discardedDirPath(cwd, name, discardTimestamp());
+async function snapshotModuleBackup(cwd: string, name: string, dest: string): Promise<string> {
+  const backup = backupDirPath(cwd, name, backupTimestamp());
   await copyTree(dest, backup, { treatMissingAsEmpty: true });
   return backup;
 }
@@ -333,8 +333,8 @@ async function materializePackage(
 
     s.message(
       usePinnedLock
-        ? `Preparing pristine cache @ ${opts.lockEntry?.commit.slice(0, 7)}`
-        : `Preparing pristine cache${ref ? ` @ ${ref}` : ''}`,
+        ? `Preparing upstream cache @ ${opts.lockEntry?.commit.slice(0, 7)}`
+        : `Preparing upstream cache${ref ? ` @ ${ref}` : ''}`,
     );
     const pristine = await ensurePristine({
       cwd,
@@ -388,9 +388,9 @@ async function materializePackage(
         }
 
         if (opts.force && currentModuleHash !== stageHash) {
-          s.message('Saving discarded working tree');
-          const backup = await snapshotDiscardedModule(cwd, pkg.name, dest);
-          log.warn(`Saved discarded checkout: ${backup}`, ERR);
+          s.message('Saving working tree backup');
+          const backup = await snapshotModuleBackup(cwd, pkg.name, dest);
+          log.warn(`Saved checkout backup: ${backup}`, ERR);
         }
 
         s.message(`Replacing ${dest}`);
@@ -587,7 +587,7 @@ async function cmdPatch(cwd: string, argv: string[], opts: DispatchOpts = {}): P
       const keepList = mergedVendorKeeps(globalKeep, pkg);
       const excludeList = mergedVendorExcludes(globalExclude, pkg);
 
-      s.message(`Preparing pristine cache @ ${lockEntry.commit.slice(0, 7)}`);
+      s.message(`Preparing upstream cache @ ${lockEntry.commit.slice(0, 7)}`);
       const pristine = await ensurePristine({
         cwd,
         name: pkg.name,
@@ -669,12 +669,14 @@ async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): 
   let globalKeep: string[] = [];
   let pkgExclude: string[] | undefined;
   let pkgKeep: string[] | undefined;
+  let hasConfigEntry = false;
   const { modules } = await readLockfile(cwd);
   try {
     const cfg = await loadConfig(cwd);
     globalExclude = cfg.exclude;
     globalKeep = cfg.keep;
     const entry = cfg.packages.find((p) => p.name === args.name);
+    hasConfigEntry = entry != null;
     pkgExclude = entry?.exclude;
     pkgKeep = entry?.keep;
   } catch (e) {
@@ -699,7 +701,10 @@ async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): 
     globalKeep,
     {
       mode: 'add',
-      force: false,
+      force:
+        !hasConfigEntry &&
+        !modules[args.name] &&
+        existsSync(moduleDestPath(cwd, args.name)),
       lockEntry: modules[args.name],
     },
   );

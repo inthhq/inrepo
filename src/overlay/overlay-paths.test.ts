@@ -1,10 +1,10 @@
 import { describe, expect, test } from 'bun:test';
-import { moduleStatePath, overlayDirPath, pristineDirPath } from './overlay-paths.js';
+import { cacheDirPath, moduleStatePath, overlayDirPath } from './overlay-paths.js';
 
 describe('overlay paths', () => {
   test('builds paths for valid package names', () => {
     expect(overlayDirPath('/repo', 'left-pad')).toBe('/repo/inrepo_patches/left-pad');
-    expect(pristineDirPath('/repo', '@scope/pkg')).toBe('/repo/.inrepo/pristine/@scope/pkg');
+    expect(cacheDirPath('/repo', '@scope/pkg')).toBe('/repo/.inrepo/cache/@scope/pkg');
     expect(moduleStatePath('/repo', '@scope/pkg')).toBe('/repo/.inrepo/state/@scope/pkg.json');
   });
 
