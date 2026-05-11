@@ -16,7 +16,9 @@
   },
   "files": [
     "dist",
-    "inrepo.schema.json"
+    "inrepo.schema.json",
+    "AGENTS.md",
+    "docs"
   ],
   "packageManager": "bun@1.3.12",
   "scripts": {
@@ -25,6 +27,9 @@
     "ci:publish": "bunx changeset tag && bun publish",
     "ci:version": "changeset version",
     "dev": "rolldown -c rolldown.config.ts --watch",
+    "docs:bundle": "node ./node_modules/leadtype/dist/cli.js generate --bundle --src . --docs-dir docs-src --out . --name inrepo",
+    "docs:check": "node ./node_modules/leadtype/dist/cli.js lint docs-src --max-warnings 0",
+    "prepack": "bun run build && bun run docs:bundle",
     "release": "bun run build && changeset publish",
     "typecheck": "tsc --noEmit",
     "test": "bun test ./src",
@@ -52,6 +57,7 @@
   },
   "dependencies": {
     "@clack/prompts": "^1.2.0",
+    "leadtype": "^0.1.0",
     "safe-regex": "^2.1.1"
   }
 }
