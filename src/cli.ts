@@ -65,7 +65,7 @@ const BANNER_LINES = [
   '                                  ░██',
   '                                  ░██',
   '',
-].map((line) => line.padEnd(BANNER_WIDTH, ' '));
+];
 
 // Track whether we've already shown the banner in this process so nested
 // dispatch (e.g. `cmdInteractive` → `cmdSync`) doesn't print it twice even if
