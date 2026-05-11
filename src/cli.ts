@@ -51,20 +51,21 @@ import type { LockModule } from './types/lock-module.js';
 // e2e expectations like `r.stderr` matching warnings/errors).
 const ERR = { output: process.stderr } as const;
 
-// Trailing whitespace is part of the artwork (each row is a fixed width); keep
-// the lines verbatim and disable the editor's whitespace-trimming instinct by
-// concatenating with explicit `\n` rather than a template literal.
+// Pad at runtime so the banner prints fixed-width terminal blanks without
+// relying on invisible trailing spaces in the source file.
+const BANNER_WIDTH = 58;
 const BANNER_LINES = [
-  '░██                                                     ',
-  '                                                        ',
-  '░██░████████  ░██░████  ░███████  ░████████   ░███████  ',
-  '░██░██    ░██ ░███     ░██    ░██ ░██    ░██ ░██    ░██ ',
-  '░██░██    ░██ ░██      ░█████████ ░██    ░██ ░██    ░██ ',
-  '░██░██    ░██ ░██      ░██        ░███   ░██ ░██    ░██ ',
-  '░██░██    ░██ ░██       ░███████  ░██░█████   ░███████  ',
-  '                                  ░██                   ',
-  '                                  ░██                   ',
-];
+  '░██',
+  '',
+  '░██░████████  ░██░████  ░███████  ░████████   ░███████',
+  '░██░██    ░██ ░███     ░██    ░██ ░██    ░██ ░██    ░██',
+  '░██░██    ░██ ░██      ░█████████ ░██    ░██ ░██    ░██',
+  '░██░██    ░██ ░██      ░██        ░███   ░██ ░██    ░██',
+  '░██░██    ░██ ░██       ░███████  ░██░█████   ░███████',
+  '                                  ░██',
+  '                                  ░██',
+  '',
+].map((line) => line.padEnd(BANNER_WIDTH, ' '));
 
 // Track whether we've already shown the banner in this process so nested
 // dispatch (e.g. `cmdInteractive` → `cmdSync`) doesn't print it twice even if
