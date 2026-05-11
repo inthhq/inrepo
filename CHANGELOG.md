@@ -1,5 +1,11 @@
 # inrepo
 
+## 0.0.7
+
+### Patch Changes
+
+- 56e7038: Update the CLI banner artwork, generate its fixed-width terminal padding at runtime, and ask interactive init users if they want to open GitHub to star inrepo.
+
 ## 0.0.6
 
 ### Patch Changes
