@@ -54,40 +54,40 @@ npx inrepo --help
 Initialize config:
 
 ```bash
-inrepo init
+npx inrepo init
 ```
 
 Add and pin a package:
 
 ```bash
-inrepo add <package>
+npx inrepo add <package>
 ```
 
 If npm metadata does not point to the right GitHub repository, pass the git URL yourself:
 
 ```bash
-inrepo add <package> --git https://github.com/owner/repo --ref main
+npx inrepo add <package> --git https://github.com/owner/repo --ref main
 ```
 
 Then work like this:
 
 ```bash
-inrepo sync
+npx inrepo sync
 # edit files in inrepo_modules/<package>/
-inrepo patch <package>
+npx inrepo patch <package>
 git commit
 ```
 
 Teammates can reproduce the generated package with:
 
 ```bash
-inrepo sync
+npx inrepo sync
 ```
 
 CI can check that nothing drifted:
 
 ```bash
-inrepo verify
+npx inrepo verify
 ```
 
 ## The files
@@ -105,7 +105,7 @@ Do not commit these:
 - `inrepo_modules/<package>/` is rebuilt by `inrepo sync`.
 - `.inrepo/` stores cache, state, and backups.
 
-The generated module is wired into your root `package.json` as a local `file:inrepo_modules/<package>` dependency. Use `inrepo add <package> -D` or `"dev": true` in config when it should land in `devDependencies`.
+The generated module is wired into your root `package.json` as a local `file:inrepo_modules/<package>` dependency. Use `npx inrepo add <package> -D` or `"dev": true` in config when it should land in `devDependencies`.
 
 ## Config
 
@@ -141,7 +141,7 @@ You can also put the same object under `package.json#inrepo`.
 
 `inrepo` tries not to silently destroy local work.
 
-During sync, it compares the current generated module and overlay against recorded state. If `inrepo_modules/` changed but the overlay did not, it treats that as uncaptured work and asks you to run `inrepo patch`. If both changed, it reports a conflict. `sync --force` can discard generated edits, but saves a backup under `.inrepo/backups/`.
+During sync, it compares the current generated module and overlay against recorded state. If `inrepo_modules/` changed but the overlay did not, it treats that as uncaptured work and asks you to run `npx inrepo patch`. If both changed, it reports a conflict. `npx inrepo sync --force` can discard generated edits, but saves a backup under `.inrepo/backups/`. If you installed the CLI globally, the same command is `inrepo sync --force`.
 
 Patch capture is guarded too. `inrepo patch` compares your current vendored module against the pristine upstream tree, writes changed files into `inrepo_patches/`, and records deleted files in `.inrepo-deletions`.
 
@@ -160,7 +160,7 @@ node dist/cli.mjs --help
 - [Overview](./docs/index.md)
 - [Quickstart](./docs/quickstart.md)
 - [Config reference](./docs/config.md)
-- CLI usage: `inrepo --help`
+- CLI usage: `npx inrepo --help`
 
 ## Support
 
