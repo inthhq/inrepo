@@ -1,4 +1,5 @@
 import { cancel, confirm, intro, isCancel, log, outro, select } from '@clack/prompts';
+import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -16,6 +17,7 @@ const STUB = `{
 const GITIGNORE_LINES = ['/inrepo_modules/', '/.inrepo/'] as const;
 const GITIGNORE_RECOMMENDATION =
   'Keep "/inrepo_modules/" and "/.inrepo/" in .gitignore (init recommends or adds them; never ignore "inrepo_patches/").';
+const GITHUB_REPO_URL = 'https://github.com/inthhq/inrepo';
 
 function normalizeGitignoreLine(line: string): string {
   const trimmed = line.trim();
@@ -96,6 +98,35 @@ function logGitignoreRecommendation(added: string[]): void {
     log.info(`Added to .gitignore: ${added.join(', ')}`);
   }
   log.message(GITIGNORE_RECOMMENDATION);
+}
+
+function openUrl(url: string): boolean {
+  const command =
+    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
+  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: 'ignore',
+  });
+  child.on('error', () => {
+    // Browser launch is best-effort; setup should still succeed if no opener exists.
+  });
+  child.unref();
+  return child.pid != null;
+}
+
+async function promptToStarOnGithub(): Promise<void> {
+  const shouldOpen = await confirm({
+    message: 'Would you like to open GitHub and star inrepo?',
+    initialValue: true,
+  });
+  if (isCancel(shouldOpen) || shouldOpen !== true) return;
+
+  if (openUrl(GITHUB_REPO_URL)) {
+    log.info(`Opening ${GITHUB_REPO_URL}`);
+  } else {
+    log.message(`Star inrepo here: ${GITHUB_REPO_URL}`);
+  }
 }
 
 function isNonInteractive(): boolean {
@@ -215,4 +246,5 @@ export async function ensureInrepoInitialized(cwd: string): Promise<void> {
     outro('Added "inrepo" to package.json.');
     logGitignoreRecommendation(added);
   }
+  await promptToStarOnGithub();
 }
