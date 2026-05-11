@@ -51,6 +51,16 @@ Run it in a project that wants to vendor upstream packages. `inrepo` requires [N
 npx inrepo --help
 ```
 
+Prefer `inrepo` permanently on your `$PATH`? Install via Homebrew on macOS or Linuxbrew:
+
+```bash
+brew tap inthhq/tap
+brew install inrepo
+inrepo --help
+```
+
+The formula installs the same artifact that `npm` publishes, so `npx inrepo` and `brew install inrepo` are interchangeable. The rest of this README uses `npx inrepo` because it requires no install; substitute `inrepo` after `brew install` if you prefer.
+
 Initialize config:
 
 ```bash
