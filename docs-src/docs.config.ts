@@ -4,11 +4,11 @@ export default defineDocsConfig({
   product: {
     name: 'inrepo',
     summary:
-      'A small CLI for vendoring upstream git repositories into a repo as pinned, reviewable source.',
+      'Bring upstream source into your repo without submodules, forks, or mystery patches.',
     bullets: [
-      'Declare upstream packages in inrepo.json or package.json#inrepo.',
-      'Rebuild generated checkouts from a lockfile plus committed overlay files.',
-      'Verify in CI that vendored trees still match the recipe.',
+      'Pin upstream git repositories to exact commits.',
+      'Keep local package changes as reviewable overlay files.',
+      'Rebuild and verify generated checkouts from the same recipe.',
     ],
     bestStartingPoints: [
       { urlPath: '/docs', title: 'Overview' },
@@ -25,7 +25,7 @@ export default defineDocsConfig({
     {
       slug: 'reference',
       title: 'Reference',
-      description: 'Configuration fields and generated files.',
+      description: 'Configuration fields, filtering, and generated files.',
     },
   ],
 });

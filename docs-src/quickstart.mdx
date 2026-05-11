@@ -15,33 +15,58 @@ npx inrepo --help
 Initialize config explicitly, or let the first `sync` or `add` prompt for where config should live:
 
 ```bash
-inrepo init
+npx inrepo init
 ```
 
 Add and pin a package:
 
 ```bash
-inrepo add <name>
+npx inrepo add <package>
 ```
 
 If the npm registry package does not expose a GitHub repository URL, pass the git URL:
 
 ```bash
-inrepo add <name> --git https://github.com/owner/repo --ref main
+npx inrepo add <package> --git https://github.com/owner/repo --ref main
+```
+
+Use `-D` when the generated local package should be wired into `devDependencies`:
+
+```bash
+npx inrepo add <package> -D
 ```
 
 The normal collaboration loop is:
 
-1. Run `inrepo sync` to rebuild generated modules from `inrepo.lock.json` and `inrepo_patches/`.
-2. Edit files under `inrepo_modules/<name>/`.
-3. Run `inrepo patch <name>` to capture those edits into `inrepo_patches/<name>/`.
+1. Run `npx inrepo sync` to rebuild generated modules from `inrepo.lock.json` and `inrepo_patches/`.
+2. Edit files under `inrepo_modules/<package>/`.
+3. Run `npx inrepo patch <package>` to capture those edits into `inrepo_patches/<package>/`.
 4. Commit config, lockfile changes, and patch files.
-5. Teammates pull and run `inrepo sync`.
+5. Teammates pull and run `npx inrepo sync`.
+
+Commit these files:
+
+- `inrepo.json` or `package.json#inrepo`
+- `inrepo.lock.json`
+- `inrepo_patches/`
+
+Keep these generated files out of git:
+
+- `inrepo_modules/`
+- `.inrepo/`
 
 Before merging, run:
 
 ```bash
-inrepo verify
+npx inrepo verify
 ```
 
 `verify` checks that generated module trees still match the lockfile plus committed overlay.
+
+## Safety checks
+
+`inrepo` tries not to silently destroy local work.
+
+If `inrepo_modules/` changed but `inrepo_patches/` did not, sync treats that as uncaptured work and asks you to run `npx inrepo patch`. If both changed, sync reports a conflict.
+
+Use `npx inrepo sync --force` only when you want to discard generated edits. Before doing that, `inrepo` saves a backup under `.inrepo/backups/`.

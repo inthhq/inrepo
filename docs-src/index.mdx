@@ -1,19 +1,44 @@
 ---
 title: Overview
-description: What inrepo does and how to think about its generated files.
+description: Bring upstream source into your repo without submodules, forks, or mystery patches.
 group: get-started
 ---
 
 # inrepo
 
-`inrepo` vendors upstream git repositories into `inrepo_modules/` from declarative config. It is for teams that need upstream code in the repo tree, pinned and reviewable, without maintaining git submodules or a long-lived fork.
+`inrepo` vendors upstream git repositories directly into your project.
 
-The important state is split into three layers:
+Use it when you want the ergonomics of local source code, but still want the discipline of pinned dependencies. Instead of hiding changes in `node_modules`, publishing a private package, or maintaining a long-lived fork, `inrepo` gives you a repeatable recipe:
+
+```text
+upstream git commit + your committed patches = generated local package
+```
+
+You edit the generated copy in `inrepo_modules/`, capture your changes into `inrepo_patches/`, and let teammates or CI rebuild the same tree with `inrepo sync`.
+
+## Why this exists
+
+Package registries are convenient, but they are also an attack surface. Compromised package publishes, suspicious dependency changes, and install-time scripts are becoming more common.
+
+`inrepo` is not a magic security boundary, and it does not replace lockfiles, audits, or incident response. It gives you a clearer operating model for packages you care about deeply:
 
 - `inrepo.lock.json` pins the exact upstream commit for each module.
 - `inrepo_patches/<name>/` stores your team's committed overlay files and deletions.
 - `inrepo_modules/<name>/` is generated output rebuilt from the lockfile plus overlay.
 
-Keep `inrepo_modules/` and `.inrepo/` in `.gitignore`. Commit `inrepo.json` or `package.json#inrepo`, `inrepo.lock.json` when pins change, and `inrepo_patches/` when your team changes vendored code.
+That makes upstream code easier to inspect, patch, and reproduce when the package manager ecosystem gets noisy.
+
+## What to commit
+
+Commit:
+
+- `inrepo.json` or `package.json#inrepo`
+- `inrepo.lock.json`
+- `inrepo_patches/`
+
+Do not commit:
+
+- `inrepo_modules/`
+- `.inrepo/`
 
 Use `inrepo verify` in CI to catch a checkout that no longer matches the lockfile and overlay.
