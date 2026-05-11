@@ -3,7 +3,7 @@
     <strong>inrepo</strong>
   </a>
   <br />
-  <sub>Vendor upstream git repositories into <code>inrepo_modules</code> from declarative config.</sub>
+  <sub>Bring upstream source into your repo without submodules, forks, or mystery patches.</sub>
 </p>
 
 &nbsp;
@@ -15,25 +15,139 @@
 [![Last Commit](https://img.shields.io/github/last-commit/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo/commits/main)
 [![Open Issues](https://img.shields.io/github/issues/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo/issues)
 
-## Overview
+## What is inrepo?
 
-**inrepo** is a small CLI for teams who want upstream code in the repo tree—pinned, reviewable, and independent of the public npm tarball—without maintaining ad-hoc git submodules or a separate long-lived fork. You declare packages in `inrepo.json` (or `package.json` under `"inrepo"`), pin the upstream commit in `inrepo.lock.json`, and keep your team's customizations as committed overlay files under `inrepo_patches/`. Running **`inrepo sync`** rebuilds **`inrepo_modules/`** from `upstream + our overlay`, and **`inrepo verify`** confirms the generated tree still matches that recipe.
+`inrepo` is a small CLI for vendoring upstream git repositories directly into your project.
 
-## Package
+Use it when you want the ergonomics of local source code, but still want the discipline of pinned dependencies. Instead of hiding changes in `node_modules`, publishing a private package, or keeping a long-lived fork alive, `inrepo` gives you a repeatable recipe:
 
-| Package | Description | Key Features | Version |
-|---------|-------------|--------------|---------|
-| `inrepo` | Git vendoring CLI | Declarative config (`inrepo.json` or `package.json#inrepo`), `sync` / `patch` / `verify` / `add`, npm name → GitHub URL resolution when `repository` is set, lockfile (`inrepo.lock.json`), committed overlay tree (`inrepo_patches/`), wires `dependencies` / `devDependencies`, strips `.git` after sync for plain-tree vendoring | [![npm](https://img.shields.io/npm/v/inrepo?style=flat-square)](https://www.npmjs.com/package/inrepo) |
+```text
+upstream git commit + your committed patches = generated local package
+```
+
+You edit the vendored code in `inrepo_modules/`, capture your changes into `inrepo_patches/`, and let teammates or CI rebuild the same tree with `inrepo sync`.
+
+## Why this exists
+
+Sometimes the safest way to depend on upstream code is to make the exact code visible in your normal repo workflow.
+
+Package registries are convenient, but they are also an attack surface. Compromised package publishes, suspicious dependency changes, and install-time scripts are becoming more common. When that happens, teams need to know exactly what code they installed, what changed, and how to get back to a reviewed version quickly.
+
+`inrepo` is not a magic security boundary, and it does not replace lockfiles, audits, or incident response. What it gives you is a clearer operational model for packages you care about deeply:
+
+- Pin the upstream git commit you reviewed.
+- Keep local changes as reviewable files in pull requests.
+- Rebuild generated code from a small recipe instead of trusting a mutable working tree.
+- Run `inrepo verify` in CI to catch drift.
+- Depend on local `file:` packages from your root `package.json`.
+
+That makes upstream code easier to inspect, patch, and reproduce when the package manager ecosystem gets noisy.
 
 ## Quick start
 
-Install and run from npm (requires [Node.js](https://nodejs.org/) 20+):
+Run it in a project that wants to vendor upstream packages. `inrepo` requires [Node.js](https://nodejs.org/) 20+.
 
 ```bash
 npx inrepo --help
 ```
 
-From a clone of this repository, build then run locally:
+Initialize config:
+
+```bash
+inrepo init
+```
+
+Add and pin a package:
+
+```bash
+inrepo add <package>
+```
+
+If npm metadata does not point to the right GitHub repository, pass the git URL yourself:
+
+```bash
+inrepo add <package> --git https://github.com/owner/repo --ref main
+```
+
+Then work like this:
+
+```bash
+inrepo sync
+# edit files in inrepo_modules/<package>/
+inrepo patch <package>
+git commit
+```
+
+Teammates can reproduce the generated package with:
+
+```bash
+inrepo sync
+```
+
+CI can check that nothing drifted:
+
+```bash
+inrepo verify
+```
+
+## The files
+
+`inrepo` keeps a clean boundary between source inputs and generated output.
+
+Commit these:
+
+- `inrepo.json` or `package.json#inrepo` declares what to vendor.
+- `inrepo.lock.json` pins each package to an exact upstream commit.
+- `inrepo_patches/<package>/` stores your team's edits and deletions.
+
+Do not commit these:
+
+- `inrepo_modules/<package>/` is rebuilt by `inrepo sync`.
+- `.inrepo/` stores cache, state, and backups.
+
+The generated module is wired into your root `package.json` as a local `file:inrepo_modules/<package>` dependency. Use `inrepo add <package> -D` or `"dev": true` in config when it should land in `devDependencies`.
+
+## Config
+
+Prefer `inrepo.json` at the project root:
+
+```json
+{
+  "packages": [
+    {
+      "name": "example-package",
+      "git": "https://github.com/owner/repo",
+      "ref": "main",
+      "dev": false,
+      "keep": ["src", "package.json"],
+      "exclude": ["test", "/\\.snap$/"]
+    }
+  ],
+  "keep": ["LICENSE"],
+  "exclude": [".github"]
+}
+```
+
+You can also put the same object under `package.json#inrepo`.
+
+- `name` is the package name and destination under `inrepo_modules/`.
+- `git` is optional when npm metadata can resolve the GitHub repository.
+- `ref` can be a branch, tag, or commit before the lockfile resolves the exact commit.
+- `dev` chooses `devDependencies` instead of `dependencies`.
+- `keep` allowlists paths before exclusions run.
+- `exclude` removes literal relative paths or slash-delimited regex matches.
+
+## Built-in guardrails
+
+`inrepo` tries not to silently destroy local work.
+
+During sync, it compares the current generated module and overlay against recorded state. If `inrepo_modules/` changed but the overlay did not, it treats that as uncaptured work and asks you to run `inrepo patch`. If both changed, it reports a conflict. `sync --force` can discard generated edits, but saves a backup under `.inrepo/backups/`.
+
+Patch capture is guarded too. `inrepo patch` compares your current vendored module against the pristine upstream tree, writes changed files into `inrepo_patches/`, and records deleted files in `.inrepo-deletions`.
+
+## Local development
+
+From a clone of this repository:
 
 ```bash
 bun install
@@ -41,42 +155,12 @@ bun run build
 node dist/cli.mjs --help
 ```
 
-Typical flow:
-
-0. The **first** time you run **`inrepo sync`** or **`inrepo add`** in a repo that has neither **`inrepo.json`** nor a **`package.json`** **`"inrepo"`** field, the CLI asks whether config should live in **`inrepo.json`** or **`package.json`**, then writes an empty **`packages`** list you can edit (subsequent **`inrepo add`** calls record entries automatically). Init also recommends keeping **`inrepo_modules/`** and **`.inrepo/`** in **`.gitignore`** and appends them automatically in non-interactive mode. In CI or without a TTY, set **`INREPO_CONFIG=inrepo.json`** or **`INREPO_CONFIG=package.json`** instead, or create one of those stubs yourself. Set **`INREPO_NONINTERACTIVE=1`** only together with an existing config file or **`INREPO_CONFIG`**.
-
-1. Add config at the project root—either **`inrepo.json`** or a **`"inrepo"`** field in **`package.json`**—listing `{ "name", "git?", "ref?", "dev?", "exclude?", "keep?" }` entries (or a top-level JSON array of those objects). Set **`"dev": true`** on an entry to wire **`package.json#devDependencies`** on sync; omit it or use **`false`** for **`#dependencies`**.
-2. Optional **`keep`** (allowlist): when non-empty, only paths **equal to** an entry or under **`entry/`** are kept (POSIX `/`, no leading `/` on entries). List root files you still need (e.g. **`"package.json"`**) explicitly—nothing is kept implicitly. Root and per-package **`keep`** lists are merged (union). Runs **before** **`exclude`**. Use the object root shape `{ "packages": [...], "keep": [...] }`; bare array configs cannot carry root **`keep`**.
-3. Optional **`exclude`**: runs after **`keep`**. Each entry is either a **literal relative path** (no leading `/`), e.g. `".agents"`, or a **slash-delimited regex** `/pattern/optionalflags` matched against every path under the module (forward slashes). Per-package **`exclude`** is merged with the root list. Use object root `{ "packages": [...], "exclude": [...] }` when you need root **`exclude`** (not on bare array configs).
-4. Run **`inrepo add <name>`** once to create or refresh the upstream pin in **`inrepo.lock.json`**, or run **`inrepo sync`** to rebuild every configured package from the existing lockfile.
-5. Edit files in **`inrepo_modules/<name>/`** as if it were your local working fork, then run **`inrepo patch <name>`** to capture those changes into **`inrepo_patches/<name>/`**. Commit **`inrepo.json`**, **`inrepo.lock.json`** (when the upstream pin changed), and **`inrepo_patches/`**. Do **not** commit **`inrepo_modules/`** or **`.inrepo/`**.
-6. Run **`inrepo verify`** in CI to ensure vendored trees still match `lockfile + overlay`.
-
-**`inrepo add <name>`** vendors a single package and, by default, records the entry in **`inrepo.json`** (or **`package.json`** under **`"inrepo"`**) after a successful checkout, so subsequent **`inrepo sync`** can replay it. Optional flags: **`-D`** / **`--dev`** for devDependencies, **`--git`**, **`--ref`**, **`--no-save`** to skip the config upsert (one-off vendoring).
-
-## Shared Overlay Workflow
-
-Think about the on-disk state in three layers:
-
-- **`inrepo.lock.json`** chooses the exact upstream commit.
-- **`inrepo_patches/<name>/`** stores your team's committed customizations as real files plus a `.inrepo-deletions` list.
-- **`inrepo_modules/<name>/`** is generated output built from those two inputs.
-- **`.inrepo/cache/`** and **`.inrepo/backups/`** are private cache and recovery state, not committed source.
-
-That means the usual collaboration loop is:
-
-1. `inrepo sync`
-2. edit `inrepo_modules/<name>/...`
-3. `inrepo patch <name>`
-4. `git commit`
-5. teammate pulls and runs `inrepo sync`
-
-This keeps upstream code, your team’s changes, and the generated working copy clearly separated.
-
 ## Documentation
 
-- [Repository home](https://github.com/inthhq/inrepo) — source, issues, and changelog over time
-- CLI usage: **`inrepo --help`** (same text as the help banner in the tool)
+- [Overview](./docs/index.md)
+- [Quickstart](./docs/quickstart.md)
+- [Config reference](./docs/config.md)
+- CLI usage: `inrepo --help`
 
 ## Support
 
