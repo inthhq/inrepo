@@ -1,0 +1,42 @@
+---
+title: Config
+description: 'The small inrepo config shape and how keep, exclude, dev, git, and ref work.'
+group: reference
+---
+# Config
+
+Prefer `inrepo.json` at the project root:
+
+```json
+{
+  "packages": [
+    {
+      "name": "example-package",
+      "git": "https://github.com/owner/repo",
+      "ref": "main",
+      "dev": false,
+      "keep": ["src", "package.json"],
+      "exclude": ["test", "/\\.snap$/"]
+    }
+  ],
+  "keep": ["LICENSE"],
+  "exclude": [".github"]
+}
+```
+
+You can also put the same object under `package.json#inrepo`. A bare array of package entries is accepted, but only the object form can carry root `keep` or `exclude` lists.
+
+Package fields:
+
+|Field|Meaning|
+|--|--|
+|`name`|Package name and destination under `inrepo_modules/`.|
+|`git`|Optional git clone URL. Required when npm registry lookup cannot resolve a GitHub repository.|
+|`ref`|Optional branch, tag, or commit to pin before resolving the lockfile commit.|
+|`dev`|When `true`, sync wires the root `package.json#devDependencies`; otherwise it uses `dependencies`.|
+|`keep`|Optional allowlist of relative path prefixes to retain before exclusions run.|
+|`exclude`|Optional relative paths or slash-delimited regexes to remove from the vendored tree.|
+
+Root and per-package `keep` lists are merged. Root and per-package `exclude` lists are also merged. `keep` runs first, then `exclude`.
+
+`inrepo add <name>` updates config by default after a successful checkout. Use `--no-save` for a one-off vendoring operation that should not upsert config.
