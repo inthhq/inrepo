@@ -51,9 +51,9 @@ import type { LockModule } from './types/lock-module.js';
 // e2e expectations like `r.stderr` matching warnings/errors).
 const ERR = { output: process.stderr } as const;
 
-// Pad at runtime so the banner prints fixed-width terminal blanks without
-// relying on invisible trailing spaces in the source file.
-const BANNER_WIDTH = 58;
+// Trailing whitespace is part of the artwork (each row is a fixed width); keep
+// the lines verbatim and disable the editor's whitespace-trimming instinct by
+// concatenating with explicit `\n` rather than a template literal.
 const BANNER_LINES = [
   '░██',
   '',
