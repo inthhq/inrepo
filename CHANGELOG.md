@@ -1,5 +1,18 @@
 # inrepo
 
+## 0.0.8
+
+### Patch Changes
+
+- 75bfd28: ---
+  "inrepo": patch
+
+  ***
+
+  # Pin dependency versions
+
+  Pin dependency versions instead of using caret ranges.
+
 ## 0.0.7
 
 ### Patch Changes
