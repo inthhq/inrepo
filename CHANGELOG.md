@@ -1,5 +1,12 @@
 # inrepo
 
+## 0.0.8
+
+### Patch Changes
+
+- 75bfd28: Pin dependency versions instead of using caret ranges so `bun install --frozen-lockfile` and the published package resolve identically across machines and CI.
+- 75bfd28: Add Homebrew tap support. `inrepo` is now installable via `brew tap inthhq/tap && brew install inrepo` from [inthhq/homebrew-tap](https://github.com/inthhq/homebrew-tap). Each npm release auto-opens a PR there with the new tarball URL and `sha256`, gated by `brew audit --strict --online` and `brew test` before merge.
+
 ## 0.0.7
 
 ### Patch Changes
