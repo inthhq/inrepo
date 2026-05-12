@@ -32,16 +32,20 @@ extendErrorCatalog({
 });
 
 function readOwnPackageInfo(): PackageInfo {
-  const packageJsonUrl = new URL("../package.json", import.meta.url);
-  const parsed = JSON.parse(readFileSync(packageJsonUrl, "utf-8")) as Record<
-    string,
-    unknown
-  >;
+  try {
+    const packageJsonUrl = new URL("../package.json", import.meta.url);
+    const parsed = JSON.parse(readFileSync(packageJsonUrl, "utf-8")) as Record<
+      string,
+      unknown
+    >;
 
-  return {
-    name: typeof parsed.name === "string" ? parsed.name : "my-cli",
-    version: typeof parsed.version === "string" ? parsed.version : "unknown",
-  };
+    return {
+      name: typeof parsed.name === "string" ? parsed.name : "my-cli",
+      version: typeof parsed.version === "string" ? parsed.version : "unknown",
+    };
+  } catch {
+    return { name: "my-cli", version: "unknown" };
+  }
 }
 
 async function initCommand(context: CliContext): Promise<void> {

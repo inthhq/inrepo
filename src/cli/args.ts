@@ -73,5 +73,7 @@ export function parsePatchArgs(argv: string[]): PatchArgs {
     throw new Error(`Unexpected arguments: ${positional.slice(1).join(' ')}`);
   }
 
+  if (positional.length === 0) return {};
+
   return { name: positional[0] };
 }

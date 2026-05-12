@@ -1,10 +1,10 @@
-import { cancel, intro, isCancel, outro, select } from '@clack/prompts';
 import { isLoadConfigNotFoundError, loadConfig } from '../config/load-config.js';
 import { performAdd, promptAddArgs } from './commands/add.js';
 import { cmdPatch } from './commands/patch.js';
 import { cmdSync } from './commands/sync.js';
 import { cmdVerify } from './commands/verify.js';
 import { printBanner } from './rendering.js';
+import { cancel, intro, isCancel, outro, select } from './ui.js';
 
 /**
  * Bare-invocation menu: when the user runs `inrepo` with no arguments in an

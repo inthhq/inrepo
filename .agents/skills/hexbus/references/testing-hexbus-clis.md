@@ -30,6 +30,7 @@ describe("runDoctor", () => {
     await runDoctor(context);
 
     expect(context.telemetry.isDisabled()).toBe(true);
+    expect(context.logger.success).toHaveBeenCalledWith("Project looks ready.");
   });
 });
 ```

@@ -109,7 +109,7 @@ describe('CLI: help and argument validation (e2e)', () => {
     expect(r.stderr).toMatch(/sync does not take arguments/);
   });
 
-  test('sync accepts --force as a hexbus global flag', async () => {
+  test('sync accepts --force as a global flag', async () => {
     await writeFile(join(cwd, 'inrepo.json'), JSON.stringify({ packages: [] }), 'utf8');
     const r = await runCli(['sync', '--force'], {
       cwd,

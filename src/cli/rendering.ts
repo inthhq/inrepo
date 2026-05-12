@@ -1,12 +1,7 @@
 import { globalFlags, showHelpMenu, type CliCommand, type CliContext } from 'hexbus';
 import { APP_NAME, APP_TAGLINE, type InrepoPackageInfo } from './app-info.js';
 
-// Route Clack output that represents diagnostics to stderr so it composes
-// cleanly with shell pipelines and CI log capture.
-export const ERR = { output: process.stderr } as const;
-
-// Trailing whitespace is part of the artwork (each row is a fixed width); keep
-// the lines verbatim and disable whitespace trimming by joining explicit rows.
+// ASCII banner artwork; lines are joined explicitly to preserve formatting.
 const BANNER_LINES = [
   '░██',
   '',

@@ -1,4 +1,3 @@
-import { cancel, confirm, intro, isCancel, outro, text } from '@clack/prompts';
 import { existsSync } from 'node:fs';
 import { ensureInrepoInitialized } from '../../config/ensure-inrepo-initialized.js';
 import {
@@ -15,6 +14,7 @@ import { moduleDestPath } from '../../paths/module-dest-path.js';
 import { parseAddArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
 import type { AddArgs, DispatchOpts } from '../types.js';
+import { cancel, confirm, intro, isCancel, outro, text } from '../ui.js';
 import { materializePackage } from '../vendor.js';
 
 export async function performAdd(

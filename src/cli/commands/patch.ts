@@ -1,4 +1,3 @@
-import { intro, outro, spinner } from '@clack/prompts';
 import { existsSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
 import {
@@ -19,6 +18,7 @@ import { moduleDestPath } from '../../paths/module-dest-path.js';
 import { parsePatchArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
 import type { DispatchOpts, PackageSpec } from '../types.js';
+import { intro, outro, spinner } from '../ui.js';
 import {
   EMPTY_TREE_HASH,
   hasTreeDrift,

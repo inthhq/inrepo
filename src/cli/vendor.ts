@@ -1,4 +1,3 @@
-import { log, spinner } from '@clack/prompts';
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rename, rm } from 'node:fs/promises';
@@ -15,7 +14,7 @@ import { normalizeGithubHttpsUrl } from '../registry/normalize-github-https-url.
 import { resolveGitUrlFromNpm } from '../registry/resolve-git-url-from-npm.js';
 import { upsertLockModule } from '../lockfile/upsert-lock-module.js';
 import { readModuleState, writeModuleState } from '../overlay/module-state.js';
-import { ERR } from './rendering.js';
+import { spinner, warn } from './ui.js';
 import type { MaterializeOptions, PackageSpec } from './types.js';
 
 export const EMPTY_TREE_HASH = createHash('sha256').update('', 'utf8').digest('hex');
@@ -119,7 +118,7 @@ export async function materializePackage(
   // Pre-checkout warning needs to be on stderr (e2e contract). We emit it
   // before the spinner starts so it doesn't get tangled in spinner re-renders.
   if (existsSync(dest)) {
-    log.warn(`Warning: replacing existing checkout: ${dest}`, ERR);
+    warn(`Warning: replacing existing checkout: ${dest}`);
   }
 
   const s = spinner();
@@ -190,7 +189,7 @@ export async function materializePackage(
         if (opts.force && currentModuleHash !== stageHash) {
           s.message('Saving working tree backup');
           const backup = await snapshotModuleBackup(cwd, pkg.name, dest);
-          log.warn(`Saved checkout backup: ${backup}`, ERR);
+          warn(`Saved checkout backup: ${backup}`);
         }
 
         s.message(`Replacing ${dest}`);

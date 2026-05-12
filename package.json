@@ -57,8 +57,7 @@
     "typescript": "6.0.3"
   },
   "dependencies": {
-    "@clack/prompts": "1.2.0",
-    "hexbus": "^0.1.0",
+    "hexbus": "^0.1.1",
     "safe-regex": "2.1.1"
   }
 }

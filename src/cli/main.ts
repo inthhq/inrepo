@@ -1,4 +1,3 @@
-import { log } from '@clack/prompts';
 import {
   createCliContext,
   isVersionRequest,
@@ -16,7 +15,8 @@ import { APP_NAME, readOwnPackageInfo, type InrepoPackageInfo } from './app-info
 import { cmdInit } from './commands/init.js';
 import { commands } from './command-table.js';
 import { cmdInteractive } from './interactive.js';
-import { ERR, showInrepoHelp } from './rendering.js';
+import { showInrepoHelp } from './rendering.js';
+import { error } from './ui.js';
 
 function startUpdateCheck(context: CliContext, packageInfo: InrepoPackageInfo): void {
   startBackgroundUpdateCheck({
@@ -99,8 +99,7 @@ export async function main(): Promise<void> {
     const err = e instanceof Error ? e : new Error(String(e));
     context.telemetry.trackError(err, context.commandName ?? 'interactive');
     await context.telemetry.flush();
-    // log.error pipes to stderr to preserve e2e expectations.
-    log.error(err.message, ERR);
+    error(err.message);
     process.exitCode = 1;
   }
 }

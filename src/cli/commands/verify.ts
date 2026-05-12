@@ -1,7 +1,7 @@
-import { cancel, intro, log, outro, spinner } from '@clack/prompts';
 import { verifyLock } from '../../verify/verify-lock.js';
-import { ERR, printBanner } from '../rendering.js';
+import { printBanner } from '../rendering.js';
 import type { DispatchOpts } from '../types.js';
+import { cancel, error, intro, outro, spinner } from '../ui.js';
 
 /**
  * Returns `true` when every lockfile entry matches its checkout, `false`
@@ -22,13 +22,14 @@ export async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<b
     result = await verifyLock(cwd);
   } catch (e) {
     s.error('Verification failed');
+    process.exitCode = 1;
     throw e;
   }
 
   if (!result.ok) {
     s.error('Verification failed');
     for (const line of result.errors) {
-      log.error(line, ERR);
+      error(line);
     }
     if (!opts.suppressBanners) {
       cancel('inrepo verify: lockfile and checkouts disagree.');

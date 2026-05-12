@@ -1,10 +1,10 @@
-import { intro, outro } from '@clack/prompts';
 import { ensureInrepoInitialized } from '../../config/ensure-inrepo-initialized.js';
 import { loadConfig } from '../../config/load-config.js';
 import { readLockfile } from '../../lockfile/read-lockfile.js';
 import { parseSyncArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
 import type { DispatchOpts } from '../types.js';
+import { intro, outro } from '../ui.js';
 import { materializePackage } from '../vendor.js';
 
 export async function cmdSync(
