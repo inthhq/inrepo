@@ -32,6 +32,18 @@ describe('CLI: help and argument validation (e2e)', () => {
     expect(r.stdout).toMatch(/Usage:/);
   });
 
+  test('--version prints version and exits 0', async () => {
+    const r = await runCli(['--version'], { cwd });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/inrepo v/);
+  });
+
+  test('-v is an alias for --version', async () => {
+    const r = await runCli(['-v'], { cwd });
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toMatch(/inrepo v/);
+  });
+
   test('no args (non-TTY, uninitialized) prints help and exits 1', async () => {
     // Spawned CLI runs without a TTY, so the bare-invocation auto-init path is
     // skipped and we fall back to printing usage so CI scripts get a hint.
@@ -95,6 +107,17 @@ describe('CLI: help and argument validation (e2e)', () => {
     });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/sync does not take arguments/);
+  });
+
+  test('sync accepts --force as a hexbus global flag', async () => {
+    await writeFile(join(cwd, 'inrepo.json'), JSON.stringify({ packages: [] }), 'utf8');
+    const r = await runCli(['sync', '--force'], {
+      cwd,
+      env: { INREPO_NONINTERACTIVE: '1' },
+    });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/empty "packages" array/);
+    expect(r.stderr).not.toMatch(/Unknown option: --force/);
   });
 
   test('verify rejects extra args', async () => {
