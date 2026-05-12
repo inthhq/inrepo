@@ -16,6 +16,21 @@ upstream git commit + your committed patches = generated local package
 
 You edit the generated copy in `inrepo_modules/`, capture your changes into `inrepo_patches/`, and let teammates or CI rebuild the same tree with `inrepo sync`.
 
+## Install
+
+```bash
+npx inrepo --help
+```
+
+Or globally via Homebrew:
+
+```bash
+brew tap inthhq/tap
+brew install inrepo
+```
+
+Both install the same npm-published artifact. `inrepo` requires [Node.js](https://nodejs.org/) 20+.
+
 ## Why this exists
 
 Package registries are convenient, but they are also an attack surface. Compromised package publishes, suspicious dependency changes, and install-time scripts are becoming more common.

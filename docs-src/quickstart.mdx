@@ -12,6 +12,16 @@ Run from a project that wants to vendor upstream packages:
 npx inrepo --help
 ```
 
+Or install the CLI globally with Homebrew if you'd rather have `inrepo` on your `$PATH`:
+
+```bash
+brew tap inthhq/tap
+brew install inrepo
+inrepo --help
+```
+
+`brew install inrepo` and `npx inrepo` install the same npm-published artifact, so the rest of this guide works either way. Substitute `inrepo` for `npx inrepo` when you have it installed locally.
+
 Initialize config explicitly, or let the first `sync` or `add` prompt for where config should live:
 
 ```bash
