@@ -143,7 +143,7 @@ jobs:
           set -euo pipefail
           URL="https://registry.npmjs.org/inrepo/-/inrepo-${VERSION}.tgz"
           for i in 1 2 3 4 5 6 7 8 9 10; do
-            if curl -fsSL "$URL" -o inrepo.tgz; then
+            if curl -fSL --connect-timeout 10 --max-time 60 "$URL" -o inrepo.tgz; then
               break
             fi
             echo "Attempt $i: tarball not ready yet, sleeping..."
