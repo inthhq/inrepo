@@ -5,7 +5,7 @@
     "": {
       "name": "inrepo",
       "dependencies": {
-        "hexbus": "^0.1.1",
+        "hexbus": "^0.4.0",
         "safe-regex": "2.1.1",
       },
       "devDependencies": {
@@ -240,7 +240,7 @@
 
     "gray-matter": ["gray-matter@4.0.3", "", { "dependencies": { "js-yaml": "^3.13.1", "kind-of": "^6.0.2", "section-matter": "^1.0.0", "strip-bom-string": "^1.0.0" } }, "sha512-5v6yZd4JK3eMI3FqqCouswVqwugaA9r4dNZB1wwcmrD02QkV5H0y7XBQW8QwQqEaZY1pM9aqORSORhJRdNK44Q=="],
 
-    "hexbus": ["hexbus@0.1.1", "", { "dependencies": { "@clack/prompts": "1.1.0", "c12": "3.3.3", "figlet": "1.11.0" } }, "sha512-E098koEMfF+siABhUiAmui5+FSk3wFh7BOV8N2Yo9qfBHT8hEQ4KiC8A02PiiKO/FifquNSVAbNKrXtr4yBKww=="],
+    "hexbus": ["hexbus@0.4.0", "", { "dependencies": { "@clack/prompts": "1.1.0", "c12": "3.3.3", "figlet": "1.11.0" } }, "sha512-igsFTiWE9yywPj1gJyteamf8wSQ+wjDvafDHaBF4vcPSkCaxVq/L1+FSt3cYrez+r8UQEajSYhVApUhLSUAvXQ=="],
 
     "human-id": ["human-id@4.1.3", "", { "bin": { "human-id": "dist/cli.js" } }, "sha512-tsYlhAYpjCKa//8rXZ9DqKEawhPoSytweBC2eNvcaDK+57RZLHGqNs3PZTQO6yekLFSuvA6AlnAfrw1uBvtb+Q=="],
 

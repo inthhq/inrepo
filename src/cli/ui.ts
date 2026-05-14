@@ -1,6 +1,10 @@
-import { createCliLogger, createSpinner } from 'hexbus';
-import { createInterface } from 'node:readline/promises';
-import { stdin as input, stdout as output } from 'node:process';
+import {
+  createCliLogger,
+  createSpinner,
+  promptConfirm,
+  promptSelect,
+  promptText,
+} from 'hexbus';
 
 const CANCELLED = Symbol('cancelled');
 
@@ -42,55 +46,30 @@ export function spinner(): ReturnType<typeof createSpinner> & { error(message: s
   };
 }
 
-function isAbortError(error: unknown): boolean {
-  return error instanceof Error && error.name === 'AbortError';
-}
-
-async function ask(question: string): Promise<string | PromptCancelled> {
-  const rl = createInterface({ input, output });
-  try {
-    return await rl.question(question);
-  } catch (e) {
-    if (isAbortError(e)) return CANCELLED;
-    throw e;
-  } finally {
-    rl.close();
-  }
-}
-
 export async function text(options: {
   message: string;
   placeholder?: string;
-  validate?: (value: string) => string | undefined;
+  validate?: (value: string | undefined) => string | undefined;
 }): Promise<string | PromptCancelled> {
-  const hint = options.placeholder ? ` (${options.placeholder})` : '';
-  while (true) {
-    const answer = await ask(`${options.message}${hint}: `);
-    if (isCancel(answer)) return answer;
-
-    const validation = options.validate?.(answer);
-    if (!validation) return answer;
-    error(validation);
-  }
+  const answer = await promptText({
+    cancel: 'silent',
+    message: options.message,
+    placeholder: options.placeholder,
+    validate: options.validate,
+  });
+  return answer ?? CANCELLED;
 }
 
 export async function confirm(options: {
   message: string;
   initialValue?: boolean;
 }): Promise<boolean | PromptCancelled> {
-  const defaultValue = options.initialValue ?? true;
-  const suffix = defaultValue ? 'Y/n' : 'y/N';
-
-  while (true) {
-    const answer = await ask(`${options.message} (${suffix}) `);
-    if (isCancel(answer)) return answer;
-
-    const normalized = answer.trim().toLowerCase();
-    if (normalized === '') return defaultValue;
-    if (normalized === 'y' || normalized === 'yes') return true;
-    if (normalized === 'n' || normalized === 'no') return false;
-    error('Please answer yes or no.');
-  }
+  const answer = await promptConfirm({
+    cancel: 'silent',
+    message: options.message,
+    initialValue: options.initialValue,
+  });
+  return answer ?? CANCELLED;
 }
 
 export async function select<T extends string>(options: {
@@ -98,27 +77,11 @@ export async function select<T extends string>(options: {
   options: { value: T; label: string; hint?: string }[];
   initialValue?: T;
 }): Promise<T | PromptCancelled> {
-  const initialIndex = Math.max(
-    0,
-    options.options.findIndex((option) => option.value === options.initialValue),
-  );
-
-  ui.message(options.message);
-  for (const [index, option] of options.options.entries()) {
-    const hint = option.hint ? ` - ${option.hint}` : '';
-    ui.message(`  ${index + 1}. ${option.label}${hint}`);
-  }
-
-  while (true) {
-    const answer = await ask(`Choose [${initialIndex + 1}]: `);
-    if (isCancel(answer)) return answer;
-
-    const trimmed = answer.trim();
-    if (trimmed === '') return options.options[initialIndex]?.value ?? CANCELLED;
-
-    const choice = Number.parseInt(trimmed, 10);
-    const selected = options.options[choice - 1];
-    if (Number.isInteger(choice) && selected) return selected.value;
-    error(`Enter a number from 1 to ${options.options.length}.`);
-  }
+  const answer = await promptSelect({
+    cancel: 'silent',
+    message: options.message,
+    options: options.options,
+    initialValue: options.initialValue,
+  });
+  return answer ?? CANCELLED;
 }

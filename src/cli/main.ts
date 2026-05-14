@@ -1,5 +1,6 @@
 import {
   createCliContext,
+  dispatchCommand,
   isVersionRequest,
   printVersionInfo,
   startBackgroundUpdateCheck,
@@ -16,15 +17,6 @@ import { cmdInit } from './commands/init.js';
 import { commands } from './command-table.js';
 import { showInrepoHelp } from './rendering.js';
 import { error } from './ui.js';
-
-function startUpdateCheck(context: CliContext, packageInfo: InrepoPackageInfo): void {
-  startBackgroundUpdateCheck({
-    appName: APP_NAME,
-    currentVersion: packageInfo.version,
-    logger: context.logger,
-    packageName: packageInfo.name,
-  });
-}
 
 export async function main(): Promise<void> {
   const cwd = resolve(process.cwd());
@@ -55,34 +47,34 @@ export async function main(): Promise<void> {
   }
 
   try {
-    if (!context.commandName) {
-      if (context.commandArgs.length > 0) {
-        throw new Error(`Unknown command: ${context.commandArgs[0]}\nRun: inrepo --help`);
-      }
+    const result = await dispatchCommand(context, commands, {
+      hooks: {
+        onCommandStart: ({ commandNames, context: commandContext }) => {
+          startUpdateCheck(commandContext, packageInfo);
+          commandContext.telemetry.trackCommand(
+            commandNames.join(' '),
+            commandContext.commandArgs,
+            commandContext.flags,
+          );
+        },
+      },
+      noCommand: {
+        mode: 'custom',
+        action: async ({ context: noCommandContext }) => {
+          await handleNoCommand(noCommandContext, packageInfo);
+        },
+      },
+      unknownCommand: {
+        action: ({ commandName }) => {
+          throw new Error(`Unknown command: ${commandName}\nRun: inrepo --help`);
+        },
+      },
+    });
 
-      // Bare `inrepo` invocation:
-      //   - interactive TTY: first-time init wizard if needed.
-      //   - otherwise: print help. Exit 1 if uninitialized so CI/scripts get a
-      //     clear pointer that something needs doing.
-      if (canPromptInteractively() && !isInrepoInitialized(cwd)) {
-        startUpdateCheck(context, packageInfo);
-        await cmdInit(cwd);
-        return;
-      }
-
-      showInrepoHelp(context, packageInfo, commands);
-      if (!isInrepoInitialized(cwd)) process.exitCode = 1;
-      return;
+    if (result.type === 'command_failed') {
+      throw result.error;
     }
 
-    const command = commands.find((item) => item.name === context.commandName);
-    if (!command) {
-      throw new Error(`Unknown command: ${context.commandName}\nRun: inrepo --help`);
-    }
-
-    startUpdateCheck(context, packageInfo);
-    context.telemetry.trackCommand(context.commandName, context.commandArgs, context.flags);
-    await command.action(context);
     await context.telemetry.flush();
   } catch (e) {
     if (e instanceof InrepoSetupCancelledError) {
@@ -94,6 +86,34 @@ export async function main(): Promise<void> {
     context.telemetry.trackError(err, context.commandName ?? 'interactive');
     await context.telemetry.flush();
     error(err.message);
+    process.exitCode = 1;
+  }
+}
+
+function startUpdateCheck(context: CliContext, packageInfo: InrepoPackageInfo): void {
+  startBackgroundUpdateCheck({
+    appName: APP_NAME,
+    currentVersion: packageInfo.version,
+    logger: context.logger,
+    packageName: packageInfo.name,
+  });
+}
+
+async function handleNoCommand(
+  context: CliContext,
+  packageInfo: InrepoPackageInfo,
+): Promise<void> {
+  // Bare `inrepo` invocation:
+  //   - interactive TTY: first-time init wizard if needed.
+  //   - otherwise: print help. Exit 1 if uninitialized so CI/scripts get a
+  //     clear pointer that something needs doing.
+  if (canPromptInteractively() && !isInrepoInitialized(context.cwd)) {
+    await cmdInit(context.cwd);
+    return;
+  }
+
+  showInrepoHelp(context, packageInfo, commands);
+  if (!isInrepoInitialized(context.cwd)) {
     process.exitCode = 1;
   }
 }
