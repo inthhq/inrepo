@@ -14,7 +14,6 @@ import {
 import { APP_NAME, readOwnPackageInfo, type InrepoPackageInfo } from './app-info.js';
 import { cmdInit } from './commands/init.js';
 import { commands } from './command-table.js';
-import { cmdInteractive } from './interactive.js';
 import { showInrepoHelp } from './rendering.js';
 import { error } from './ui.js';
 
@@ -62,17 +61,12 @@ export async function main(): Promise<void> {
       }
 
       // Bare `inrepo` invocation:
-      //   - interactive TTY: first-time init wizard if needed, otherwise an
-      //     action picker (sync / add / verify / exit).
-      //   - non-interactive: print help. Exit 1 if uninitialized so CI/scripts
-      //     get a clear pointer that something needs doing.
-      if (canPromptInteractively()) {
+      //   - interactive TTY: first-time init wizard if needed.
+      //   - otherwise: print help. Exit 1 if uninitialized so CI/scripts get a
+      //     clear pointer that something needs doing.
+      if (canPromptInteractively() && !isInrepoInitialized(cwd)) {
         startUpdateCheck(context, packageInfo);
-        if (isInrepoInitialized(cwd)) {
-          await cmdInteractive(cwd);
-        } else {
-          await cmdInit(cwd);
-        }
+        await cmdInit(cwd);
         return;
       }
 

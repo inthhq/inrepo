@@ -1,0 +1,33 @@
+{
+  "lockfileVersion": 1,
+  "modules": {
+    "pnpm": {
+      "source": "pnpm",
+      "gitUrl": "https://github.com/pnpm/pnpm.git",
+      "commit": "4a89b06b445f955914936b53872e34f2ce96122a",
+      "ref": null,
+      "updatedAt": "2026-05-14T16:12:01.920Z"
+    },
+    "bun": {
+      "source": "bun",
+      "gitUrl": "https://github.com/oven-sh/bun.git",
+      "commit": "11a2e2c20b6746689298a1da76cec35b13d3405e",
+      "ref": null,
+      "updatedAt": "2026-05-14T16:13:07.213Z"
+    },
+    "npm": {
+      "source": "npm",
+      "gitUrl": "https://github.com/npm/cli.git",
+      "commit": "f550eb415de0aff83a5fa297850104f5390a6e30",
+      "ref": null,
+      "updatedAt": "2026-05-14T16:52:21.582Z"
+    },
+    "yarn": {
+      "source": "yarn",
+      "gitUrl": "https://github.com/yarnpkg/yarn.git",
+      "commit": "c2dda503f3759b5be5f0e24ecd9cf5c97a540147",
+      "ref": null,
+      "updatedAt": "2026-05-14T17:07:36.128Z"
+    }
+  }
+}
