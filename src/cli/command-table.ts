@@ -43,7 +43,8 @@ export const commands: CliCommand[] = [
   {
     action: async (context) => {
       if (context.commandArgs.length) throw new Error('verify does not take arguments');
-      await cmdVerify(resolve(context.cwd));
+      const ok = await cmdVerify(resolve(context.cwd));
+      if (!ok) process.exitCode = 1;
     },
     description: 'Check vendored dirs match the lockfile plus any committed overlays.',
     hint: 'Check generated output',

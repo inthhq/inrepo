@@ -5,9 +5,8 @@ import { cancel, error, intro, outro, spinner } from '../ui.js';
 
 /**
  * Returns `true` when every lockfile entry matches its checkout, `false`
- * otherwise. Also sets `process.exitCode = 1` on failure so standalone
- * invocations surface the correct shell exit code. Interactive callers should
- * branch on the return value rather than reading global process state.
+ * otherwise. Callers decide whether a failed verification should set process
+ * exit status or simply drive an interactive branch.
  */
 export async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<boolean> {
   if (!opts.suppressBanners) {
@@ -22,7 +21,6 @@ export async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<b
     result = await verifyLock(cwd);
   } catch (e) {
     s.error('Verification failed');
-    process.exitCode = 1;
     throw e;
   }
 
@@ -34,7 +32,6 @@ export async function cmdVerify(cwd: string, opts: DispatchOpts = {}): Promise<b
     if (!opts.suppressBanners) {
       cancel('inrepo verify: lockfile and checkouts disagree.');
     }
-    process.exitCode = 1;
     return false;
   }
 

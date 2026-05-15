@@ -15,6 +15,7 @@ import {
 import { APP_NAME, readOwnPackageInfo, type InrepoPackageInfo } from './app-info.js';
 import { cmdInit } from './commands/init.js';
 import { commands } from './command-table.js';
+import { cmdInteractive } from './interactive.js';
 import { showInrepoHelp } from './rendering.js';
 import { createInrepoTelemetryOptions } from './telemetry.js';
 import { error } from './ui.js';
@@ -107,10 +108,16 @@ async function handleNoCommand(
 ): Promise<void> {
   // Bare `inrepo` invocation:
   //   - interactive TTY: first-time init wizard if needed.
+  //   - interactive TTY + initialized project: action menu.
   //   - otherwise: print help. Exit 1 if uninitialized so CI/scripts get a
   //     clear pointer that something needs doing.
-  if (canPromptInteractively() && !isInrepoInitialized(context.cwd)) {
-    await cmdInit(context.cwd);
+  if (canPromptInteractively()) {
+    if (!isInrepoInitialized(context.cwd)) {
+      await cmdInit(context.cwd);
+      return;
+    }
+
+    await cmdInteractive(context.cwd);
     return;
   }
 

@@ -135,13 +135,6 @@ async function main(): Promise<void> {
     rawArgs,
   });
 
-  startBackgroundUpdateCheck({
-    appName: "my-cli",
-    currentVersion: packageInfo.version,
-    logger: context.logger,
-    packageName: packageInfo.name,
-  });
-
   if (context.flags.help) {
     showHelpMenu(
       context,
@@ -151,6 +144,13 @@ async function main(): Promise<void> {
     );
     process.exit(0);
   }
+
+  startBackgroundUpdateCheck({
+    appName: "my-cli",
+    currentVersion: packageInfo.version,
+    logger: context.logger,
+    packageName: packageInfo.name,
+  });
 
   await displayIntro(context, {
     appName: "my-cli",

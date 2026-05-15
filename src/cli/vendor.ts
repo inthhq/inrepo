@@ -42,7 +42,10 @@ function normalizeGitUrlForComparison(raw: string | undefined | null): string | 
   const github = normalizeGithubHttpsUrl(trimmed);
   if (github) return github;
 
-  const scpLike = /^(?<user>[^@]+@)?(?<host>[^:/]+):(?<path>.+)$/.exec(trimmed);
+  const hasUrlScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
+  const scpLike = hasUrlScheme
+    ? null
+    : /^(?<user>[^@]+@)?(?<host>[^:/]+):(?<path>.+)$/.exec(trimmed);
   if (scpLike?.groups) {
     const user = scpLike.groups.user ?? '';
     const host = scpLike.groups.host.toLowerCase();
