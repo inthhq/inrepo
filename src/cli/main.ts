@@ -16,6 +16,7 @@ import { APP_NAME, readOwnPackageInfo, type InrepoPackageInfo } from './app-info
 import { cmdInit } from './commands/init.js';
 import { commands } from './command-table.js';
 import { showInrepoHelp } from './rendering.js';
+import { createInrepoTelemetryOptions } from './telemetry.js';
 import { error } from './ui.js';
 
 export async function main(): Promise<void> {
@@ -39,6 +40,7 @@ export async function main(): Promise<void> {
     cwd,
     interactivePackageManagerDetection: false,
     rawArgs,
+    telemetry: createInrepoTelemetryOptions(packageInfo),
   });
 
   if (context.flags.help === true) {
