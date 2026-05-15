@@ -1,9 +1,9 @@
-import { cancel, confirm, intro, isCancel, log, outro, select } from '@clack/prompts';
 import { spawn } from 'node:child_process';
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { stdin as input, stdout as output } from 'node:process';
+import { cancel, confirm, intro, isCancel, outro, select, ui } from '../cli/ui.js';
 import { defaultInrepoJsonSchemaRef } from '../inrepo-json/default-inrepo-json-schema-ref.js';
 import { inrepoConfigPath } from '../paths/inrepo-config-path.js';
 import { packageJsonPath } from '../paths/package-json-path.js';
@@ -95,9 +95,9 @@ async function appendGitignoreLines(
 
 function logGitignoreRecommendation(added: string[]): void {
   if (added.length > 0) {
-    log.info(`Added to .gitignore: ${added.join(', ')}`);
+    ui.info(`Added to .gitignore: ${added.join(', ')}`);
   }
-  log.message(GITIGNORE_RECOMMENDATION);
+  ui.message(GITIGNORE_RECOMMENDATION);
 }
 
 function openUrl(url: string): boolean {
@@ -123,9 +123,9 @@ async function promptToStarOnGithub(): Promise<void> {
   if (isCancel(shouldOpen) || shouldOpen !== true) return;
 
   if (openUrl(GITHUB_REPO_URL)) {
-    log.info(`Opening ${GITHUB_REPO_URL}`);
+    ui.info(`Opening ${GITHUB_REPO_URL}`);
   } else {
-    log.message(`Star inrepo here: ${GITHUB_REPO_URL}`);
+    ui.message(`Star inrepo here: ${GITHUB_REPO_URL}`);
   }
 }
 
