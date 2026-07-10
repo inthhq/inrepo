@@ -1,4 +1,17 @@
 {
-  "packages": [],
+  "packages": [
+    {
+      "name": "pnpm"
+    },
+    {
+      "name": "bun"
+    },
+    {
+      "name": "npm"
+    },
+    {
+      "name": "yarn"
+    }
+  ],
   "$schema": "https://raw.githubusercontent.com/inthhq/inrepo/main/inrepo.schema.json"
 }

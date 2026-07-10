@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "hexbus": {
+      "source": "inthhq/agent-skills",
+      "sourceType": "github",
+      "skillPath": "hexbus/SKILL.md",
+      "computedHash": "0bda7c23e930a868a9d8e898079312d4d32fdc3113747eabe7d360d5d844201a"
+    }
+  }
+}
