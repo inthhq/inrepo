@@ -115,7 +115,7 @@ Do not commit these:
 - `inrepo_modules/<package>/` is rebuilt by `inrepo sync`.
 - `.inrepo/` stores cache, state, and backups.
 
-The generated module is wired into your root `package.json` as a local `file:inrepo_modules/<package>` dependency. Use `npx inrepo add <package> -D` or `"dev": true` in config when it should land in `devDependencies`.
+Generated modules are source-only by default. To wire one into the root `package.json`, opt in with `npx inrepo add <package> --dependency` or `npx inrepo add <package> -D`. The selected link is persisted in inrepo config so later syncs reproduce it.
 
 ## Config
 
@@ -128,7 +128,7 @@ Prefer `inrepo.json` at the project root:
       "name": "example-package",
       "git": "https://github.com/owner/repo",
       "ref": "main",
-      "dev": false,
+      "packageJson": "dependencies",
       "keep": ["src", "package.json"],
       "exclude": ["test", "/\\.snap$/"]
     }
@@ -143,9 +143,11 @@ You can also put the same object under `package.json#inrepo`.
 - `name` is the package name and destination under `inrepo_modules/`.
 - `git` is optional when npm metadata can resolve the GitHub repository.
 - `ref` can be a branch, tag, or commit before the lockfile resolves the exact commit.
-- `dev` chooses `devDependencies` instead of `dependencies`.
+- `packageJson` optionally links the generated module under `dependencies` or `devDependencies`; omit it for source-only vendoring.
 - `keep` allowlists paths before exclusions run.
 - `exclude` removes literal relative paths or slash-delimited regex matches.
+
+The legacy `dev` field is no longer supported. Remove it for source-only behavior, or replace it with `"packageJson": "dependencies"` or `"packageJson": "devDependencies"`.
 
 ## Built-in guardrails
 

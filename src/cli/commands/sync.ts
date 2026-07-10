@@ -1,6 +1,11 @@
 import { ensureInrepoInitialized } from '../../config/ensure-inrepo-initialized.js';
 import { loadConfig } from '../../config/load-config.js';
 import { readLockfile } from '../../lockfile/read-lockfile.js';
+import {
+  preflightRootPackageJsonDependencyLinks,
+  syncRootPackageJsonDependencies,
+  type PackageJsonDependencyLink,
+} from '../../package-json/upsert-vendored-package-ref.js';
 import { parseSyncArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
 import type { DispatchOpts } from '../types.js';
@@ -21,6 +26,10 @@ export async function cmdSync(
   if (packages.length === 0) {
     throw new Error('Config has an empty "packages" array. Add at least one package.');
   }
+  const packageJsonLinks: PackageJsonDependencyLink[] = packages.flatMap((pkg) =>
+    pkg.packageJson ? [{ name: pkg.name, target: pkg.packageJson }] : [],
+  );
+  await preflightRootPackageJsonDependencyLinks(cwd, packageJsonLinks);
 
   if (!opts.suppressBanners) intro(`inrepo sync — ${packages.length} package(s)`);
   for (const pkg of packages) {
@@ -30,5 +39,6 @@ export async function cmdSync(
       lockEntry: modules[pkg.name],
     });
   }
+  await syncRootPackageJsonDependencies(cwd, packageJsonLinks);
   if (!opts.suppressBanners) outro(`Done. ${packages.length} package(s) synced.`);
 }

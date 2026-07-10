@@ -1,13 +1,14 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { inrepoConfigPath } from '../paths/inrepo-config-path.js';
+import type { PackageJsonDependencyTarget } from '../types/inrepo-package.js';
 import { defaultInrepoJsonSchemaRef } from './default-inrepo-json-schema-ref.js';
 
 export type InrepoJsonEntry = {
   name: string;
   git?: string;
   ref?: string;
-  dev?: boolean;
+  packageJson?: PackageJsonDependencyTarget;
 };
 
 /** Upsert a package entry into inrepo.json. Adds `$schema` at the end when the file did not already define it. */
@@ -71,11 +72,12 @@ export async function upsertInrepoJson(cwd: string, entry: InrepoJsonEntry): Pro
 
   if (ix >= 0) {
     const merged = { ...data.packages[ix], ...next };
-    if (entry.dev === true) merged.dev = true;
-    else delete merged.dev;
+    delete merged.dev;
+    if (entry.packageJson !== undefined) merged.packageJson = entry.packageJson;
+    else delete merged.packageJson;
     data.packages[ix] = merged;
   } else {
-    if (entry.dev === true) next.dev = true;
+    if (entry.packageJson !== undefined) next.packageJson = entry.packageJson;
     data.packages.push(next);
   }
 

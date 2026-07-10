@@ -50,7 +50,14 @@ describe('loadConfig', () => {
     await writeFile(
       join(cwd, 'inrepo.json'),
       JSON.stringify({
-        packages: [{ name: 'a', git: 'https://example.com/a.git', ref: 'main', dev: true }],
+        packages: [
+          {
+            name: 'a',
+            git: 'https://example.com/a.git',
+            ref: 'main',
+            packageJson: 'devDependencies',
+          },
+        ],
         exclude: ['.git', '/^docs\\//'],
         keep: ['src', 'package.json'],
       }),
@@ -59,7 +66,12 @@ describe('loadConfig', () => {
     const cfg = await loadConfig(cwd);
     expect(cfg.source).toBe('inrepo.json');
     expect(cfg.packages).toEqual([
-      { name: 'a', git: 'https://example.com/a.git', ref: 'main', dev: true },
+      {
+        name: 'a',
+        git: 'https://example.com/a.git',
+        ref: 'main',
+        packageJson: 'devDependencies',
+      },
     ]);
     expect(cfg.exclude).toEqual(['.git', '/^docs\\//']);
     expect(cfg.keep).toEqual(['src', 'package.json']);
@@ -68,7 +80,7 @@ describe('loadConfig', () => {
   test('accepts a bare JSON array of packages (no root exclude/keep)', async () => {
     await writeFile(
       join(cwd, 'inrepo.json'),
-      JSON.stringify([{ name: 'a' }, { name: 'b', dev: false }]),
+      JSON.stringify([{ name: 'a' }, { name: 'b', packageJson: 'dependencies' }]),
       'utf8',
     );
     const cfg = await loadConfig(cwd);
@@ -86,13 +98,26 @@ describe('loadConfig', () => {
     await expect(loadConfig(cwd)).rejects.toThrow(/packages\[1\]\.name/);
   });
 
-  test('rejects bad git/ref/dev types', async () => {
+  test('rejects invalid packageJson targets', async () => {
     await writeFile(
       join(cwd, 'inrepo.json'),
-      JSON.stringify({ packages: [{ name: 'a', dev: 'yes' }] }),
+      JSON.stringify({ packages: [{ name: 'a', packageJson: true }] }),
       'utf8',
     );
-    await expect(loadConfig(cwd)).rejects.toThrow(/packages\[0\]\.dev must be a boolean/);
+    await expect(loadConfig(cwd)).rejects.toThrow(
+      /packages\[0\]\.packageJson must be "dependencies" or "devDependencies"/,
+    );
+  });
+
+  test('rejects legacy dev config with migration guidance', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'a', dev: true }] }),
+      'utf8',
+    );
+    await expect(loadConfig(cwd)).rejects.toThrow(
+      /dev is no longer supported.*packageJson: "dependencies" or "devDependencies"/,
+    );
   });
 
   test('throws on empty inrepo.json', async () => {

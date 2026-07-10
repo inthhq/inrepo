@@ -3,6 +3,12 @@ import { existsSync } from 'node:fs';
 import { relative, sep } from 'node:path';
 import { moduleDestPath } from '../paths/module-dest-path.js';
 import { packageJsonPath } from '../paths/package-json-path.js';
+import type { PackageJsonDependencyTarget } from '../types/inrepo-package.js';
+
+export type PackageJsonDependencyLink = {
+  name: string;
+  target: PackageJsonDependencyTarget;
+};
 
 function localFilePackageSpecifier(cwd: string, packageName: string): string {
   const dest = moduleDestPath(cwd, packageName);
@@ -13,10 +19,10 @@ function localFilePackageSpecifier(cwd: string, packageName: string): string {
 
 function ensureDepObject(
   data: Record<string, unknown>,
-  key: 'dependencies' | 'devDependencies',
+  key: PackageJsonDependencyTarget,
 ): Record<string, unknown> {
   let obj = data[key];
-  if (obj == null) {
+  if (obj === undefined) {
     obj = {};
     data[key] = obj;
   }
@@ -24,6 +30,40 @@ function ensureDepObject(
     throw new Error(`package.json "${key}" must be a JSON object when present`);
   }
   return obj as Record<string, unknown>;
+}
+
+async function readRootPackageJson(cwd: string): Promise<{
+  data: Record<string, unknown>;
+  path: string;
+}> {
+  const path = packageJsonPath(cwd);
+  if (!existsSync(path)) {
+    throw new Error('package.json is required when package.json dependency linking is configured');
+  }
+
+  const raw = await readFile(path, 'utf8');
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(raw) as Record<string, unknown>;
+  } catch (e) {
+    const err = e instanceof Error ? e : new Error(String(e));
+    throw new Error(`Invalid package.json: ${err.message}`);
+  }
+  if (data == null || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('package.json must be a JSON object');
+  }
+
+  for (const key of ['dependencies', 'devDependencies'] as const) {
+    if (data[key] !== undefined) ensureDepObject(data, key);
+  }
+  if (
+    data.packages != null &&
+    (typeof data.packages !== 'object' || Array.isArray(data.packages))
+  ) {
+    throw new Error('package.json "packages" must be a JSON object when present');
+  }
+
+  return { data, path };
 }
 
 function pruneLegacyPackagesMap(data: Record<string, unknown>, packageName: string): void {
@@ -40,48 +80,53 @@ function pruneLegacyPackagesMap(data: Record<string, unknown>, packageName: stri
 }
 
 /**
- * Set package.json#dependencies or #devDependencies[name] to a file: URL pointing at inrepo_modules.
- * Removes the name from the other deps bucket and from legacy package.json#packages.
- * No-op if package.json is missing (e.g. vendoring outside an npm project).
+ * Validate package.json before vendoring whenever one or more configured packages request linking.
  */
-export async function upsertRootPackageJsonDependency(
+export async function preflightRootPackageJsonDependencyLinks(
   cwd: string,
-  packageName: string,
-  dev: boolean,
+  links: PackageJsonDependencyLink[],
 ): Promise<void> {
-  const path = packageJsonPath(cwd);
-  if (!existsSync(path)) return;
+  if (links.length === 0) return;
+  await readRootPackageJson(cwd);
+}
 
-  const raw = await readFile(path, 'utf8');
-  let data: Record<string, unknown>;
-  try {
-    data = JSON.parse(raw) as Record<string, unknown>;
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e));
-    throw new Error(`Invalid package.json: ${err.message}`);
-  }
-  if (data == null || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('package.json must be a JSON object');
-  }
+/**
+ * Link only explicitly selected packages into root package.json in one write.
+ * Unselected dependencies and legacy links are left untouched.
+ */
+export async function syncRootPackageJsonDependencies(
+  cwd: string,
+  links: PackageJsonDependencyLink[],
+): Promise<void> {
+  if (links.length === 0) return;
+  const { data, path } = await readRootPackageJson(cwd);
 
-  const primaryKey = dev ? 'devDependencies' : 'dependencies';
-  const otherKey = dev ? 'dependencies' : 'devDependencies';
+  for (const link of links) {
+    const primaryKey = link.target;
+    const otherKey = primaryKey === 'devDependencies' ? 'dependencies' : 'devDependencies';
 
-  const primary = ensureDepObject(data, primaryKey);
-  const specifier = localFilePackageSpecifier(cwd, packageName);
-  primary[packageName] = specifier;
+    const primary = ensureDepObject(data, primaryKey);
+    primary[link.name] = localFilePackageSpecifier(cwd, link.name);
 
-  if (data[otherKey] != null) {
-    const other = data[otherKey];
-    if (typeof other === 'object' && other !== null && !Array.isArray(other)) {
-      delete (other as Record<string, unknown>)[packageName];
-      if (Object.keys(other as Record<string, unknown>).length === 0) {
+    if (data[otherKey] !== undefined) {
+      const other = ensureDepObject(data, otherKey);
+      delete other[link.name];
+      if (Object.keys(other).length === 0) {
         delete data[otherKey];
       }
     }
+
+    pruneLegacyPackagesMap(data, link.name);
   }
 
-  pruneLegacyPackagesMap(data, packageName);
-
   await writeFile(path, `${JSON.stringify(data, null, 2)}\n`, 'utf8');
+}
+
+/** Link one package; retained as the focused single-package helper used by callers and tests. */
+export async function upsertRootPackageJsonDependency(
+  cwd: string,
+  packageName: string,
+  target: PackageJsonDependencyTarget,
+): Promise<void> {
+  await syncRootPackageJsonDependencies(cwd, [{ name: packageName, target }]);
 }

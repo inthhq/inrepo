@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { writeFile } from 'node:fs/promises';
+import { rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { bootstrapHostPackageJson, envFor, readJson } from '../test-utils/e2e-harness.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
@@ -48,7 +48,7 @@ describe('CLI: add ↔ config sync (e2e)', () => {
     expect(sync.stdout).toMatch(/Done\. 1 package\(s\) synced/);
   });
 
-  test('add -D --ref records dev/git/ref together', async () => {
+  test('add -D --ref records packageJson/git/ref together', async () => {
     const r = await runCli(['add', '-D', '--git', fx.url, '--ref', fx.c1, 'upstream'], {
       cwd,
       env: NON_INTERACTIVE_ENV,
@@ -57,7 +57,7 @@ describe('CLI: add ↔ config sync (e2e)', () => {
 
     const cfg = await readJson(join(cwd, 'inrepo.json'));
     expect(cfg.packages).toEqual([
-      { name: 'upstream', git: fx.url, ref: fx.c1, dev: true },
+      { name: 'upstream', git: fx.url, ref: fx.c1, packageJson: 'devDependencies' },
     ]);
   });
 
@@ -74,6 +74,8 @@ describe('CLI: add ↔ config sync (e2e)', () => {
     expect(existsSync(join(cwd, 'inrepo.json'))).toBe(false);
     const pkg = await readJson(join(cwd, 'package.json'));
     expect(pkg.inrepo).toBeUndefined();
+    expect(pkg.dependencies).toBeUndefined();
+    expect(pkg.devDependencies).toBeUndefined();
 
     // Sync afterwards still complains that there's no config — that's the
     // intended trade-off for opting out of persistence.
@@ -90,6 +92,48 @@ describe('CLI: add ↔ config sync (e2e)', () => {
     expect(r.stderr).not.toMatch(/first-time setup needs an interactive terminal/);
     expect(existsSync(join(cwd, 'inrepo_modules', 'upstream', 'README.md'))).toBe(true);
     expect(existsSync(join(cwd, 'inrepo.json'))).toBe(false);
+  });
+
+  test('explicit linking requires package.json before vendoring starts', async () => {
+    await rm(join(cwd, 'package.json'));
+    const r = await runCli(['add', '--dependency', '--git', fx.url, 'upstream'], {
+      cwd,
+      env: NON_INTERACTIVE_ENV,
+    });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/package\.json is required/);
+    expect(existsSync(join(cwd, 'inrepo_modules', 'upstream'))).toBe(false);
+    expect(existsSync(join(cwd, 'inrepo.lock.json'))).toBe(false);
+  });
+
+  test('explicit linking rejects malformed package.json before vendoring starts', async () => {
+    await writeFile(join(cwd, 'inrepo.json'), '{"packages":[]}\n', 'utf8');
+    await writeFile(join(cwd, 'package.json'), '{ broken', 'utf8');
+    const r = await runCli(['add', '--dependency', '--git', fx.url, 'upstream'], {
+      cwd,
+      env: NON_INTERACTIVE_ENV,
+    });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/Invalid package\.json/);
+    expect(existsSync(join(cwd, 'inrepo_modules', 'upstream'))).toBe(false);
+    expect(existsSync(join(cwd, 'inrepo.lock.json'))).toBe(false);
+  });
+
+  test('sync preflights explicit linking before vendoring starts', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      `${JSON.stringify({
+        packages: [{ name: 'upstream', git: fx.url, packageJson: 'dependencies' }],
+      })}\n`,
+      'utf8',
+    );
+    await rm(join(cwd, 'package.json'));
+
+    const r = await runCli(['sync'], { cwd, env: NON_INTERACTIVE_ENV });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/package\.json is required/);
+    expect(existsSync(join(cwd, 'inrepo_modules', 'upstream'))).toBe(false);
+    expect(existsSync(join(cwd, 'inrepo.lock.json'))).toBe(false);
   });
 
   test('failed materialize leaves inrepo.json untouched (no phantom config entry)', async () => {

@@ -9,13 +9,33 @@ import {
 import { upsertInrepoJson, type InrepoJsonEntry } from '../../inrepo-json/upsert-inrepo-json.js';
 import { upsertPackageJsonInrepo } from '../../inrepo-json/upsert-package-json-inrepo.js';
 import { readLockfile } from '../../lockfile/read-lockfile.js';
+import {
+  preflightRootPackageJsonDependencyLinks,
+  syncRootPackageJsonDependencies,
+  type PackageJsonDependencyLink,
+} from '../../package-json/upsert-vendored-package-ref.js';
 import { inrepoConfigPath } from '../../paths/inrepo-config-path.js';
 import { moduleDestPath } from '../../paths/module-dest-path.js';
+import type { PackageJsonDependencyTarget } from '../../types/inrepo-package.js';
 import { parseAddArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
 import type { AddArgs, DispatchOpts } from '../types.js';
-import { cancel, confirm, intro, isCancel, outro, text } from '../ui.js';
+import { cancel, intro, isCancel, outro, select, text } from '../ui.js';
 import { materializePackage } from '../vendor.js';
+
+export type AddPackageJsonChoice = PackageJsonDependencyTarget | 'none';
+
+export const DEFAULT_ADD_PACKAGE_JSON_CHOICE: AddPackageJsonChoice = 'none';
+
+export const ADD_PACKAGE_JSON_CHOICES: {
+  value: AddPackageJsonChoice;
+  label: string;
+  hint?: string;
+}[] = [
+  { value: 'none', label: 'Do not link', hint: 'source vendoring only' },
+  { value: 'dependencies', label: 'dependencies' },
+  { value: 'devDependencies', label: 'devDependencies' },
+];
 
 export async function performAdd(
   cwd: string,
@@ -49,7 +69,15 @@ export async function performAdd(
     globalKeep = await loadGlobalKeep(cwd);
   }
 
-  if (!opts.suppressBanners) intro(`inrepo add — ${args.name}${args.dev ? ' (dev)' : ''}`);
+  const packageJsonLinks: PackageJsonDependencyLink[] = args.packageJson
+    ? [{ name: args.name, target: args.packageJson }]
+    : [];
+  await preflightRootPackageJsonDependencyLinks(cwd, packageJsonLinks);
+
+  if (!opts.suppressBanners) {
+    const linkLabel = args.packageJson ? ` (${args.packageJson})` : '';
+    intro(`inrepo add — ${args.name}${linkLabel}`);
+  }
 
   await materializePackage(
     cwd,
@@ -57,7 +85,6 @@ export async function performAdd(
       name: args.name,
       git: args.git,
       ref: args.ref,
-      dev: args.dev,
       exclude: pkgExclude,
       keep: pkgKeep,
     },
@@ -76,7 +103,7 @@ export async function performAdd(
   if (args.save) {
     const entry: InrepoJsonEntry = {
       name: args.name,
-      dev: args.dev,
+      packageJson: args.packageJson,
     };
     if (args.git !== undefined && args.git !== '') {
       entry.git = args.git;
@@ -90,6 +117,8 @@ export async function performAdd(
       await upsertPackageJsonInrepo(cwd, entry);
     }
   }
+
+  await syncRootPackageJsonDependencies(cwd, packageJsonLinks);
 
   if (!opts.suppressBanners) {
     outro(
@@ -105,7 +134,7 @@ export async function cmdAdd(cwd: string, argv: string[]): Promise<void> {
 }
 
 /**
- * Drive the four `add` inputs through Clack prompts. Returns null if the user
+ * Drive the `add` inputs through Hexbus prompts. Returns null if the user
  * cancels at any point.
  */
 export async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | null> {
@@ -136,11 +165,12 @@ export async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | 
   });
   if (isCancel(ref)) return onCancel();
 
-  const dev = await confirm({
-    message: 'Save under devDependencies?',
-    initialValue: false,
+  const packageJson = await select<AddPackageJsonChoice>({
+    message: 'Link the generated package in package.json?',
+    initialValue: DEFAULT_ADD_PACKAGE_JSON_CHOICE,
+    options: ADD_PACKAGE_JSON_CHOICES,
   });
-  if (isCancel(dev)) return onCancel();
+  if (isCancel(packageJson)) return onCancel();
 
   if (!opts.suppressBanners) outro('Starting vendor checkout');
 
@@ -150,7 +180,7 @@ export async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | 
     name: (name as string).trim(),
     git: trimmedGit === '' ? undefined : trimmedGit,
     ref: trimmedRef === '' ? undefined : trimmedRef,
-    dev: dev === true,
+    packageJson: packageJson === 'none' ? undefined : packageJson,
     save: true,
   };
 }

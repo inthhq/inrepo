@@ -39,7 +39,7 @@ for (const mode of MODES) {
       await cleanupTmpDir(cwd);
     });
 
-    test('add (default) vendors module, writes lockfile, updates config and package.json deps', async () => {
+    test('add (default) vendors module and records config without linking package.json', async () => {
       const r = await runCli(['add', '--git', fx.url, 'upstream'], {
         cwd,
         env: envFor(mode),
@@ -59,7 +59,8 @@ for (const mode of MODES) {
       expect((lock.modules as Record<string, { commit: string }>).upstream.commit).toBe(fx.c2);
 
       const pkg = await readJson(join(cwd, 'package.json'));
-      expect(pkg.dependencies).toEqual({ upstream: 'file:inrepo_modules/upstream' });
+      expect(pkg.dependencies).toBeUndefined();
+      expect(pkg.devDependencies).toBeUndefined();
 
       const cfg = await readConfig(cwd, mode);
       expect(cfg.packages).toEqual([{ name: 'upstream', git: fx.url }]);
@@ -77,7 +78,7 @@ for (const mode of MODES) {
       }
     });
 
-    test('add -D wires devDependencies and toggling off via add restores dependencies', async () => {
+    test('explicit add flags link devDependencies and can move the package to dependencies', async () => {
       const r1 = await runCli(['add', '-D', '--git', fx.url, 'upstream'], {
         cwd,
         env: envFor(mode),
@@ -88,9 +89,11 @@ for (const mode of MODES) {
       expect(pkg.dependencies).toBeUndefined();
 
       let cfg = await readConfig(cwd, mode);
-      expect(cfg.packages).toEqual([{ name: 'upstream', git: fx.url, dev: true }]);
+      expect(cfg.packages).toEqual([
+        { name: 'upstream', git: fx.url, packageJson: 'devDependencies' },
+      ]);
 
-      const r2 = await runCli(['add', '--git', fx.url, 'upstream'], {
+      const r2 = await runCli(['add', '--dependency', '--git', fx.url, 'upstream'], {
         cwd,
         env: envFor(mode),
       });
@@ -100,7 +103,44 @@ for (const mode of MODES) {
       expect(pkg.devDependencies).toBeUndefined();
 
       cfg = await readConfig(cwd, mode);
-      expect(cfg.packages).toEqual([{ name: 'upstream', git: fx.url }]);
+      expect(cfg.packages).toEqual([
+        { name: 'upstream', git: fx.url, packageJson: 'dependencies' },
+      ]);
+    });
+
+    test('sync links only configured packages and leaves source-only links untouched', async () => {
+      await writeConfig(cwd, mode, {
+        packages: [
+          { name: 'source-only', git: fx.url },
+          { name: 'runtime', git: fx.url, packageJson: 'dependencies' },
+          { name: 'build', git: fx.url, packageJson: 'devDependencies' },
+        ],
+      });
+      const pkgPath = join(cwd, 'package.json');
+      const before = await readJson(pkgPath);
+      before.dependencies = {
+        existing: '^1.0.0',
+        'source-only': 'file:inrepo_modules/source-only',
+      };
+      await writeFile(pkgPath, `${JSON.stringify(before, null, 2)}\n`, 'utf8');
+
+      const first = await runCli(['sync'], { cwd, env: envFor(mode) });
+      expect(first.exitCode).toBe(0);
+      const afterFirst = await readJson(pkgPath);
+      expect(afterFirst.dependencies).toEqual({
+        existing: '^1.0.0',
+        'source-only': 'file:inrepo_modules/source-only',
+        runtime: 'file:inrepo_modules/runtime',
+      });
+      expect(afterFirst.devDependencies).toEqual({
+        build: 'file:inrepo_modules/build',
+      });
+
+      const second = await runCli(['sync'], { cwd, env: envFor(mode) });
+      expect(second.exitCode).toBe(0);
+      const afterSecond = await readJson(pkgPath);
+      expect(afterSecond.dependencies).toEqual(afterFirst.dependencies);
+      expect(afterSecond.devDependencies).toEqual(afterFirst.devDependencies);
     });
 
     test('add --ref pins to a specific commit SHA and records ref in config', async () => {

@@ -55,11 +55,12 @@ export async function upsertPackageJsonInrepo(cwd: string, entry: InrepoJsonEntr
 
   if (ix >= 0) {
     const merged = { ...data.packages[ix], ...next };
-    if (entry.dev === true) merged.dev = true;
-    else delete merged.dev;
+    delete merged.dev;
+    if (entry.packageJson !== undefined) merged.packageJson = entry.packageJson;
+    else delete merged.packageJson;
     data.packages[ix] = merged;
   } else {
-    if (entry.dev === true) next.dev = true;
+    if (entry.packageJson !== undefined) next.packageJson = entry.packageJson;
     data.packages.push(next);
   }
 

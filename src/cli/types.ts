@@ -1,11 +1,12 @@
 import type { LockModule } from '../types/lock-module.js';
+import type { PackageJsonDependencyTarget } from '../types/inrepo-package.js';
 
 export type AddArgs = {
   name: string;
   git?: string;
   ref?: string;
   save: boolean;
-  dev: boolean;
+  packageJson?: PackageJsonDependencyTarget;
 };
 
 export type SyncArgs = {
@@ -20,7 +21,6 @@ export type PackageSpec = {
   name: string;
   git?: string;
   ref?: string;
-  dev?: boolean;
   exclude?: string[];
   keep?: string[];
 };

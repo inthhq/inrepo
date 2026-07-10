@@ -34,17 +34,22 @@ Add and pin a package:
 npx inrepo add <package>
 ```
 
+This vendors source without changing package.json dependency buckets.
+
 If the npm registry package does not expose a GitHub repository URL, pass the git URL:
 
 ```bash
 npx inrepo add <package> --git https://github.com/owner/repo --ref main
 ```
 
-Use `-D` when the generated local package should be wired into `devDependencies`:
+Opt in when the generated local package should be wired into `dependencies` or `devDependencies`:
 
 ```bash
+npx inrepo add <package> --dependency
 npx inrepo add <package> -D
 ```
+
+The choice is saved as `packageJson` on that package's inrepo config entry and replayed by `inrepo sync`.
 
 The normal collaboration loop is:
 

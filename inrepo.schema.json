@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/inthhq/inrepo/main/inrepo.schema.json",
+  "title": "inrepo.json",
+  "description": "Declarative config for the inrepo CLI.",
+  "$defs": {
+    "nonEmptyString": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The CLI trims surrounding whitespace and rejects whitespace-only strings at runtime."
+    },
+    "keepPathString": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Path prefix relative to the vendored module root.",
+      "allOf": [
+        { "not": { "pattern": "^[\\\\/]" } },
+        { "not": { "pattern": "(^|[\\\\/])\\.\\.([\\\\/]|$)" } },
+        { "not": { "pattern": "^[A-Za-z]:[/\\\\]" } }
+      ]
+    },
+    "packageEntry": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name"],
+      "properties": {
+        "name": { "$ref": "#/$defs/nonEmptyString" },
+        "git": { "$ref": "#/$defs/nonEmptyString" },
+        "ref": { "$ref": "#/$defs/nonEmptyString" },
+        "dev": false,
+        "packageJson": {
+          "type": "string",
+          "enum": ["dependencies", "devDependencies"],
+          "description": "Optional root package.json dependency bucket for the generated module. Omit for source-only vendoring."
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" }
+        },
+        "keep": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/keepPathString" }
+        }
+      }
+    }
+  },
+  "oneOf": [
+    {
+      "title": "Packages array",
+      "description": "Top-level array of package entries. Use the object form for root keep or exclude lists.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/packageEntry" }
+    },
+    {
+      "title": "Object with packages",
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["packages"],
+      "properties": {
+        "packages": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/packageEntry" }
+        },
+        "exclude": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/nonEmptyString" }
+        },
+        "keep": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/keepPathString" }
+        }
+      }
+    }
+  ]
+}

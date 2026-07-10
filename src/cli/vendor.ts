@@ -8,7 +8,6 @@ import { compareTrees } from '../overlay/compare-trees.js';
 import { backupDirPath, overlayDirPath } from '../overlay/overlay-paths.js';
 import { hashTree } from '../overlay/tree-hash.js';
 import { copyTree } from '../overlay/tree-utils.js';
-import { upsertRootPackageJsonDependency } from '../package-json/upsert-vendored-package-ref.js';
 import { moduleDestPath } from '../paths/module-dest-path.js';
 import { normalizeGithubHttpsUrl } from '../registry/normalize-github-https-url.js';
 import { resolveGitUrlFromNpm } from '../registry/resolve-git-url-from-npm.js';
@@ -225,9 +224,6 @@ export async function materializePackage(
         updatedAt: new Date().toISOString(),
       });
     }
-
-    s.message('Updating package.json');
-    await upsertRootPackageJsonDependency(cwd, pkg.name, pkg.dev === true);
 
     // Final stop message preserves the e2e contract: `Synced "<name>" @ <sha7>` on stdout.
     s.stop(`Synced "${pkg.name}" @ ${pristine.commit.slice(0, 7)} → ${dest}`);

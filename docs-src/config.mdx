@@ -1,6 +1,6 @@
 ---
 title: Config
-description: The small inrepo config shape and how keep, exclude, dev, git, and ref work.
+description: The inrepo config shape for source filtering, upstream refs, and optional package.json linking.
 group: reference
 ---
 
@@ -15,7 +15,7 @@ Prefer `inrepo.json` at the project root:
       "name": "example-package",
       "git": "https://github.com/owner/repo",
       "ref": "main",
-      "dev": false,
+      "packageJson": "dependencies",
       "keep": ["src", "package.json"],
       "exclude": ["test", "/\\.snap$/"]
     }
@@ -36,7 +36,8 @@ You can also put the same object under `package.json#inrepo`. A bare array of pa
     "packages": [
       {
         "name": "example-package",
-        "git": "https://github.com/owner/repo"
+        "git": "https://github.com/owner/repo",
+        "packageJson": "dependencies"
       }
     ]
   }
@@ -50,7 +51,7 @@ Package fields:
 | `name` | Package name and destination under `inrepo_modules/`. |
 | `git` | Optional git clone URL. Required when npm registry lookup cannot resolve a GitHub repository. |
 | `ref` | Optional branch, tag, or commit to pin before resolving the lockfile commit. |
-| `dev` | When `true`, sync wires the root `package.json#devDependencies`; otherwise it uses `dependencies`. |
+| `packageJson` | Optional package.json link target: `dependencies` or `devDependencies`. Omit it for source-only vendoring. |
 | `keep` | Optional allowlist of relative path prefixes to retain before exclusions run. |
 | `exclude` | Optional relative paths or slash-delimited regexes to remove from the vendored tree. |
 
@@ -64,3 +65,21 @@ Filtering always runs in this order:
 If `keep` is set, list every root file you still need, such as `package.json` or `LICENSE`. Nothing is kept implicitly.
 
 `inrepo add <package>` updates config by default after a successful checkout. Use `--no-save` for a one-off vendoring operation that should not upsert config.
+
+## Package.json linking
+
+Source vendoring is the default and does not change `package.json#dependencies` or `package.json#devDependencies`. Opt in per package:
+
+```json
+{
+  "packages": [
+    { "name": "source-only" },
+    { "name": "runtime-package", "packageJson": "dependencies" },
+    { "name": "build-tool", "packageJson": "devDependencies" }
+  ]
+}
+```
+
+Only selected packages are linked. Existing dependency entries for source-only packages are left untouched.
+
+The legacy `dev` field is no longer supported. Remove it for source-only behavior, replace it with `"packageJson": "dependencies"` for a production link, or use `"packageJson": "devDependencies"` for a development link.

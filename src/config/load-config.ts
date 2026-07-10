@@ -63,11 +63,18 @@ function validatePackage(entry: unknown, index: number): InrepoPackage {
     }
     pkg.ref = rec.ref.trim();
   }
-  if (rec.dev != null) {
-    if (typeof rec.dev !== 'boolean') {
-      throw new Error(`packages[${index}].dev must be a boolean when set`);
+  if (rec.dev !== undefined) {
+    throw new Error(
+      `packages[${index}].dev is no longer supported; remove it for source-only behavior or replace it with packageJson: "dependencies" or "devDependencies"`,
+    );
+  }
+  if (rec.packageJson !== undefined) {
+    if (rec.packageJson !== 'dependencies' && rec.packageJson !== 'devDependencies') {
+      throw new Error(
+        `packages[${index}].packageJson must be "dependencies" or "devDependencies" when set`,
+      );
     }
-    pkg.dev = rec.dev;
+    pkg.packageJson = rec.packageJson;
   }
   if (rec.exclude != null) {
     pkg.exclude = validateExcludeList(rec.exclude, `packages[${index}].exclude`);

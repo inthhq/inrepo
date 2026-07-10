@@ -48,9 +48,12 @@ describe('upsertInrepoJson', () => {
     ]);
   });
 
-  test('toggles dev: true on, then off when omitted', async () => {
-    await upsertInrepoJson(cwd, { name: 'a', dev: true });
-    expect((await readJson(path)).packages).toEqual([{ name: 'a', dev: true }]);
+  test('sets packageJson target, removes legacy dev, then turns linking off when omitted', async () => {
+    await writeFile(path, JSON.stringify({ packages: [{ name: 'a', dev: true }] }) + '\n', 'utf8');
+    await upsertInrepoJson(cwd, { name: 'a', packageJson: 'devDependencies' });
+    expect((await readJson(path)).packages).toEqual([
+      { name: 'a', packageJson: 'devDependencies' },
+    ]);
     await upsertInrepoJson(cwd, { name: 'a' });
     expect((await readJson(path)).packages).toEqual([{ name: 'a' }]);
   });
@@ -64,7 +67,7 @@ describe('upsertInrepoJson', () => {
       somethingCustom: { hello: 'world' },
     };
     await writeFile(path, JSON.stringify(original, null, 2) + '\n', 'utf8');
-    await upsertInrepoJson(cwd, { name: 'b', dev: true });
+    await upsertInrepoJson(cwd, { name: 'b', packageJson: 'devDependencies' });
 
     const raw = await readFile(path, 'utf8');
     const parsed = JSON.parse(raw);
@@ -73,7 +76,10 @@ describe('upsertInrepoJson', () => {
     expect(parsed.exclude).toEqual(['.git']);
     expect(parsed.keep).toEqual(['src']);
     expect(parsed.somethingCustom).toEqual({ hello: 'world' });
-    expect(parsed.packages).toEqual([{ name: 'a' }, { name: 'b', dev: true }]);
+    expect(parsed.packages).toEqual([
+      { name: 'a' },
+      { name: 'b', packageJson: 'devDependencies' },
+    ]);
   });
 
   test('throws on invalid existing JSON', async () => {

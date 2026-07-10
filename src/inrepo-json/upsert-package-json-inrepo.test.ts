@@ -60,16 +60,16 @@ describe('upsertPackageJsonInrepo', () => {
       ) + '\n',
       'utf8',
     );
-    await upsertPackageJsonInrepo(cwd, { name: 'b', dev: true });
+    await upsertPackageJsonInrepo(cwd, { name: 'b', packageJson: 'devDependencies' });
     const pkg = await readPkg(cwd);
     expect(pkg.inrepo).toEqual({
-      packages: [{ name: 'a' }, { name: 'b', dev: true }],
+      packages: [{ name: 'a' }, { name: 'b', packageJson: 'devDependencies' }],
       exclude: ['.git'],
       keep: ['src'],
     });
   });
 
-  test('updates existing entry and toggles dev off when omitted', async () => {
+  test('updates existing entry, removes legacy dev, and leaves linking off when omitted', async () => {
     await writeFile(
       join(cwd, 'package.json'),
       JSON.stringify({ name: 'host', inrepo: { packages: [{ name: 'a', dev: true }] } }) + '\n',

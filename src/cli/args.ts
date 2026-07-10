@@ -31,7 +31,12 @@ export function parseAddArgs(argv: string[]): AddArgs {
   try {
     const parsed = parseCommandArgs(argv, {
       flags: {
-        dev: { names: ['-D', '--dev'], type: 'boolean', defaultValue: false },
+        dependency: { names: ['--dependency'], type: 'boolean', defaultValue: false },
+        devDependency: {
+          names: ['-D', '--dev', '--dev-dependency'],
+          type: 'boolean',
+          defaultValue: false,
+        },
         git: { names: ['--git'], type: 'string', valueName: 'url' },
         ref: { names: ['--ref'], type: 'string', valueName: 'ref' },
         save: {
@@ -50,13 +55,23 @@ export function parseAddArgs(argv: string[]): AddArgs {
     if (parsed.flags.ref !== undefined && parsed.flags.ref.trim() === '') {
       throw new Error('--ref requires a value');
     }
+    if (parsed.flags.dependency && parsed.flags.devDependency) {
+      throw new Error('--dependency and --dev-dependency cannot be used together');
+    }
+    if (!parsed.flags.save && (parsed.flags.dependency || parsed.flags.devDependency)) {
+      throw new Error('package.json link flags cannot be combined with --no-save');
+    }
 
     return {
       name: parsed.positionals.name,
       save: parsed.flags.save,
       git: parsed.flags.git?.trim() || undefined,
       ref: parsed.flags.ref?.trim() || undefined,
-      dev: parsed.flags.dev,
+      packageJson: parsed.flags.dependency
+        ? 'dependencies'
+        : parsed.flags.devDependency
+          ? 'devDependencies'
+          : undefined,
     };
   } catch (error) {
     rethrowCommandArgError(error, {

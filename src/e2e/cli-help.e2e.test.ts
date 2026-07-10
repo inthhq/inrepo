@@ -24,6 +24,8 @@ describe('CLI: help and argument validation (e2e)', () => {
     expect(r.stdout).toMatch(/inrepo sync/);
     expect(r.stdout).toMatch(/inrepo verify/);
     expect(r.stdout).toMatch(/inrepo add/);
+    expect(r.stdout).toMatch(/--dependency/);
+    expect(r.stdout).toMatch(/--dev-dependency/);
   });
 
   test('-h is an alias for --help', async () => {
@@ -139,6 +141,18 @@ describe('CLI: help and argument validation (e2e)', () => {
     const r = await runCli(['add', '--bogus', 'pkg'], { cwd });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/Unknown option: --bogus/);
+  });
+
+  test('add rejects conflicting package.json link targets', async () => {
+    const r = await runCli(['add', '--dependency', '-D', 'pkg'], { cwd });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/--dependency and --dev-dependency cannot be used together/);
+  });
+
+  test('add rejects package.json linking with --no-save', async () => {
+    const r = await runCli(['add', '--dependency', '--no-save', 'pkg'], { cwd });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/package\.json link flags cannot be combined with --no-save/);
   });
 
   test('add --git requires a URL', async () => {
