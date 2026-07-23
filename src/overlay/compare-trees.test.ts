@@ -33,6 +33,7 @@ describe('compareTrees', () => {
     await writeFile(join(left, '.inrepo-vendor.json'), '{"commit":"a"}\n', 'utf8');
     await writeFile(join(right, '.inrepo-vendor.json'), '{"commit":"b"}\n', 'utf8');
     await mkdir(join(right, '.git'), { recursive: true });
+    await mkdir(join(right, '.inrepo', 'verify'), { recursive: true });
 
     const result = await compareTrees(left, right);
     expect(result.added).toEqual(['add.txt']);

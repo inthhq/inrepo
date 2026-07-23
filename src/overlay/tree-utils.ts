@@ -25,6 +25,7 @@ export type TreeEntry = {
 
 export const DEFAULT_IGNORED_BASENAMES = new Set([
   '.git',
+  '.inrepo',
   '.inrepo-vendor.json',
   '.cache-meta.json',
 ]);
