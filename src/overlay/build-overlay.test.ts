@@ -87,4 +87,17 @@ describe('buildOverlay', () => {
 
     expect(await readDeletionsFile(join(overlay, '.inrepo-deletions'))).toEqual(['docs/']);
   });
+
+  test('ensures directory deletions always end with a trailing slash', async () => {
+    await rm(join(moduleRoot, 'assets'), { recursive: true, force: true });
+
+    await buildOverlay({
+      pristineRoot: pristine,
+      moduleRoot,
+      overlayRoot: overlay,
+    });
+
+    const deletions = await readDeletionsFile(join(overlay, '.inrepo-deletions'));
+    expect(deletions).toEqual(['assets/']);
+  });
 });

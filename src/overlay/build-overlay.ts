@@ -45,7 +45,7 @@ async function collapseDeletions(
     if (subtree.every((candidate) => removedSet.has(candidate))) {
       collapsed.push(`${relPosix}/`);
     } else {
-      collapsed.push(relPosix);
+      collapsed.push(`${relPosix}/`);
     }
   }
 
