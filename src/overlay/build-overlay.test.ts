@@ -88,8 +88,13 @@ describe('buildOverlay', () => {
     expect(await readDeletionsFile(join(overlay, '.inrepo-deletions'))).toEqual(['docs/']);
   });
 
-  test('ensures directory deletions always end with a trailing slash', async () => {
+  test('ensures directory deletions end with a trailing slash when subtree contains non-removed entries', async () => {
+    // Set up a pristine directory structure with a file that changes type in moduleRoot
+    await mkdir(join(pristine, 'mixed'), { recursive: true });
+    await writeFile(join(pristine, 'mixed', 'item.txt'), 'hello', 'utf8');
     await rm(join(moduleRoot, 'assets'), { recursive: true, force: true });
+    await mkdir(join(moduleRoot, 'mixed'), { recursive: true });
+    await mkdir(join(moduleRoot, 'mixed', 'item.txt'), { recursive: true }); // Type change: file -> dir
 
     await buildOverlay({
       pristineRoot: pristine,
