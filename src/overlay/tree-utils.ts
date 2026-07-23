@@ -102,7 +102,10 @@ export async function sha256File(absPath: string): Promise<string> {
   const stream = createReadStream(absPath);
   await new Promise<void>((resolvePromise, rejectPromise) => {
     stream.on('data', (chunk) => hash.update(chunk));
-    stream.on('error', rejectPromise);
+    stream.on('error', (err) => {
+      stream.destroy();
+      rejectPromise(err);
+    });
     stream.on('end', () => resolvePromise());
   });
   return hash.digest('hex');
