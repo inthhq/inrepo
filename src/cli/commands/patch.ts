@@ -11,8 +11,9 @@ import { buildOverlay } from '../../overlay/build-overlay.js';
 import { ensurePristine } from '../../overlay/cache.js';
 import { compareTrees } from '../../overlay/compare-trees.js';
 import { readModuleState, writeModuleState } from '../../overlay/module-state.js';
-import { overlayDirPath } from '../../overlay/overlay-paths.js';
+import { overlayDirPath, seriesDirPath } from '../../overlay/overlay-paths.js';
 import { hashTree } from '../../overlay/tree-hash.js';
+import { readSeries } from '../../series/read-series.js';
 import { readLockfile } from '../../lockfile/read-lockfile.js';
 import { moduleDestPath } from '../../paths/module-dest-path.js';
 import { parsePatchArgs } from '../args.js';
@@ -95,6 +96,12 @@ export async function cmdPatch(
     try {
       if (!existsSync(dest)) {
         throw new Error(`Missing directory for "${pkg.name}": ${dest}`);
+      }
+
+      if ((await readSeries(seriesDirPath(cwd, pkg.name))).length > 0) {
+        throw new Error(
+          `"${pkg.name}" uses a patch series; overlay capture would shadow it. Edit "inrepo_patches/${pkg.name}/series/" directly for now.`,
+        );
       }
 
       const keepList = mergedVendorKeeps(globalKeep, pkg);

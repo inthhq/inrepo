@@ -1,9 +1,14 @@
 import { existsSync } from 'node:fs';
 import { mkdir, rm } from 'node:fs/promises';
+import { SERIES_DIR_NAME } from './overlay-paths.js';
 import { copyEntry, copyTree, relPosixToAbs, walkTree } from './tree-utils.js';
 
 function skipOverlayControlFile(relPosix: string): boolean {
-  return relPosix === '.inrepo-deletions';
+  return (
+    relPosix === '.inrepo-deletions' ||
+    relPosix === SERIES_DIR_NAME ||
+    relPosix.startsWith(`${SERIES_DIR_NAME}/`)
+  );
 }
 
 export async function applyOverlay(opts: {
