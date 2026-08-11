@@ -108,7 +108,7 @@ describe('captureSeriesPatch', () => {
     if (!third.captured) throw new Error('unreachable');
     expect(third.number).toBe(3);
 
-    expect(await readdir(seriesDir)).toEqual([
+    expect((await readdir(seriesDir)).sort()).toEqual([
       '0001-First-change.patch',
       '0002-Second-change.patch',
       '0003-Third-change.patch',
