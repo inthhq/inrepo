@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import type { CliCommand } from 'hexbus';
 import { cmdAdd } from './commands/add.js';
 import { cmdInit } from './commands/init.js';
+import { cmdMigrate } from './commands/migrate.js';
 import { cmdPatch } from './commands/patch.js';
 import { cmdSync } from './commands/sync.js';
 import { cmdVerify } from './commands/verify.js';
@@ -50,6 +51,16 @@ export const commands: CliCommand[] = [
     hint: 'Check generated output',
     label: 'Verify',
     name: 'verify',
+  },
+  {
+    action: async (context) => {
+      await cmdMigrate(resolve(context.cwd), context.commandArgs);
+    },
+    description:
+      'Convert a package\'s legacy overlay files in inrepo_patches/ into an ordered git patch series.',
+    hint: 'Convert overlay to patches',
+    label: 'Migrate',
+    name: 'migrate',
   },
   {
     action: async (context) => {

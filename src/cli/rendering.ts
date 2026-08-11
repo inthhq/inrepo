@@ -46,6 +46,7 @@ export function showInrepoHelp(
       '  inrepo init',
       '  inrepo sync [--force]',
       '  inrepo patch [<name>]',
+      '  inrepo migrate <name>',
       '  inrepo verify',
       '  inrepo add [-D|--dev] <name> [--git <url>] [--ref <ref>] [--no-save]',
       '',

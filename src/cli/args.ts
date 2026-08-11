@@ -1,5 +1,5 @@
 import { isCliError, parseCommandArgs } from 'hexbus';
-import type { AddArgs, PatchArgs, SyncArgs } from './types.js';
+import type { AddArgs, MigrateArgs, PatchArgs, SyncArgs } from './types.js';
 
 function parserDetails(error: unknown): string {
   if (!isCliError(error)) return '';
@@ -92,5 +92,20 @@ export function parsePatchArgs(argv: string[]): PatchArgs {
     return parsed.positionals.name === undefined ? {} : { name: parsed.positionals.name };
   } catch (error) {
     rethrowCommandArgError(error, {});
+  }
+}
+
+export function parseMigrateArgs(argv: string[]): MigrateArgs {
+  try {
+    const parsed = parseCommandArgs(argv, {
+      positionals: [{ name: 'name', required: true }],
+    });
+
+    return { name: parsed.positionals.name };
+  } catch (error) {
+    rethrowCommandArgError(error, {
+      POSITIONAL_REQUIRED: 'migrate requires a package <name>',
+      UNEXPECTED_POSITIONAL: 'migrate takes a single package <name>',
+    });
   }
 }

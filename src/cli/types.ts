@@ -16,6 +16,10 @@ export type PatchArgs = {
   name?: string;
 };
 
+export type MigrateArgs = {
+  name: string;
+};
+
 export type PackageSpec = {
   name: string;
   git?: string;
