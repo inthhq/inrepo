@@ -3,6 +3,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { readLockfile } from './read-lockfile.js';
 import { writeLockfile } from './write-lockfile.js';
+import { upsertLockGraph } from './upsert-lock-graph.js';
 import { upsertLockModule } from './upsert-lock-module.js';
 import { lockfilePath } from '../paths/lockfile-path.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
@@ -20,7 +21,7 @@ describe('lockfile read/write/upsert', () => {
 
   test('reads empty modules when file is missing', async () => {
     const lf = await readLockfile(cwd);
-    expect(lf).toEqual({ lockfileVersion: 1, modules: {} });
+    expect(lf).toEqual({ lockfileVersion: 1, modules: {}, graph: {} });
   });
 
   test('round-trips through write/read', async () => {
@@ -82,10 +83,88 @@ describe('lockfile read/write/upsert', () => {
   test('rejects unsupported lockfileVersion', async () => {
     await writeFile(
       lockfilePath(cwd),
-      JSON.stringify({ lockfileVersion: 2, modules: {} }),
+      JSON.stringify({ lockfileVersion: 3, modules: {} }),
       'utf8',
     );
-    await expect(readLockfile(cwd)).rejects.toThrow(/Unsupported lockfileVersion: 2/);
+    await expect(readLockfile(cwd)).rejects.toThrow(/Unsupported lockfileVersion: 3/);
+  });
+
+  test('a project without a graph keeps writing lockfileVersion 1', async () => {
+    await writeLockfile(cwd, {
+      foo: {
+        source: 'foo',
+        gitUrl: 'https://github.com/x/foo.git',
+        commit: 'a'.repeat(40),
+        ref: null,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+    const onDisk = JSON.parse(await readFile(lockfilePath(cwd), 'utf8')) as Record<string, unknown>;
+    expect(onDisk.lockfileVersion).toBe(1);
+    expect('graph' in onDisk).toBe(false);
+  });
+
+  test('round-trips a dependency graph and raises the lockfile version', async () => {
+    const graph = {
+      alpha: {
+        version: '1.0.0',
+        root: true,
+        dependencies: { beta: { range: '^1.0.0', version: '1.2.0', module: 'beta' } },
+      },
+      beta: { version: '1.2.0' },
+    };
+    await writeLockfile(cwd, {}, graph);
+    const onDisk = JSON.parse(await readFile(lockfilePath(cwd), 'utf8')) as Record<string, unknown>;
+    expect(onDisk.lockfileVersion).toBe(2);
+
+    const lf = await readLockfile(cwd);
+    expect(lf.lockfileVersion).toBe(2);
+    expect(lf.graph).toEqual(graph);
+  });
+
+  test('upsertLockModule preserves an existing graph', async () => {
+    await writeLockfile(cwd, {}, { alpha: { version: '1.0.0', root: true } });
+    await upsertLockModule(cwd, 'alpha', {
+      source: 'alpha',
+      gitUrl: 'https://github.com/x/alpha.git',
+      commit: 'a'.repeat(40),
+      ref: 'v1.0.0',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    });
+    const lf = await readLockfile(cwd);
+    expect(lf.graph).toEqual({ alpha: { version: '1.0.0', root: true } });
+    expect(lf.modules.alpha?.ref).toBe('v1.0.0');
+  });
+
+  test('upsertLockGraph merges nodes without dropping unrelated ones', async () => {
+    await writeLockfile(cwd, {}, { alpha: { version: '1.0.0', root: true } });
+    await upsertLockGraph(cwd, { beta: { version: '2.0.0' } });
+    const lf = await readLockfile(cwd);
+    expect(Object.keys(lf.graph).sort()).toEqual(['alpha', 'beta']);
+  });
+
+  test('rejects a graph edge that is missing required fields', async () => {
+    await writeFile(
+      lockfilePath(cwd),
+      JSON.stringify({
+        lockfileVersion: 2,
+        modules: {},
+        graph: { alpha: { dependencies: { beta: { version: '1.0.0' } } } },
+      }),
+      'utf8',
+    );
+    await expect(readLockfile(cwd)).rejects.toThrow(
+      /graph\["alpha"\]\.dependencies\["beta"\] needs string "range" and "module"/,
+    );
+  });
+
+  test('rejects a graph that is not an object', async () => {
+    await writeFile(
+      lockfilePath(cwd),
+      JSON.stringify({ lockfileVersion: 2, modules: {}, graph: [] }),
+      'utf8',
+    );
+    await expect(readLockfile(cwd)).rejects.toThrow(/"graph" must be an object/);
   });
 
   test('rejects modules that are not an object', async () => {

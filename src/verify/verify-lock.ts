@@ -2,13 +2,16 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isLoadConfigNotFoundError, loadConfig } from '../config/load-config.js';
+import { verifyLockGraph } from '../deps/verify-lock-graph.js';
 import { readLockfile } from '../lockfile/read-lockfile.js';
+import { readPackageManifest } from '../package-json/read-package-manifest.js';
 import { assembleModuleTree } from '../overlay/assemble-module.js';
 import { ensurePristine } from '../overlay/cache.js';
 import { compareTrees, type CompareTreesResult } from '../overlay/compare-trees.js';
 import { moduleDestPath } from '../paths/module-dest-path.js';
 import { runGitCapture } from '../git/run-git-capture.js';
 import { normalizeGithubHttpsUrl } from '../registry/normalize-github-https-url.js';
+import type { LockGraph } from '../types/lock-graph.js';
 import type { VerifyResult } from '../types/verify-result.js';
 
 const VENDOR_MARKER = '.inrepo-vendor.json';
@@ -66,8 +69,32 @@ function formatTreeDrift(name: string, result: CompareTreesResult): string {
   return `"${name}": vendored tree does not match lockfile + overlay (${parts.join('; ')})`;
 }
 
+/**
+ * Replay the recorded dependency graph offline: every input comes from
+ * committed files (`inrepo.lock.json` plus the vendored checkouts), so the
+ * graph check never reaches the npm registry.
+ */
+async function collectGraphErrors(
+  cwd: string,
+  graph: LockGraph,
+  moduleNames: Set<string>,
+): Promise<string[]> {
+  if (Object.keys(graph).length === 0) return [];
+  const vendoredVersions = new Map<string, string | null>();
+  for (const name of Object.keys(graph)) {
+    const dest = moduleDestPath(cwd, name);
+    if (!existsSync(dest)) continue;
+    try {
+      vendoredVersions.set(name, (await readPackageManifest(dest))?.version ?? null);
+    } catch {
+      vendoredVersions.set(name, null);
+    }
+  }
+  return verifyLockGraph({ graph, moduleNames, vendoredVersions });
+}
+
 export async function verifyLock(cwd: string): Promise<VerifyResult> {
-  const { modules } = await readLockfile(cwd);
+  const { modules, graph } = await readLockfile(cwd);
   const names = Object.keys(modules);
   if (names.length === 0) {
     return { ok: false, errors: ['No modules in inrepo.lock.json (nothing to verify).'] };
@@ -214,6 +241,8 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
       await rm(stage, { recursive: true, force: true });
     }
   }
+
+  errors.push(...(await collectGraphErrors(cwd, graph, new Set(names))));
 
   if (errors.length) return { ok: false, errors };
   return { ok: true };

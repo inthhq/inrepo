@@ -1,12 +1,21 @@
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { lockfilePath } from '../paths/lockfile-path.js';
+import type { LockGraph, LockGraphEdge, LockGraphNode } from '../types/lock-graph.js';
 import type { LockModule } from '../types/lock-module.js';
 
 type LockfileShape = {
   lockfileVersion?: unknown;
   modules?: unknown;
+  graph?: unknown;
 };
+
+/**
+ * Lockfile versions this build understands. Version 2 only adds the optional
+ * `graph` section written by `inrepo add --with-deps`; version 1 files stay
+ * valid and keep being written whenever there is no graph to record.
+ */
+export const SUPPORTED_LOCKFILE_VERSIONS = [1, 2] as const;
 
 function assertLockModules(modules: unknown): Record<string, LockModule> {
   if (modules == null) return {};
@@ -16,13 +25,71 @@ function assertLockModules(modules: unknown): Record<string, LockModule> {
   return modules as Record<string, LockModule>;
 }
 
+function assertGraphEdge(edge: unknown, label: string): LockGraphEdge {
+  if (edge == null || typeof edge !== 'object' || Array.isArray(edge)) {
+    throw new Error(`inrepo.lock.json ${label} must be an object`);
+  }
+  const rec = edge as Record<string, unknown>;
+  if (typeof rec.range !== 'string' || typeof rec.module !== 'string') {
+    throw new Error(`inrepo.lock.json ${label} needs string "range" and "module"`);
+  }
+  if (rec.version != null && typeof rec.version !== 'string') {
+    throw new Error(`inrepo.lock.json ${label}.version must be a string when set`);
+  }
+  return {
+    range: rec.range,
+    module: rec.module,
+    ...(typeof rec.version === 'string' ? { version: rec.version } : {}),
+  };
+}
+
+function assertGraphNode(node: unknown, label: string): LockGraphNode {
+  if (node == null || typeof node !== 'object' || Array.isArray(node)) {
+    throw new Error(`inrepo.lock.json ${label} must be an object`);
+  }
+  const rec = node as Record<string, unknown>;
+  if (rec.version != null && typeof rec.version !== 'string') {
+    throw new Error(`inrepo.lock.json ${label}.version must be a string when set`);
+  }
+  if (rec.root != null && typeof rec.root !== 'boolean') {
+    throw new Error(`inrepo.lock.json ${label}.root must be a boolean when set`);
+  }
+  const out: LockGraphNode = {};
+  if (typeof rec.version === 'string') out.version = rec.version;
+  if (rec.root === true) out.root = true;
+  if (rec.dependencies != null) {
+    if (typeof rec.dependencies !== 'object' || Array.isArray(rec.dependencies)) {
+      throw new Error(`inrepo.lock.json ${label}.dependencies must be an object`);
+    }
+    const dependencies: Record<string, LockGraphEdge> = {};
+    for (const [name, edge] of Object.entries(rec.dependencies as Record<string, unknown>)) {
+      dependencies[name] = assertGraphEdge(edge, `${label}.dependencies["${name}"]`);
+    }
+    out.dependencies = dependencies;
+  }
+  return out;
+}
+
+function assertLockGraph(graph: unknown): LockGraph {
+  if (graph == null) return {};
+  if (typeof graph !== 'object' || Array.isArray(graph)) {
+    throw new Error('inrepo.lock.json "graph" must be an object');
+  }
+  const out: LockGraph = {};
+  for (const [name, node] of Object.entries(graph as Record<string, unknown>)) {
+    out[name] = assertGraphNode(node, `graph["${name}"]`);
+  }
+  return out;
+}
+
 export async function readLockfile(cwd: string): Promise<{
   lockfileVersion: number;
   modules: Record<string, LockModule>;
+  graph: LockGraph;
 }> {
   const p = lockfilePath(cwd);
   if (!existsSync(p)) {
-    return { lockfileVersion: 1, modules: {} };
+    return { lockfileVersion: 1, modules: {}, graph: {} };
   }
   const raw = await readFile(p, 'utf8');
   let data: unknown;
@@ -37,8 +104,15 @@ export async function readLockfile(cwd: string): Promise<{
   }
   const rec = data as LockfileShape;
   const lockfileVersion = rec.lockfileVersion;
-  if (lockfileVersion !== 1) {
+  if (
+    typeof lockfileVersion !== 'number' ||
+    !SUPPORTED_LOCKFILE_VERSIONS.includes(lockfileVersion as 1 | 2)
+  ) {
     throw new Error(`Unsupported lockfileVersion: ${String(lockfileVersion)}`);
   }
-  return { lockfileVersion: 1, modules: assertLockModules(rec.modules) };
+  return {
+    lockfileVersion,
+    modules: assertLockModules(rec.modules),
+    graph: assertLockGraph(rec.graph),
+  };
 }

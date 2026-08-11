@@ -7,7 +7,7 @@ export async function upsertLockModule(
   name: string,
   entry: LockModule,
 ): Promise<void> {
-  const { modules } = await readLockfile(cwd);
+  const { modules, graph } = await readLockfile(cwd);
   modules[name] = entry;
-  await writeLockfile(cwd, modules);
+  await writeLockfile(cwd, modules, graph);
 }
