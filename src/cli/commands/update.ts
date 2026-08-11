@@ -1,9 +1,12 @@
 import { existsSync } from 'node:fs';
 import { relative } from 'node:path';
 import { isLoadConfigNotFoundError, loadConfig } from '../../config/load-config.js';
+import { refreshGraphVersion } from '../../deps/refresh-graph-version.js';
 import { resolveRemoteCommit } from '../../git/resolve-remote-commit.js';
 import { upsertInrepoJson, type InrepoJsonEntry } from '../../inrepo-json/upsert-inrepo-json.js';
 import { upsertPackageJsonInrepo } from '../../inrepo-json/upsert-package-json-inrepo.js';
+import { readLockfile } from '../../lockfile/read-lockfile.js';
+import { upsertLockGraph } from '../../lockfile/upsert-lock-graph.js';
 import { upsertLockModule } from '../../lockfile/upsert-lock-module.js';
 import { ensurePristine } from '../../overlay/cache.js';
 import { readModuleState } from '../../overlay/module-state.js';
@@ -13,6 +16,7 @@ import {
   updateRepoPath,
 } from '../../overlay/overlay-paths.js';
 import { hashTree } from '../../overlay/tree-hash.js';
+import { readPackageManifest } from '../../package-json/read-package-manifest.js';
 import { inrepoConfigPath } from '../../paths/inrepo-config-path.js';
 import { moduleDestPath } from '../../paths/module-dest-path.js';
 import { listLegacyOverlayEntries } from '../../series/legacy-overlay.js';
@@ -109,6 +113,43 @@ async function persistConfigRef(cwd: string, name: string, ref: string): Promise
   return true;
 }
 
+/**
+ * Carry a moved pin into `inrepo.lock.json#graph`: the package's own recorded
+ * version, plus the resolved version on every edge that points at it. Without
+ * this, `inrepo verify` reports the rebuilt checkout as drift from the graph.
+ *
+ * The version is read from the rebuilt `inrepo_modules/<name>`, which is what
+ * `verify` compares the graph against. Ranges and the rest of the closure are
+ * left to `inrepo add --with-deps`, so a dependent whose range the new version
+ * escapes is warned about rather than re-resolved.
+ */
+async function refreshLockGraph(cwd: string, name: string): Promise<void> {
+  const { graph } = await readLockfile(cwd);
+  if (!graph[name]) return;
+
+  let version: string | null = null;
+  try {
+    version = (await readPackageManifest(moduleDestPath(cwd, name)))?.version ?? null;
+  } catch {
+    version = null;
+  }
+  if (version == null) {
+    warn(
+      `Warning: "${name}" declares no package.json version at its new commit, so its dependency graph version was left unchanged.`,
+    );
+    return;
+  }
+
+  const { nodes, violations } = refreshGraphVersion({ graph, name, version });
+  for (const violation of violations) {
+    warn(
+      `Warning: "${violation.dependent}" requires "${violation.dependency}" ${violation.range}, which ${name}@${version} does not satisfy. ` +
+        `Re-resolve the graph with "inrepo add --with-deps ${violation.dependent}".`,
+    );
+  }
+  if (Object.keys(nodes).length > 0) await upsertLockGraph(cwd, nodes);
+}
+
 type UpdateContext = {
   cwd: string;
   pkg: PackageSpec;
@@ -195,6 +236,8 @@ async function finalizeUpdate(
       ctx.globalKeep,
       { mode: 'sync', force: false, lockEntry },
     );
+
+    await refreshLockGraph(cwd, name);
 
     await clearUpdate(cwd, name);
   } catch (e) {

@@ -143,6 +143,8 @@ npx inrepo update <package> --ref v2.1.0
 
 Packages with no patches are re-pinned and rebuilt. Packages still on the snapshot format have to be migrated first.
 
+When the package is part of a recorded dependency graph, `update` also moves its `version` in `graph` and the resolved `version` on every edge pointing at it, so `verify` stays clean. Ranges are left alone — only `add --with-deps` re-resolves those — so a new version that no longer satisfies a dependent's recorded range is reported as a warning naming the dependent and the range.
+
 ### Resolving conflicts
 
 When a patch and upstream changed the same lines, `update` stops, names the patch it stopped on, and lists the conflicted files. The half-finished rebase stays in `.inrepo/updates/<package>/repo`, a normal git work tree with normal conflict markers. Edit the files there — staging is handled for you — and then:

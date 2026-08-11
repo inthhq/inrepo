@@ -271,6 +271,8 @@ The edges themselves are recorded under `graph` in `inrepo.lock.json`, which rai
 
 Because every dependency entry pins an exact git URL and tag, `inrepo sync` and `inrepo verify` replay and check the whole graph from committed files with no registry access at all. A project with no recorded graph keeps writing `lockfileVersion: 1`.
 
+`inrepo update <package>` keeps that graph in step with the pin it moves: the package's recorded `version` and the resolved `version` on every edge pointing at it are re-read from the rebuilt checkout, so `inrepo verify` stays clean. Ranges are not re-resolved — that is `--with-deps`'s job — so when the new version no longer satisfies a dependent's recorded range, `update` names the dependent and the range in a warning and leaves the range alone.
+
 Resolution fails — before a single package is vendored — when:
 
 - two packages need the same dependency at ranges no published version satisfies. The message names both dependents and their ranges. Resolving version conflicts is out of scope; vendor the conflicting packages separately.

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -10,6 +10,10 @@ import {
   writeConfig,
 } from '../test-utils/e2e-harness.js';
 import { makeLocalGitFixture, type LocalGitFixture } from '../test-utils/local-git-fixture.js';
+import {
+  makePackageGraphFixture,
+  type PackageGraphFixture,
+} from '../test-utils/package-graph-fixture.js';
 import { runCli } from '../test-utils/run-cli.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
 
@@ -433,5 +437,121 @@ describe('CLI: update workflow (e2e)', () => {
     const unlocked = await cli(['update', 'nope']);
     expect(unlocked.exitCode).toBe(1);
     expect(unlocked.stderr).toMatch(/No configured or locked package named "nope"/);
+  });
+});
+
+describe('CLI: update of a graph-tracked package (e2e)', () => {
+  let fx: PackageGraphFixture;
+  let cwd: string;
+  let env: Record<string, string>;
+
+  beforeAll(async () => {
+    fx = await makePackageGraphFixture(
+      [
+        { name: 'alpha', versions: { '1.0.0': { dependencies: { beta: '^1.0.0' } } } },
+        { name: 'beta', versions: { '1.0.0': {}, '1.2.0': {}, '2.0.0': {} } },
+      ],
+      'inrepo-update-graph-fixture-',
+    );
+  });
+
+  afterAll(async () => {
+    await fx.cleanup();
+  });
+
+  beforeEach(async () => {
+    cwd = await makeTmpDir('inrepo-update-graph-e2e-');
+    await bootstrapHostPackageJson(cwd);
+    env = { ...envFor(MODE), INREPO_REGISTRY: fx.registryUrl };
+  });
+
+  afterEach(async () => {
+    await cleanupTmpDir(cwd);
+  });
+
+  function cli(args: string[]): ReturnType<typeof runCli> {
+    return runCli(args, { cwd, env });
+  }
+
+  async function graph(): Promise<Record<string, unknown>> {
+    const lock = await readJson(join(cwd, 'inrepo.lock.json'));
+    return lock.graph as Record<string, unknown>;
+  }
+
+  /** Vendor alpha's closure with beta deliberately pinned behind its newest in-range tag. */
+  async function vendorGraph(): Promise<void> {
+    expect(
+      (await cli(['add', '--git', fx.gitUrl('beta'), '--ref', 'v1.0.0', 'beta'])).exitCode,
+    ).toBe(0);
+    const add = await cli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha']);
+    expect(add.exitCode).toBe(0);
+    expect(add.stdout).toContain('already vendored');
+    expect(await graph()).toEqual({
+      alpha: {
+        version: '1.0.0',
+        root: true,
+        dependencies: { beta: { range: '^1.0.0', version: '1.0.0', module: 'beta' } },
+      },
+      beta: { version: '1.0.0' },
+    });
+  }
+
+  test('moves the graph with the pin, leaving verify clean', async () => {
+    await vendorGraph();
+
+    const update = await cli(['update', 'beta', '--ref', 'v1.2.0']);
+    expect(update.exitCode).toBe(0);
+    expect(update.stderr).not.toContain('does not satisfy');
+
+    expect(await graph()).toEqual({
+      alpha: {
+        version: '1.0.0',
+        root: true,
+        dependencies: { beta: { range: '^1.0.0', version: '1.2.0', module: 'beta' } },
+      },
+      beta: { version: '1.2.0' },
+    });
+
+    const verify = await cli(['verify']);
+    expect(verify.exitCode).toBe(0);
+    expect(verify.stdout).toMatch(/all lockfile entries match checkouts/);
+  });
+
+  test('warns when the new version no longer satisfies a dependent range', async () => {
+    await vendorGraph();
+
+    const update = await cli(['update', 'beta', '--ref', 'v2.0.0']);
+    expect(update.exitCode).toBe(0);
+    expect(update.stderr).toContain(
+      '"alpha" requires "beta" ^1.0.0, which beta@2.0.0 does not satisfy',
+    );
+    expect(update.stderr).toContain('inrepo add --with-deps alpha');
+
+    // The graph still records what is vendored; re-resolving the range is the
+    // job of `add --with-deps`, so verify reports the requirement as broken.
+    expect(await graph()).toEqual({
+      alpha: {
+        version: '1.0.0',
+        root: true,
+        dependencies: { beta: { range: '^1.0.0', version: '2.0.0', module: 'beta' } },
+      },
+      beta: { version: '2.0.0' },
+    });
+
+    const verify = await cli(['verify']);
+    expect(verify.exitCode).toBe(1);
+    expect(verify.stderr).toMatch(/depends on "beta" \^1\.0\.0, which 2\.0\.0 does not satisfy/);
+  });
+
+  test('a package outside the graph is updated exactly as before', async () => {
+    expect(
+      (await cli(['add', '--git', fx.gitUrl('beta'), '--ref', 'v1.0.0', 'beta'])).exitCode,
+    ).toBe(0);
+    expect('graph' in (await readJson(join(cwd, 'inrepo.lock.json')))).toBe(false);
+
+    const update = await cli(['update', 'beta', '--ref', 'v1.2.0']);
+    expect(update.exitCode).toBe(0);
+    expect('graph' in (await readJson(join(cwd, 'inrepo.lock.json')))).toBe(false);
+    expect((await cli(['verify'])).exitCode).toBe(0);
   });
 });
