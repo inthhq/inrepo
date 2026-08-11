@@ -8,6 +8,7 @@ import {
 } from '../../config/load-config.js';
 import { buildLockGraph } from '../../deps/build-lock-graph.js';
 import { renderDependencyTree } from '../../deps/render-dependency-tree.js';
+import { orderByDependencies } from '../../deps/vendored-graph.js';
 import { upsertInrepoJson, type InrepoJsonEntry } from '../../inrepo-json/upsert-inrepo-json.js';
 import { upsertPackageJsonInrepo } from '../../inrepo-json/upsert-package-json-inrepo.js';
 import { upsertLockGraph } from '../../lockfile/upsert-lock-graph.js';
@@ -36,6 +37,13 @@ async function saveConfigEntry(cwd: string, entry: InrepoJsonEntry): Promise<voi
   }
 }
 
+/**
+ * Vendor the resolved dependencies, deepest first.
+ *
+ * The recorded graph is written before any of them is materialized, and the
+ * order follows it, so a package that opted into import rewiring always finds
+ * its dependencies' checkouts already in place.
+ */
 async function vendorPlannedDependencies(
   cwd: string,
   plan: WithDepsPlan,
@@ -46,15 +54,13 @@ async function vendorPlannedDependencies(
     configByName: Map<string, InrepoPackage>;
   },
 ): Promise<void> {
-  const { modules } = await readLockfile(cwd);
+  const graph = buildLockGraph(plan.graph);
+  await upsertLockGraph(cwd, graph);
+
+  // Config entries are recorded in resolution order, which is what the user
+  // reads; vendoring then follows dependency order, which is what the generated
+  // transforms need.
   for (const node of plan.pending) {
-    const config = ctx.configByName.get(node.name);
-    const spec = dependencySpec(node, ctx.dev, config);
-    await materializePackage(cwd, spec, ctx.globalExclude, ctx.globalKeep, {
-      mode: 'add',
-      force: config == null && !modules[node.name] && existsSync(moduleDestPath(cwd, node.name)),
-      lockEntry: modules[node.name],
-    });
     await saveConfigEntry(cwd, {
       name: node.name,
       git: node.gitUrl,
@@ -62,7 +68,17 @@ async function vendorPlannedDependencies(
       dev: ctx.dev,
     });
   }
-  await upsertLockGraph(cwd, buildLockGraph(plan.graph));
+
+  const { modules } = await readLockfile(cwd);
+  for (const node of orderByDependencies(plan.pending, graph)) {
+    const config = ctx.configByName.get(node.name);
+    const spec = dependencySpec(node, ctx.dev, config);
+    await materializePackage(cwd, spec, ctx.globalExclude, ctx.globalKeep, {
+      mode: 'add',
+      force: config == null && !modules[node.name] && existsSync(moduleDestPath(cwd, node.name)),
+      lockEntry: modules[node.name],
+    });
+  }
 }
 
 export async function performAdd(
@@ -132,50 +148,55 @@ export async function performAdd(
     );
   }
 
-  await materializePackage(
-    cwd,
-    {
-      name: args.name,
-      git: pin.git,
-      ref: pin.ref,
-      commit: pin.commit,
-      dev: args.dev,
-      exclude: pkgExclude,
-      keep: pkgKeep,
-    },
-    globalExclude,
-    globalKeep,
-    {
-      mode: 'add',
-      force:
-        !hasConfigEntry &&
-        !modules[args.name] &&
-        existsSync(moduleDestPath(cwd, args.name)),
-      lockEntry: modules[args.name],
-    },
-  );
-
-  if (args.save) {
-    const entry: InrepoJsonEntry = {
-      name: args.name,
-      dev: args.dev,
-    };
+  const rootEntry: InrepoJsonEntry | null = args.save ? { name: args.name, dev: args.dev } : null;
+  if (rootEntry) {
     if (args.git !== undefined && args.git !== '') {
-      entry.git = args.git;
+      rootEntry.git = args.git;
     }
     if (args.ref !== undefined && args.ref !== '') {
-      entry.ref = args.ref;
+      rootEntry.ref = args.ref;
     }
-    await saveConfigEntry(cwd, entry);
   }
 
+  const vendorRoot = (): Promise<void> =>
+    materializePackage(
+      cwd,
+      {
+        name: args.name,
+        git: pin.git,
+        ref: pin.ref,
+        commit: pin.commit,
+        dev: args.dev,
+        exclude: pkgExclude,
+        keep: pkgKeep,
+      },
+      globalExclude,
+      globalKeep,
+      {
+        mode: 'add',
+        force:
+          !hasConfigEntry &&
+          !modules[args.name] &&
+          existsSync(moduleDestPath(cwd, args.name)),
+        lockEntry: modules[args.name],
+      },
+    );
+
   if (plan) {
+    // The root is vendored last so that import rewiring finds every dependency
+    // checkout already in place. Its config entry is written first so the
+    // recorded `packages` list still starts with the package the user named.
+    if (rootEntry) await saveConfigEntry(cwd, rootEntry);
     await vendorPlannedDependencies(cwd, plan, {
       dev: args.dev,
       globalExclude,
       globalKeep,
       configByName,
     });
+    await vendorRoot();
+  } else {
+    await vendorRoot();
+    if (rootEntry) await saveConfigEntry(cwd, rootEntry);
   }
 
   if (!opts.suppressBanners) {

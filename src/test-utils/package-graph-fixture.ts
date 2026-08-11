@@ -6,6 +6,10 @@ import { makeTmpDir } from './tmp-dir.js';
 export type FixtureVersion = {
   /** Runtime dependency specifiers published for this version. */
   dependencies?: Record<string, string>;
+  /** Extra package.json fields, e.g. `type`, `main`, or `exports`. */
+  manifest?: Record<string, unknown>;
+  /** Source files keyed by relative path. Replaces the default `index.js`. */
+  files?: Record<string, string>;
 };
 
 export type FixturePackageSpec = {
@@ -52,6 +56,7 @@ async function buildPackageRepo(root: string, spec: FixturePackageSpec): Promise
           name: spec.checkoutName ?? spec.name,
           version,
           main: 'index.js',
+          ...(manifest.manifest ?? {}),
           ...(manifest.dependencies ? { dependencies: manifest.dependencies } : {}),
         },
         null,
@@ -59,11 +64,19 @@ async function buildPackageRepo(root: string, spec: FixturePackageSpec): Promise
       )}\n`,
       'utf8',
     );
-    await writeFile(
-      join(work, 'index.js'),
-      `module.exports = ${JSON.stringify(`${spec.name}@${version}`)};\n`,
-      'utf8',
-    );
+    if (manifest.files) {
+      for (const [path, contents] of Object.entries(manifest.files)) {
+        const abs = join(work, ...path.split('/'));
+        await mkdir(dirname(abs), { recursive: true });
+        await writeFile(abs, contents, 'utf8');
+      }
+    } else {
+      await writeFile(
+        join(work, 'index.js'),
+        `module.exports = ${JSON.stringify(`${spec.name}@${version}`)};\n`,
+        'utf8',
+      );
+    }
     await runGit(['add', '--all', '.'], work);
     await runGit(['commit', '-m', `${spec.name} ${version}`], work);
     if (!spec.untagged) await runGit(['tag', `v${version}`], work);

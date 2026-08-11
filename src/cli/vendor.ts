@@ -14,6 +14,7 @@ import { normalizeGithubHttpsUrl } from '../registry/normalize-github-https-url.
 import { resolveGitUrlFromNpm } from '../registry/resolve-git-url-from-npm.js';
 import { upsertLockModule } from '../lockfile/upsert-lock-module.js';
 import { readModuleState, writeModuleState } from '../overlay/module-state.js';
+import type { RewireReport } from '../rewire/rewire-tree.js';
 import { spinner, warn } from './ui.js';
 import type { MaterializeOptions, PackageSpec } from './types.js';
 
@@ -99,6 +100,39 @@ export function overlayConflictMessage(name: string): string {
   return `both "inrepo_patches/${name}" and "inrepo_modules/${name}" changed since the last sync; run "inrepo sync" to rebuild or reconcile them manually`;
 }
 
+function countLabel(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Report the generated import rewiring for one package: what it rewrote, and
+ * every specifier that named a vendored dependency but resolved to no file.
+ * Unresolved specifiers are a warning rather than a failure — they are left
+ * exactly as upstream wrote them, so the tree stays deterministic either way.
+ */
+function reportRewire(name: string, report: RewireReport | null): void {
+  if (report == null) return;
+  if (report.specifiers > 0) {
+    console.log(
+      `  Rewired ${countLabel(report.specifiers, 'import specifier')} in ` +
+        `${countLabel(report.files, 'file')} of "${name}"`,
+    );
+  }
+  if (report.unresolved.length > 0) {
+    const shown = report.unresolved.slice(0, 5);
+    const suffix =
+      report.unresolved.length > shown.length
+        ? `, … (+${report.unresolved.length - shown.length} more)`
+        : '';
+    warn(
+      `Warning: could not rewire ${countLabel(report.unresolved.length, 'specifier')} in "${name}" ` +
+        `(left unchanged): ` +
+        shown.map((entry) => `${entry.specifier} in ${entry.file}`).join(', ') +
+        suffix,
+    );
+  }
+}
+
 export function hasTreeDrift(result: Awaited<ReturnType<typeof compareTrees>>): boolean {
   return (
     result.added.length > 0 ||
@@ -157,6 +191,7 @@ export async function materializePackage(
 
     const overlayHash = await hashTree(overlayDirPath(cwd, pkg.name));
     const stage = await makeSiblingStage(dest, '.inrepo-next-');
+    let rewire: RewireReport | null = null;
 
     try {
       s.message('Assembling generated vendor tree');
@@ -167,6 +202,9 @@ export async function materializePackage(
         commit: pristine.commit,
         gitUrl,
         targetRoot: stage,
+        onRewire: (report) => {
+          rewire = report;
+        },
       });
 
       const stageHash = await hashTree(stage);
@@ -232,6 +270,7 @@ export async function materializePackage(
 
     // Final stop message preserves the e2e contract: `Synced "<name>" @ <sha7>` on stdout.
     s.stop(`Synced "${pkg.name}" @ ${pristine.commit.slice(0, 7)} → ${dest}`);
+    reportRewire(pkg.name, rewire);
   } catch (e) {
     // Keep the spinner failure terse; the full error is printed by main() so we
     // do not duplicate the message.

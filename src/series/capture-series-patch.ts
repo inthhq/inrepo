@@ -8,6 +8,8 @@ import {
   defaultSkipTreePath,
   walkTree,
 } from '../overlay/tree-utils.js';
+import { loadRewirePlan } from '../rewire/load-rewire-plan.js';
+import { rewireTree, unrewireTree, type RewirePlan } from '../rewire/rewire-tree.js';
 import { applySeries } from './apply-series.js';
 import { tryFormatSeriesPatch } from './format-series-patch.js';
 import { nextSeriesNumber, readSeries, seriesPatchFileName } from './read-series.js';
@@ -52,6 +54,13 @@ async function newEmptyDirectories(baseRoot: string, moduleRoot: string): Promis
  * plus every patch already in the series — so the captured patch contains only
  * what the working tree adds on top. Each call appends exactly one patch; there
  * is no amend or squash.
+ *
+ * Import rewiring is a generated transform that only exists in `moduleRoot`.
+ * To keep it out of the patch surface entirely, the same rewrites are computed
+ * against the patched tree and undone in a scratch copy of the module tree
+ * before the two are compared. The captured patch is therefore expressed in the
+ * patched tree's own specifiers, and applies cleanly even when the user edited
+ * the lines next to a rewired import.
  */
 export async function captureSeriesPatch(opts: {
   cwd: string;
@@ -62,6 +71,8 @@ export async function captureSeriesPatch(opts: {
   /** Commit subject for the new patch; this is the recorded reason. */
   subject: string;
   author?: SeriesAuthor;
+  /** Pass `null` to skip the rewiring round-trip; omit to resolve it from committed state. */
+  rewire?: RewirePlan | null;
 }): Promise<SeriesCaptureResult> {
   const subject = opts.subject.trim();
   if (subject === '') {
@@ -91,9 +102,23 @@ export async function captureSeriesPatch(opts: {
       });
     }
 
+    const plan = opts.rewire === undefined ? await loadRewirePlan(opts.cwd, opts.name) : opts.rewire;
+    let patchedRoot = opts.moduleRoot;
+    if (plan != null) {
+      const { rewrites } = await rewireTree(baseTree, plan, { write: false });
+      if (rewrites.size > 0) {
+        patchedRoot = join(work, 'module');
+        await copyTree(opts.moduleRoot, patchedRoot, {
+          skip: defaultSkipTreePath,
+          treatMissingAsEmpty: true,
+        });
+        await unrewireTree(patchedRoot, rewrites);
+      }
+    }
+
     const patch = await tryFormatSeriesPatch({
       baseRoot: baseTree,
-      patchedRoot: opts.moduleRoot,
+      patchedRoot,
       subject,
       author: opts.author ?? (await resolveSeriesAuthor(opts.cwd)),
       startNumber: number,

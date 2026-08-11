@@ -1,4 +1,6 @@
 import { finalizeVendorCheckout } from '../git/finalize-vendor-checkout.js';
+import { loadRewirePlan } from '../rewire/load-rewire-plan.js';
+import { rewireTree, type RewirePlan, type RewireReport } from '../rewire/rewire-tree.js';
 import { applySeries } from '../series/apply-series.js';
 import { readSeries } from '../series/read-series.js';
 import { applyOverlay } from './apply-overlay.js';
@@ -45,7 +47,14 @@ export async function assemblePatchedTree(opts: PatchedTreeOptions): Promise<str
   return applyLegacyOverlayTree(opts);
 }
 
-/** Patched tree plus the generated vendor marker written into `inrepo_modules/`. */
+/**
+ * Patched tree plus the generated transforms: import rewiring, when the package
+ * opted into it, and the vendor marker written into `inrepo_modules/`.
+ *
+ * Everything added here belongs to the generated stage only. It must never
+ * reach `inrepo diff`, which renders the patched tree, nor a captured patch,
+ * which is expressed against it.
+ */
 export async function assembleModuleTree(opts: {
   cwd: string;
   name: string;
@@ -53,6 +62,9 @@ export async function assembleModuleTree(opts: {
   commit: string;
   gitUrl: string;
   targetRoot: string;
+  /** Pass `null` to skip rewiring; omit to resolve the plan from committed state. */
+  rewire?: RewirePlan | null;
+  onRewire?: (report: RewireReport) => void;
 }): Promise<string> {
   await assemblePatchedTree({
     cwd: opts.cwd,
@@ -60,6 +72,12 @@ export async function assembleModuleTree(opts: {
     pristineRoot: opts.pristineRoot,
     targetRoot: opts.targetRoot,
   });
+  const plan =
+    opts.rewire === undefined ? await loadRewirePlan(opts.cwd, opts.name) : opts.rewire;
+  if (plan != null) {
+    const report = await rewireTree(opts.targetRoot, plan);
+    opts.onRewire?.(report);
+  }
   await finalizeVendorCheckout(opts.targetRoot, {
     commit: opts.commit,
     gitUrl: opts.gitUrl,

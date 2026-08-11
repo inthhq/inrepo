@@ -2,9 +2,10 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import type { RewirePlan } from '../rewire/rewire-tree.js';
 import { formatSeriesPatch } from '../series/format-series-patch.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
-import { assemblePatchedTree } from './assemble-module.js';
+import { assembleModuleTree, assemblePatchedTree } from './assemble-module.js';
 import { overlayDirPath, seriesDirPath } from './overlay-paths.js';
 import { copyTree } from './tree-utils.js';
 
@@ -79,6 +80,70 @@ describe('assemblePatchedTree', () => {
     expect(existsSync(join(target, 'docs', 'guide.md'))).toBe(true);
     expect(existsSync(join(target, 'docs', 'faq.md'))).toBe(false);
     expect(existsSync(join(target, 'series'))).toBe(false);
+  });
+
+  test('rewires imports in the generated tree but never in the patched tree', async () => {
+    await writeFile(join(pristine, 'src', 'index.ts'), 'import dep from "dep";\n', 'utf8');
+    const depRoot = join(cwd, 'inrepo_modules', 'dep');
+    await mkdir(depRoot, { recursive: true });
+    await writeFile(join(depRoot, 'package.json'), '{"name":"dep","main":"main.js"}', 'utf8');
+    await writeFile(join(depRoot, 'main.js'), 'export default 1;\n', 'utf8');
+
+    const rewire: RewirePlan = {
+      name: NAME,
+      modulePath: NAME,
+      dependencies: new Map([
+        [
+          'dep',
+          { modulePath: 'dep', root: depRoot, manifest: { main: 'main.js', module: null, exports: undefined } },
+        ],
+      ]),
+    };
+
+    await assemblePatchedTree({ cwd, name: NAME, pristineRoot: pristine, targetRoot: target });
+    expect(await readFile(join(target, 'src', 'index.ts'), 'utf8')).toBe(
+      'import dep from "dep";\n',
+    );
+
+    const generated = join(cwd, 'generated');
+    let reported = 0;
+    await assembleModuleTree({
+      cwd,
+      name: NAME,
+      pristineRoot: pristine,
+      commit: 'a'.repeat(40),
+      gitUrl: 'https://example.com/upstream.git',
+      targetRoot: generated,
+      rewire,
+      onRewire: (report) => {
+        reported = report.specifiers;
+      },
+    });
+
+    expect(reported).toBe(1);
+    expect(await readFile(join(generated, 'src', 'index.ts'), 'utf8')).toBe(
+      'import dep from "../../dep/main.js";\n',
+    );
+    expect(existsSync(join(generated, '.inrepo-vendor.json'))).toBe(true);
+  });
+
+  test('leaves the generated tree alone when rewiring is switched off', async () => {
+    await writeFile(join(pristine, 'src', 'index.ts'), 'import dep from "dep";\n', 'utf8');
+    const generated = join(cwd, 'generated');
+
+    await assembleModuleTree({
+      cwd,
+      name: NAME,
+      pristineRoot: pristine,
+      commit: 'a'.repeat(40),
+      gitUrl: 'https://example.com/upstream.git',
+      targetRoot: generated,
+      rewire: null,
+    });
+
+    expect(await readFile(join(generated, 'src', 'index.ts'), 'utf8')).toBe(
+      'import dep from "dep";\n',
+    );
   });
 
   test('never copies the series directory into the patched tree', async () => {

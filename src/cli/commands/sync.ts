@@ -1,5 +1,6 @@
 import { ensureInrepoInitialized } from '../../config/ensure-inrepo-initialized.js';
 import { loadConfig } from '../../config/load-config.js';
+import { orderByDependencies } from '../../deps/vendored-graph.js';
 import { readLockfile } from '../../lockfile/read-lockfile.js';
 import { parseSyncArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
@@ -17,13 +18,13 @@ export async function cmdSync(
 
   await ensureInrepoInitialized(cwd);
   const { packages, exclude: globalExclude, keep: globalKeep } = await loadConfig(cwd);
-  const { modules } = await readLockfile(cwd);
+  const { modules, graph } = await readLockfile(cwd);
   if (packages.length === 0) {
     throw new Error('Config has an empty "packages" array. Add at least one package.');
   }
 
   if (!opts.suppressBanners) intro(`inrepo sync — ${packages.length} package(s)`);
-  for (const pkg of packages) {
+  for (const pkg of orderByDependencies(packages, graph)) {
     await materializePackage(cwd, pkg, globalExclude, globalKeep, {
       mode: 'sync',
       force: args.force,
