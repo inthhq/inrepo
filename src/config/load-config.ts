@@ -29,6 +29,18 @@ function rootKeepFromParsed(parsed: unknown, label: string): string[] {
   return validateKeepList((parsed as Record<string, unknown>).keep, label);
 }
 
+function rootRewireImportsFromParsed(parsed: unknown, label: string): boolean {
+  if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return false;
+  }
+  const raw = (parsed as Record<string, unknown>).rewireImports;
+  if (raw == null) return false;
+  if (typeof raw !== 'boolean') {
+    throw new Error(`${label} must be a boolean when set`);
+  }
+  return raw;
+}
+
 function normalizePackagesArray(raw: unknown): unknown[] {
   if (raw == null) return [];
   if (Array.isArray(raw)) return raw;
@@ -75,6 +87,12 @@ function validatePackage(entry: unknown, index: number): InrepoPackage {
   if (rec.keep != null) {
     pkg.keep = validateKeepList(rec.keep, `packages[${index}].keep`);
   }
+  if (rec.rewireImports != null) {
+    if (typeof rec.rewireImports !== 'boolean') {
+      throw new Error(`packages[${index}].rewireImports must be a boolean when set`);
+    }
+    pkg.rewireImports = rec.rewireImports;
+  }
   return pkg;
 }
 
@@ -97,7 +115,8 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
     const packages = packagesRaw.map((p, i) => validatePackage(p, i));
     const exclude = rootExcludeFromParsed(parsed, 'inrepo.json "exclude"');
     const keep = rootKeepFromParsed(parsed, 'inrepo.json "keep"');
-    return { packages, exclude, keep, source: 'inrepo.json' };
+    const rewireImports = rootRewireImportsFromParsed(parsed, 'inrepo.json "rewireImports"');
+    return { packages, exclude, keep, rewireImports, source: 'inrepo.json' };
   }
 
   const pkgPath = packageJsonPath(cwd);
@@ -124,7 +143,8 @@ export async function loadConfig(cwd: string): Promise<LoadedConfig> {
   const packages = packagesRaw.map((p, i) => validatePackage(p, i));
   const exclude = rootExcludeFromParsed(inrepo, 'package.json "inrepo.exclude"');
   const keep = rootKeepFromParsed(inrepo, 'package.json "inrepo.keep"');
-  return { packages, exclude, keep, source: 'package.json' };
+  const rewireImports = rootRewireImportsFromParsed(inrepo, 'package.json "inrepo.rewireImports"');
+  return { packages, exclude, keep, rewireImports, source: 'package.json' };
 }
 
 /**

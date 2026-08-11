@@ -6,5 +6,7 @@ export type LoadedConfig = {
   exclude: string[];
   /** Path prefixes to keep under each vendored module when non-empty (before `exclude`). */
   keep: string[];
+  /** Project-wide default for the generated import-rewiring transform. Off unless set. */
+  rewireImports: boolean;
   source: 'inrepo.json' | 'package.json';
 };

@@ -31,6 +31,41 @@ export function dependencyModules(graph: LockGraph, name: string): Record<string
   return out;
 }
 
+/**
+ * Reorder packages so every recorded dependency is vendored before the package
+ * that needs it.
+ *
+ * Import rewiring resolves a dependency's entry point from its vendored
+ * checkout, so a dependent must never be assembled first; ordering the work this
+ * way keeps the generated result identical whether `inrepo_modules/` was already
+ * populated or is being rebuilt from nothing. Packages outside the graph keep
+ * their original order, and a dependency cycle falls back to it rather than
+ * dropping a package.
+ */
+export function orderByDependencies<T extends { name: string }>(
+  packages: T[],
+  graph: LockGraph,
+): T[] {
+  const byName = new Map(packages.map((pkg) => [pkg.name, pkg] as const));
+  const state = new Map<string, 'visiting' | 'done'>();
+  const out: T[] = [];
+
+  const visit = (name: string): void => {
+    if (state.has(name)) return;
+    state.set(name, 'visiting');
+    for (const dependency of Object.keys(graph[name]?.dependencies ?? {}).sort()) {
+      const edge = graph[name]?.dependencies?.[dependency];
+      if (edge && byName.has(edge.module)) visit(edge.module);
+    }
+    state.set(name, 'done');
+    const pkg = byName.get(name);
+    if (pkg) out.push(pkg);
+  };
+
+  for (const pkg of packages) visit(pkg.name);
+  return out;
+}
+
 /** Every package in the graph reachable from `name`, including `name` itself. */
 export function graphClosure(graph: LockGraph, name: string): string[] {
   const seen = new Set<string>();

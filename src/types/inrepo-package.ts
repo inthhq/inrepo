@@ -8,4 +8,6 @@ export type InrepoPackage = {
   exclude?: string[];
   /** Path prefixes under the vendored module to retain when non-empty (merged with root `keep`); runs before `exclude`. */
   keep?: string[];
+  /** Overrides the root `rewireImports` setting for this package only. */
+  rewireImports?: boolean;
 };
