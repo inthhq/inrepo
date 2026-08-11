@@ -6,16 +6,59 @@ import {
   loadGlobalExclude,
   loadGlobalKeep,
 } from '../../config/load-config.js';
+import { buildLockGraph } from '../../deps/build-lock-graph.js';
+import { renderDependencyTree } from '../../deps/render-dependency-tree.js';
 import { upsertInrepoJson, type InrepoJsonEntry } from '../../inrepo-json/upsert-inrepo-json.js';
 import { upsertPackageJsonInrepo } from '../../inrepo-json/upsert-package-json-inrepo.js';
+import { upsertLockGraph } from '../../lockfile/upsert-lock-graph.js';
 import { readLockfile } from '../../lockfile/read-lockfile.js';
 import { inrepoConfigPath } from '../../paths/inrepo-config-path.js';
 import { moduleDestPath } from '../../paths/module-dest-path.js';
+import type { InrepoPackage } from '../../types/inrepo-package.js';
 import { parseAddArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
 import type { AddArgs, DispatchOpts } from '../types.js';
-import { cancel, confirm, intro, isCancel, outro, text } from '../ui.js';
+import { cancel, confirm, intro, isCancel, outro, text, ui } from '../ui.js';
 import { materializePackage } from '../vendor.js';
+import { dependencySpec, planWithDeps, type WithDepsPlan } from '../with-deps.js';
+
+/** Persist a package entry to whichever config location the project uses. */
+async function saveConfigEntry(cwd: string, entry: InrepoJsonEntry): Promise<void> {
+  if (existsSync(inrepoConfigPath(cwd))) {
+    await upsertInrepoJson(cwd, entry);
+  } else {
+    await upsertPackageJsonInrepo(cwd, entry);
+  }
+}
+
+async function vendorPlannedDependencies(
+  cwd: string,
+  plan: WithDepsPlan,
+  ctx: {
+    dev: boolean;
+    globalExclude: string[];
+    globalKeep: string[];
+    configByName: Map<string, InrepoPackage>;
+  },
+): Promise<void> {
+  const { modules } = await readLockfile(cwd);
+  for (const node of plan.pending) {
+    const config = ctx.configByName.get(node.name);
+    const spec = dependencySpec(node, ctx.dev, config);
+    await materializePackage(cwd, spec, ctx.globalExclude, ctx.globalKeep, {
+      mode: 'add',
+      force: config == null && !modules[node.name] && existsSync(moduleDestPath(cwd, node.name)),
+      lockEntry: modules[node.name],
+    });
+    await saveConfigEntry(cwd, {
+      name: node.name,
+      git: node.gitUrl,
+      ...(node.ref == null ? {} : { ref: node.ref }),
+      dev: ctx.dev,
+    });
+  }
+  await upsertLockGraph(cwd, buildLockGraph(plan.graph));
+}
 
 export async function performAdd(
   cwd: string,
@@ -34,12 +77,14 @@ export async function performAdd(
   let pkgExclude: string[] | undefined;
   let pkgKeep: string[] | undefined;
   let hasConfigEntry = false;
+  const configByName = new Map<string, InrepoPackage>();
   const { modules } = await readLockfile(cwd);
   try {
     const cfg = await loadConfig(cwd);
     globalExclude = cfg.exclude;
     globalKeep = cfg.keep;
-    const entry = cfg.packages.find((p) => p.name === args.name);
+    for (const pkg of cfg.packages) configByName.set(pkg.name, pkg);
+    const entry = configByName.get(args.name);
     hasConfigEntry = entry != null;
     pkgExclude = entry?.exclude;
     pkgKeep = entry?.keep;
@@ -50,6 +95,28 @@ export async function performAdd(
   }
 
   if (!opts.suppressBanners) intro(`inrepo add — ${args.name}${args.dev ? ' (dev)' : ''}`);
+
+  // Resolving the whole closure first means a conflict or an unsupported
+  // dependency source fails before any package is vendored.
+  let plan: WithDepsPlan | null = null;
+  if (args.withDeps) {
+    plan = await planWithDeps(cwd, {
+      root: {
+        name: args.name,
+        git: args.git,
+        ref: args.ref,
+        dev: args.dev,
+        exclude: pkgExclude,
+        keep: pkgKeep,
+      },
+      globalExclude,
+      globalKeep,
+    });
+    ui.note(
+      renderDependencyTree(plan.graph),
+      `Dependency graph — ${plan.graph.nodes.length} package(s)`,
+    );
+  }
 
   await materializePackage(
     cwd,
@@ -84,14 +151,27 @@ export async function performAdd(
     if (args.ref !== undefined && args.ref !== '') {
       entry.ref = args.ref;
     }
-    if (existsSync(inrepoConfigPath(cwd))) {
-      await upsertInrepoJson(cwd, entry);
-    } else {
-      await upsertPackageJsonInrepo(cwd, entry);
-    }
+    await saveConfigEntry(cwd, entry);
+  }
+
+  if (plan) {
+    await vendorPlannedDependencies(cwd, plan, {
+      dev: args.dev,
+      globalExclude,
+      globalKeep,
+      configByName,
+    });
   }
 
   if (!opts.suppressBanners) {
+    if (plan) {
+      const reused = plan.reused.length;
+      outro(
+        `Vendored ${plan.pending.length + 1} package(s) for "${args.name}"` +
+          `${reused > 0 ? `; ${reused} already vendored` : ''}.`,
+      );
+      return;
+    }
     outro(
       args.save
         ? `Recorded "${args.name}" in inrepo config.`
@@ -142,6 +222,12 @@ export async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | 
   });
   if (isCancel(dev)) return onCancel();
 
+  const withDeps = await confirm({
+    message: 'Also vendor its runtime dependencies?',
+    initialValue: false,
+  });
+  if (isCancel(withDeps)) return onCancel();
+
   if (!opts.suppressBanners) outro('Starting vendor checkout');
 
   const trimmedGit = typeof git === 'string' ? git.trim() : '';
@@ -152,5 +238,6 @@ export async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | 
     ref: trimmedRef === '' ? undefined : trimmedRef,
     dev: dev === true,
     save: true,
+    withDeps: withDeps === true,
   };
 }

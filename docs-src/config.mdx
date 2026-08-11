@@ -64,3 +64,5 @@ Filtering always runs in this order:
 If `keep` is set, list every root file you still need, such as `package.json` or `LICENSE`. Nothing is kept implicitly.
 
 `inrepo add <package>` updates config by default after a successful checkout. Use `--no-save` for a one-off vendoring operation that should not upsert config.
+
+`inrepo add <package> --with-deps` adds one entry per resolved runtime dependency, each pinned to an exact `git` URL and release-tag `ref` so `sync` stays offline. It cannot be combined with `--no-save`.

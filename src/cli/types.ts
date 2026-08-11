@@ -6,6 +6,8 @@ export type AddArgs = {
   ref?: string;
   save: boolean;
   dev: boolean;
+  /** Also vendor the package's transitive runtime dependency closure. */
+  withDeps: boolean;
 };
 
 export type SyncArgs = {

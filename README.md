@@ -79,6 +79,12 @@ If npm metadata does not point to the right GitHub repository, pass the git URL 
 npx inrepo add <package> --git https://github.com/owner/repo --ref main
 ```
 
+To vendor the package's runtime dependencies alongside it, add `--with-deps`:
+
+```bash
+npx inrepo add <package> --with-deps
+```
+
 Then work like this:
 
 ```bash
@@ -108,7 +114,7 @@ npx inrepo verify
 Commit these:
 
 - `inrepo.json` or `package.json#inrepo` declares what to vendor.
-- `inrepo.lock.json` pins each package to an exact upstream commit.
+- `inrepo.lock.json` pins each package to an exact upstream commit, and records the dependency graph when you vendor one.
 - `inrepo_patches/<package>/` stores your team's edits and deletions.
 
 Two patch formats are supported:
@@ -222,6 +228,60 @@ npx inrepo update <package> --abort      # throw the update away, changing nothi
 ```
 
 `--continue` picks up where git stopped and repeats the report if a later patch conflicts too. If your resolution leaves a patch with nothing to apply, that patch is dropped from the series. Until an update finishes, `inrepo_patches/`, your config, the lockfile, and `inrepo_modules/` are untouched, and starting another update for the same package tells you to finish or abandon this one first.
+
+## Vendoring transitive dependencies
+
+`inrepo add <package>` vendors exactly one package, so its imports of other packages still resolve through `node_modules`. Add `--with-deps` to vendor the whole runtime dependency tree as visible source instead:
+
+```bash
+npx inrepo add <package> --with-deps
+```
+
+`inrepo` reads `dependencies` from the pinned checkout, resolves each range to an exact published version, maps that version to its repository and release tag, and recurses. Only runtime `dependencies` are followed — `devDependencies` and `peerDependencies` are deliberately out of scope, because neither is needed to run the vendored source.
+
+The resolved tree is printed before anything is written:
+
+```text
+commander 12.1.0 (a1b2c3d)
+├─ picocolors ^1.0.0 → 1.1.1 (9f3e21c)
+└─ shared ^2.0.0 → 2.4.0 (77c0b8a)
+   └─ picocolors ^1.0.0 → 1.1.1 (9f3e21c) (deduped)
+```
+
+Every resolved package is then vendored exactly like a package you added by hand: a config entry pinned to its release tag, its own lockfile entry, a materialized `inrepo_modules/<package>`, and an empty patch surface you can start capturing patches into. A dependency that is already vendored at a compatible version is reused rather than re-pinned, and running `--with-deps` again on a package you already vendored simply completes the missing part of its graph.
+
+The edges themselves are recorded under `graph` in `inrepo.lock.json`, which raises the file to `lockfileVersion: 2`:
+
+```json
+{
+  "lockfileVersion": 2,
+  "modules": { "…": {} },
+  "graph": {
+    "commander": {
+      "version": "12.1.0",
+      "root": true,
+      "dependencies": {
+        "picocolors": { "range": "^1.0.0", "version": "1.1.1", "module": "picocolors" }
+      }
+    },
+    "picocolors": { "version": "1.1.1" }
+  }
+}
+```
+
+Because every dependency entry pins an exact git URL and tag, `inrepo sync` and `inrepo verify` replay and check the whole graph from committed files with no registry access at all. A project with no recorded graph keeps writing `lockfileVersion: 1`.
+
+Resolution fails — before a single package is vendored — when:
+
+- two packages need the same dependency at ranges no published version satisfies. The message names both dependents and their ranges. Resolving version conflicts is out of scope; vendor the conflicting packages separately.
+- a dependency uses a source `inrepo` cannot pin: `workspace:`, `file:`, `link:`, `catalog:`, `npm:` aliases, git URLs, tarball URLs, or a dist-tag.
+- a dependency has no usable `repository` URL on the registry, or its repository has no tag for the resolved version.
+
+In every case the message names the dependency and the reason, and the fix is to vendor that one package by hand with `npx inrepo add <dep> --git <url> --ref <ref>`.
+
+Overlapping ranges are not a conflict: `^1.0.0` and `>=1.2.0` unify onto the highest published version satisfying both. Bare specifiers inside the vendored source are left exactly as upstream wrote them; `--with-deps` vendors the graph, it does not rewrite imports.
+
+`--with-deps` cannot be combined with `--no-save`, since a graph is only replayable from committed config and lockfile entries.
 
 ## Migrating to a patch series
 

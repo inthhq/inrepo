@@ -40,6 +40,7 @@ export function parseAddArgs(argv: string[]): AddArgs {
           defaultValue: true,
           negatedName: '--no-save',
         },
+        withDeps: { names: ['--with-deps'], type: 'boolean', defaultValue: false },
       },
       positionals: [{ name: 'name', required: true }],
     });
@@ -50,6 +51,11 @@ export function parseAddArgs(argv: string[]): AddArgs {
     if (parsed.flags.ref !== undefined && parsed.flags.ref.trim() === '') {
       throw new Error('--ref requires a value');
     }
+    // The dependency graph is only replayable from committed files, so there is
+    // nothing meaningful `--with-deps --no-save` could leave behind.
+    if (parsed.flags.withDeps && !parsed.flags.save) {
+      throw new Error('--with-deps cannot be combined with --no-save');
+    }
 
     return {
       name: parsed.positionals.name,
@@ -57,6 +63,7 @@ export function parseAddArgs(argv: string[]): AddArgs {
       git: parsed.flags.git?.trim() || undefined,
       ref: parsed.flags.ref?.trim() || undefined,
       dev: parsed.flags.dev,
+      withDeps: parsed.flags.withDeps,
     };
   } catch (error) {
     rethrowCommandArgError(error, {

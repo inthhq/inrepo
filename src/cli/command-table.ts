@@ -89,7 +89,7 @@ export const commands: CliCommand[] = [
       await cmdAdd(resolve(context.cwd), context.commandArgs);
     },
     description:
-      'Vendor or refresh a single package pin, then rebuild its generated checkout in inrepo_modules.',
+      'Vendor or refresh a package pin, then rebuild its generated checkout in inrepo_modules (--with-deps also vendors its runtime dependencies).',
     hint: 'Vendor a package',
     label: 'Add',
     name: 'add',

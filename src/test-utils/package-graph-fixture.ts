@@ -1,0 +1,138 @@
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { runGit } from './run-git.js';
+import { makeTmpDir } from './tmp-dir.js';
+
+export type FixtureVersion = {
+  /** Runtime dependency specifiers published for this version. */
+  dependencies?: Record<string, string>;
+};
+
+export type FixturePackageSpec = {
+  name: string;
+  /** Versions in ascending order; each becomes a commit plus a `v<version>` tag. */
+  versions: Record<string, FixtureVersion>;
+  /** Serve a packument with no `repository` field. */
+  noRepository?: boolean;
+  /** Commit the versions but never tag them. */
+  untagged?: boolean;
+};
+
+export type PackageGraphFixture = {
+  /** Base URL to hand the CLI as `INREPO_REGISTRY`. */
+  registryUrl: string;
+  /** Bare repository path for a package, usable as a git clone URL. */
+  gitUrl(name: string): string;
+  cleanup(): Promise<void>;
+};
+
+function safeDirName(name: string): string {
+  return name.replaceAll('@', '').replaceAll('/', '-');
+}
+
+async function buildPackageRepo(root: string, spec: FixturePackageSpec): Promise<string> {
+  const bare = join(root, `${safeDirName(spec.name)}.git`);
+  const work = join(root, `${safeDirName(spec.name)}-work`);
+  await runGit(['init', '--bare', '-b', 'main', bare]);
+  await runGit(['init', '-b', 'main', work]);
+  await mkdir(work, { recursive: true });
+
+  for (const [version, manifest] of Object.entries(spec.versions)) {
+    await writeFile(
+      join(work, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: spec.name,
+          version,
+          main: 'index.js',
+          ...(manifest.dependencies ? { dependencies: manifest.dependencies } : {}),
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+    await writeFile(
+      join(work, 'index.js'),
+      `module.exports = ${JSON.stringify(`${spec.name}@${version}`)};\n`,
+      'utf8',
+    );
+    await runGit(['add', '--all', '.'], work);
+    await runGit(['commit', '-m', `${spec.name} ${version}`], work);
+    if (!spec.untagged) await runGit(['tag', `v${version}`], work);
+  }
+
+  await runGit(['remote', 'add', 'origin', bare], work);
+  await runGit(['push', '-u', 'origin', 'main'], work);
+  if (!spec.untagged) await runGit(['push', 'origin', '--tags'], work);
+  return bare;
+}
+
+function packumentFor(spec: FixturePackageSpec, bare: string): Record<string, unknown> {
+  const versions: Record<string, unknown> = {};
+  for (const [version, manifest] of Object.entries(spec.versions)) {
+    versions[version] = {
+      name: spec.name,
+      version,
+      ...(manifest.dependencies ? { dependencies: manifest.dependencies } : {}),
+    };
+  }
+  const published = Object.keys(spec.versions);
+  return {
+    name: spec.name,
+    'dist-tags': { latest: published[published.length - 1] },
+    ...(spec.noRepository ? {} : { repository: { type: 'git', url: bare } }),
+    versions,
+  };
+}
+
+/**
+ * Build a self-contained npm-like universe: one local git repository per
+ * package (tagged per version) plus an HTTP registry that serves matching
+ * packuments. Everything an `--with-deps` run needs, with no network access.
+ */
+export async function makePackageGraphFixture(
+  specs: FixturePackageSpec[],
+  prefix = 'inrepo-graph-fixture-',
+): Promise<PackageGraphFixture> {
+  const root = await makeTmpDir(prefix);
+  const repos = new Map<string, string>();
+  const packuments = new Map<string, Record<string, unknown>>();
+
+  for (const spec of specs) {
+    const bare = await buildPackageRepo(root, spec);
+    repos.set(spec.name, bare);
+    packuments.set(spec.name, packumentFor(spec, bare));
+  }
+
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request) {
+      const name = decodeURIComponent(new URL(request.url).pathname.slice(1));
+      const packument = packuments.get(name);
+      if (!packument) {
+        return new Response(JSON.stringify({ error: 'Not found' }), {
+          status: 404,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return new Response(JSON.stringify(packument), {
+        headers: { 'content-type': 'application/json' },
+      });
+    },
+  });
+
+  return {
+    registryUrl: `http://127.0.0.1:${server.port}`,
+    gitUrl(name: string): string {
+      const url = repos.get(name);
+      if (!url) throw new Error(`No fixture repository for "${name}"`);
+      return url;
+    },
+    cleanup: async () => {
+      await server.stop(true);
+      await rm(root, { recursive: true, force: true });
+    },
+  };
+}
