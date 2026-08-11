@@ -147,3 +147,16 @@ npx scriptc build cli.ts --dynamic -o demo-npm
 npx scriptc build cli-vendored.ts -o demo-vendored
 bun bench.ts
 ```
+
+The repository CI also runs a platform-neutral reproduction check from the
+repository root:
+
+```sh
+bun run test:scriptc-example
+```
+
+It copies the committed example into a temporary directory, runs the current
+inrepo CLI's `sync` and `verify` commands, and checks canonical hashes for the
+generated commander and picocolors trees. The native scriptc compilation and
+benchmark remain manual because they require macOS arm64 and benchmark timing
+is not a stable CI assertion.

@@ -34,6 +34,7 @@
     "release": "bun run build && changeset publish",
     "typecheck": "tsc --noEmit",
     "test": "bun test ./src",
+    "test:scriptc-example": "bun examples/scriptc/verify.ts",
     "test:watch": "bun test --watch ./src",
     "version": "changeset version && bun install",
     "prepublishOnly": "bun run build"
