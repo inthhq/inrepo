@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import type { CliCommand } from 'hexbus';
 import { cmdAdd } from './commands/add.js';
+import { cmdDiff } from './commands/diff.js';
 import { cmdInit } from './commands/init.js';
 import { cmdMigrate } from './commands/migrate.js';
 import { cmdPatch } from './commands/patch.js';
@@ -36,10 +37,20 @@ export const commands: CliCommand[] = [
       await cmdPatch(resolve(context.cwd), context.commandArgs);
     },
     description:
-      'Capture edits from inrepo_modules back into committed overlay files under inrepo_patches/.',
+      'Capture edits from inrepo_modules into inrepo_patches/ as a new numbered patch (-m "reason") or a legacy overlay.',
     hint: 'Capture local edits',
     label: 'Patch',
     name: 'patch',
+  },
+  {
+    action: async (context) => {
+      await cmdDiff(resolve(context.cwd), context.commandArgs);
+    },
+    description:
+      'Show the effective delta between the pinned upstream commit and the patched tree, with the patch series that produced it.',
+    hint: 'Review vendored changes',
+    label: 'Diff',
+    name: 'diff',
   },
   {
     action: async (context) => {
