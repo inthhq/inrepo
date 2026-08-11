@@ -1,6 +1,7 @@
+import { fetchPackument } from './fetch-packument.js';
 import { normalizeGithubHttpsUrl } from './normalize-github-https-url.js';
 
-function repositoryToUrl(repository: unknown): string | null {
+export function repositoryToUrl(repository: unknown): string | null {
   if (repository == null) return null;
   if (typeof repository === 'string') return repository;
   if (typeof repository === 'object' && repository !== null && 'url' in repository) {
@@ -10,27 +11,11 @@ function repositoryToUrl(repository: unknown): string | null {
   return null;
 }
 
-type NpmPackument = {
-  repository?: unknown;
-  'dist-tags'?: Record<string, string>;
-  versions?: Record<string, { repository?: unknown }>;
-};
-
 /**
  * Resolve npm package name to a GitHub HTTPS clone URL using the public registry.
  */
 export async function resolveGitUrlFromNpm(packageName: string): Promise<string> {
-  const registryUrl = `https://registry.npmjs.org/${encodeURIComponent(packageName)}`;
-  const res = await fetch(registryUrl, {
-    headers: { accept: 'application/json' },
-  });
-  if (res.status === 404) {
-    throw new Error(`npm registry: package not found: ${packageName}`);
-  }
-  if (!res.ok) {
-    throw new Error(`npm registry: HTTP ${res.status} for ${packageName}`);
-  }
-  const data = (await res.json()) as NpmPackument;
+  const data = await fetchPackument(packageName);
 
   let repo = repositoryToUrl(data.repository);
   if (!repo) {
