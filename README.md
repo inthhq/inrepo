@@ -110,6 +110,11 @@ Commit these:
 - `inrepo.lock.json` pins each package to an exact upstream commit.
 - `inrepo_patches/<package>/` stores your team's edits and deletions.
 
+Two patch formats are supported:
+
+- `inrepo_patches/<package>/series/0001-*.patch` is an ordered git patch series. Patches are standard `git format-patch --binary` output, applied in filename order with `git am --3way` on top of the pinned upstream commit. There is no separate series manifest; the file name is the order.
+- `inrepo_patches/<package>/` whole-file snapshots plus `.inrepo-deletions` are the original overlay format. They still work, and are used whenever a package has no `series/` directory.
+
 Do not commit these:
 
 - `inrepo_modules/<package>/` is rebuilt by `inrepo sync`.
@@ -154,6 +159,16 @@ You can also put the same object under `package.json#inrepo`.
 During sync, it compares the current generated module and overlay against recorded state. If `inrepo_modules/` changed but the overlay did not, it treats that as uncaptured work and asks you to run `npx inrepo patch`. If both changed, it reports a conflict. `npx inrepo sync --force` can discard generated edits, but saves a backup under `.inrepo/backups/`. If you installed the CLI globally, the same command is `inrepo sync --force`.
 
 Patch capture is guarded too. `inrepo patch` compares your current vendored module against the pristine upstream tree, writes changed files into `inrepo_patches/`, and records deleted files in `.inrepo-deletions`.
+
+## Migrating to a patch series
+
+Convert a package's snapshot overlay into a git patch series:
+
+```bash
+npx inrepo migrate <package>
+```
+
+This replays the current overlay over the pinned upstream commit, records the result as `inrepo_patches/<package>/series/0001-*.patch`, and removes the snapshot files only after confirming that applying the series reproduces the identical tree. If it does not, the overlay is left exactly as it was and the command reports why. Empty directories are the one thing a series cannot carry over, because git has no way to record them; the command lists any it had to drop.
 
 ## Local development
 

@@ -71,7 +71,22 @@ Before merging, run:
 npx inrepo verify
 ```
 
-`verify` checks that generated module trees still match the lockfile plus committed overlay.
+`verify` checks that generated module trees still match the lockfile plus committed changes.
+
+## Patch series
+
+A package's committed changes live in `inrepo_patches/<package>/` in one of two formats:
+
+- `series/0001-*.patch` — an ordered git patch series. Each file is standard `git format-patch --binary` output, and `sync` applies them in filename order with `git am --3way` on top of the pinned upstream commit. Reviews show effective hunks instead of whole replacement files.
+- Whole-file snapshots plus `.inrepo-deletions` — the original overlay format, still used for any package without a `series/` directory.
+
+Convert a package from the snapshot format to a series with:
+
+```bash
+npx inrepo migrate <package>
+```
+
+`migrate` writes `series/0001-<subject>.patch`, then deletes the snapshot files only after confirming that replaying the series over the pinned upstream commit reproduces exactly the same tree, including binary files, deletions, symlinks, and executable bits. If anything differs, the snapshot overlay is left untouched and the command explains what did not match. Empty directories cannot be part of a patch series because git does not record them; `migrate` reports any it drops.
 
 ## Safety checks
 

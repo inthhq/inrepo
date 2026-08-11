@@ -38,8 +38,8 @@ Package registries are convenient, but they are also an attack surface. Compromi
 `inrepo` is not a magic security boundary, and it does not replace lockfiles, audits, or incident response. It gives you a clearer operating model for packages you care about deeply:
 
 - `inrepo.lock.json` pins the exact upstream commit for each module.
-- `inrepo_patches/<name>/` stores your team's committed overlay files and deletions.
-- `inrepo_modules/<name>/` is generated output rebuilt from the lockfile plus overlay.
+- `inrepo_patches/<name>/` stores your team's committed changes, either as an ordered git patch series under `series/` or as legacy whole-file overlay snapshots.
+- `inrepo_modules/<name>/` is generated output rebuilt from the lockfile plus those changes.
 
 That makes upstream code easier to inspect, patch, and reproduce when the package manager ecosystem gets noisy.
 
