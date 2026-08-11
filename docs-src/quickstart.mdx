@@ -50,9 +50,10 @@ The normal collaboration loop is:
 
 1. Run `npx inrepo sync` to rebuild generated modules from `inrepo.lock.json` and `inrepo_patches/`.
 2. Edit files under `inrepo_modules/<package>/`.
-3. Run `npx inrepo patch <package>` to capture those edits into `inrepo_patches/<package>/`.
-4. Commit config, lockfile changes, and patch files.
-5. Teammates pull and run `npx inrepo sync`.
+3. Run `npx inrepo patch <package> -m "reason"` to capture those edits into `inrepo_patches/<package>/`.
+4. Run `npx inrepo diff <package>` to review the effective change.
+5. Commit config, lockfile changes, and patch files.
+6. Teammates pull and run `npx inrepo sync`.
 
 Commit these files:
 
@@ -78,7 +79,29 @@ npx inrepo verify
 A package's committed changes live in `inrepo_patches/<package>/` in one of two formats:
 
 - `series/0001-*.patch` — an ordered git patch series. Each file is standard `git format-patch --binary` output, and `sync` applies them in filename order with `git am --3way` on top of the pinned upstream commit. Reviews show effective hunks instead of whole replacement files.
-- Whole-file snapshots plus `.inrepo-deletions` — the original overlay format, still used for any package without a `series/` directory.
+- Whole-file snapshots plus `.inrepo-deletions` — the original overlay format, still used by any package that already has snapshot files.
+
+New captures go into the series:
+
+```bash
+npx inrepo patch <package> -m "Replace the event emitter for static compilation"
+```
+
+`patch` compares `inrepo_modules/<package>` against the patched tree — the pinned upstream commit plus the patches already committed — and appends the difference as the next numbered patch. Each run writes a new patch, so `-m` is required and becomes its subject. If nothing changed, the command says so and writes nothing.
+
+The patch headers are the provenance record: `From:`, `Date:`, and `Subject:` carry who changed what and why, so there is no separate manifest to keep in sync. The author is taken from your git `user.name` and `user.email`.
+
+## Reviewing the delta
+
+```bash
+npx inrepo diff <package>
+npx inrepo diff <package> --stat
+npx inrepo diff
+```
+
+`diff` prints the effective change from the pinned upstream commit to the patched tree, preceded by the patch series that produced it and each patch's subject, author, and date. `--stat` replaces the hunks with a per-file `+/-` summary. Git renders the diff, so deletions, mode changes, symlinks, and binary files all read correctly, and snapshot-format packages are covered too. `diff` is a viewer: it exits 0 whether or not there are differences.
+
+## Migrating a snapshot overlay
 
 Convert a package from the snapshot format to a series with:
 

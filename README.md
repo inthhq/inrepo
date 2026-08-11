@@ -84,7 +84,8 @@ Then work like this:
 ```bash
 npx inrepo sync
 # edit files in inrepo_modules/<package>/
-npx inrepo patch <package>
+npx inrepo patch <package> -m "why this change"
+npx inrepo diff <package>
 git commit
 ```
 
@@ -113,7 +114,9 @@ Commit these:
 Two patch formats are supported:
 
 - `inrepo_patches/<package>/series/0001-*.patch` is an ordered git patch series. Patches are standard `git format-patch --binary` output, applied in filename order with `git am --3way` on top of the pinned upstream commit. There is no separate series manifest; the file name is the order.
-- `inrepo_patches/<package>/` whole-file snapshots plus `.inrepo-deletions` are the original overlay format. They still work, and are used whenever a package has no `series/` directory.
+- `inrepo_patches/<package>/` whole-file snapshots plus `.inrepo-deletions` are the original overlay format. They still work, and keep being used by any package that still has them.
+
+New captures go into the patch series. A package only stays on the snapshot format while snapshot files are present; run `npx inrepo migrate <package>` to move it across.
 
 Do not commit these:
 
@@ -158,7 +161,33 @@ You can also put the same object under `package.json#inrepo`.
 
 During sync, it compares the current generated module and overlay against recorded state. If `inrepo_modules/` changed but the overlay did not, it treats that as uncaptured work and asks you to run `npx inrepo patch`. If both changed, it reports a conflict. `npx inrepo sync --force` can discard generated edits, but saves a backup under `.inrepo/backups/`. If you installed the CLI globally, the same command is `inrepo sync --force`.
 
-Patch capture is guarded too. `inrepo patch` compares your current vendored module against the pristine upstream tree, writes changed files into `inrepo_patches/`, and records deleted files in `.inrepo-deletions`.
+Patch capture is guarded too. `inrepo patch` refuses to run when the overlay changed behind your back, and tells you to sync first.
+
+## Capturing a patch
+
+`inrepo patch <package> -m "reason"` compares `inrepo_modules/<package>` against the patched tree — the pinned upstream commit plus the patches already in the series — and appends whatever you changed as the next numbered patch:
+
+```bash
+npx inrepo patch <package> -m "Replace the event emitter for static compilation"
+```
+
+Every invocation writes a new patch; there is no amend or squash. The `-m` text becomes the patch subject, so the message is required. When nothing changed, the command says so and writes no patch.
+
+Patch headers are the provenance record. `From:`, `Date:`, and `Subject:` capture who made the change, when, and why, so no separate manifest is needed. The author comes from your git `user.name` and `user.email`.
+
+Packages that still carry snapshot files keep the original capture behavior: `inrepo patch <package>` rewrites the whole-file overlay and records deleted files in `.inrepo-deletions`.
+
+## Reviewing what you changed
+
+`inrepo diff` shows the effective delta between the pinned upstream commit and the patched tree, so a review sees hunks instead of whole replacement files:
+
+```bash
+npx inrepo diff <package>          # unified diff, plus the patch series that produced it
+npx inrepo diff <package> --stat   # per-file +/- summary
+npx inrepo diff                    # every vendored package
+```
+
+The diff is rendered by git, so deletions, mode changes, symlinks, and binary files all read correctly. Packages on the snapshot format are covered too, including their `.inrepo-deletions` entries. `inrepo diff` is a viewer: it exits 0 whether or not there are differences, and only fails on an unknown or unvendored package.
 
 ## Migrating to a patch series
 
