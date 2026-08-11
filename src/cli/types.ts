@@ -28,6 +28,16 @@ export type MigrateArgs = {
   name: string;
 };
 
+export type UpdateArgs = {
+  name: string;
+  /** New branch, tag, or commit to pin; persisted to config on success. */
+  ref?: string;
+  /** Finish an update whose rebase stopped on a conflict. */
+  continue: boolean;
+  /** Throw away an in-progress update and leave the project untouched. */
+  abort: boolean;
+};
+
 export type PackageSpec = {
   name: string;
   git?: string;

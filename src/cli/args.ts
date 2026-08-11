@@ -1,5 +1,5 @@
 import { isCliError, parseCommandArgs } from 'hexbus';
-import type { AddArgs, DiffArgs, MigrateArgs, PatchArgs, SyncArgs } from './types.js';
+import type { AddArgs, DiffArgs, MigrateArgs, PatchArgs, SyncArgs, UpdateArgs } from './types.js';
 
 function parserDetails(error: unknown): string {
   if (!isCliError(error)) return '';
@@ -125,6 +125,43 @@ export function parseDiffArgs(argv: string[]): DiffArgs {
   } catch (error) {
     rethrowCommandArgError(error, {
       UNEXPECTED_POSITIONAL: 'diff takes a single package <name>',
+    });
+  }
+}
+
+export function parseUpdateArgs(argv: string[]): UpdateArgs {
+  try {
+    const parsed = parseCommandArgs(argv, {
+      flags: {
+        ref: { names: ['--ref'], type: 'string', valueName: 'ref' },
+        continue: { names: ['--continue'], type: 'boolean', defaultValue: false },
+        abort: { names: ['--abort'], type: 'boolean', defaultValue: false },
+      },
+      positionals: [{ name: 'name', required: true }],
+    });
+
+    const ref = parsed.flags.ref?.trim();
+    if (parsed.flags.ref !== undefined && !ref) {
+      throw new Error('--ref requires a value');
+    }
+    if (parsed.flags.continue && parsed.flags.abort) {
+      throw new Error('update takes either --continue or --abort, not both');
+    }
+    if (ref && (parsed.flags.continue || parsed.flags.abort)) {
+      throw new Error('--ref cannot be combined with --continue or --abort');
+    }
+
+    return {
+      name: parsed.positionals.name,
+      ...(ref ? { ref } : {}),
+      continue: parsed.flags.continue,
+      abort: parsed.flags.abort,
+    };
+  } catch (error) {
+    rethrowCommandArgError(error, {
+      POSITIONAL_REQUIRED: 'update requires a package <name>',
+      UNEXPECTED_POSITIONAL: 'update takes a single package <name>',
+      '--ref': '--ref requires a value',
     });
   }
 }

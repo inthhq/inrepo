@@ -6,6 +6,7 @@ import { cmdInit } from './commands/init.js';
 import { cmdMigrate } from './commands/migrate.js';
 import { cmdPatch } from './commands/patch.js';
 import { cmdSync } from './commands/sync.js';
+import { cmdUpdate } from './commands/update.js';
 import { cmdVerify } from './commands/verify.js';
 
 export const commands: CliCommand[] = [
@@ -62,6 +63,16 @@ export const commands: CliCommand[] = [
     hint: 'Check generated output',
     label: 'Verify',
     name: 'verify',
+  },
+  {
+    action: async (context) => {
+      await cmdUpdate(resolve(context.cwd), context.commandArgs);
+    },
+    description:
+      'Move a package to a newer upstream commit by rebasing its patch series onto it (--ref, --continue, --abort).',
+    hint: 'Rebase onto new upstream',
+    label: 'Update',
+    name: 'update',
   },
   {
     action: async (context) => {
