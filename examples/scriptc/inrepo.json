@@ -1,0 +1,11 @@
+{
+  "packages": [
+    {
+      "name": "picocolors"
+    },
+    {
+      "name": "commander"
+    }
+  ],
+  "$schema": "https://raw.githubusercontent.com/inthhq/inrepo/main/inrepo.schema.json"
+}
