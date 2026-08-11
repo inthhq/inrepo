@@ -60,6 +60,24 @@ export function cacheMetaPath(cwd: string, name: string): string {
   return join(cacheDirPath(cwd, name), '.cache-meta.json');
 }
 
+/**
+ * Root of an in-progress `inrepo update` for one package. Everything the
+ * command needs to resume or discard a conflicted rebase lives under here, and
+ * nothing outside it changes until the update succeeds.
+ */
+export function updateDirPath(cwd: string, name: string): string {
+  return packageTreePath(join(cwd, '.inrepo', 'updates'), name);
+}
+
+/** Scratch repository the user edits to resolve update conflicts. */
+export function updateRepoPath(cwd: string, name: string): string {
+  return join(updateDirPath(cwd, name), 'repo');
+}
+
+export function updateStatePath(cwd: string, name: string): string {
+  return join(updateDirPath(cwd, name), 'state.json');
+}
+
 export function moduleStatePath(cwd: string, name: string): string {
   return packageTreePath(join(cwd, '.inrepo', 'state'), name) + '.json';
 }

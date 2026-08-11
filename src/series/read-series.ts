@@ -19,6 +19,16 @@ export function isSeriesPatchFileName(fileName: string): boolean {
 }
 
 /**
+ * `git format-patch` derives the file name from the subject, which can collapse
+ * to nothing for a subject made entirely of punctuation. The series reader
+ * requires `NNNN-<slug>.patch`, so fall back to a generic slug.
+ */
+export function seriesPatchFileName(produced: string, number: number): string {
+  if (isSeriesPatchFileName(produced)) return produced;
+  return `${String(number).padStart(4, '0')}-patch.patch`;
+}
+
+/**
  * Read a package's patch series in filename order. Ordering is the file name
  * itself; there is no separate series manifest. Any `.patch` file that does not
  * follow the naming convention is an error rather than a silently skipped

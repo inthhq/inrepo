@@ -13,6 +13,34 @@ async function abortInFlightApply(root: string): Promise<void> {
 }
 
 /**
+ * Apply patch files onto the current `HEAD` of a scratch repository, in order,
+ * leaving one commit per patch.
+ *
+ * `git am --3way` keeps the recorded author, date, and subject, so the commits
+ * carry the same provenance as the patch files that produced them.
+ */
+export async function applySeriesToRepo(
+  repoRoot: string,
+  patches: SeriesPatch[],
+  opts: { onPatch?: (patch: SeriesPatch) => void } = {},
+): Promise<void> {
+  for (const patch of patches) {
+    opts.onPatch?.(patch);
+    try {
+      // --keep-cr: the mailbox splitter strips a trailing CR by default, which
+      // would silently rewrite CRLF content.
+      await runSeriesGit(['am', '--3way', '--keep-cr', '--no-verify', patch.path], {
+        cwd: repoRoot,
+      });
+    } catch (e) {
+      await abortInFlightApply(repoRoot);
+      const err = e instanceof Error ? e : new Error(String(e));
+      throw new Error(`Failed to apply ${patch.fileName}: ${err.message}`);
+    }
+  }
+}
+
+/**
  * Rebuild the patched tree for a package: copy the pinned upstream checkout
  * into `targetRoot`, then apply every patch in the series with
  * `git am --3way` in filename order.
@@ -38,19 +66,7 @@ export async function applySeries(opts: {
   });
   await initSeriesBaseRepo(opts.targetRoot);
 
-  for (const patch of patches) {
-    try {
-      // --keep-cr: the mailbox splitter strips a trailing CR by default, which
-      // would silently rewrite CRLF content.
-      await runSeriesGit(['am', '--3way', '--keep-cr', '--no-verify', patch.path], {
-        cwd: opts.targetRoot,
-      });
-    } catch (e) {
-      await abortInFlightApply(opts.targetRoot);
-      const err = e instanceof Error ? e : new Error(String(e));
-      throw new Error(`Failed to apply ${patch.fileName}: ${err.message}`);
-    }
-  }
+  await applySeriesToRepo(opts.targetRoot, patches);
 
   await rm(join(opts.targetRoot, '.git'), { recursive: true, force: true });
   await assertPatchedSymlinksWithinRoot(opts.pristineRoot, opts.targetRoot);

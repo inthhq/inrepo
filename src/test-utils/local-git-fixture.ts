@@ -1,5 +1,5 @@
 import { mkdir, writeFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { makeTmpDir } from './tmp-dir.js';
 import { runGit } from './run-git.js';
 
@@ -10,6 +10,16 @@ export type LocalGitFixture = {
   c1: string;
   /** Commit SHA of the second ("v2") commit, which is HEAD on `main`. */
   c2: string;
+  /** Non-bare clone the fixture commits from. */
+  work: string;
+  /**
+   * Write files (paths relative to the repository root), commit them, and push
+   * the current branch. Resolves with the new commit SHA. Used by tests that
+   * need upstream to move after a package has already been vendored.
+   */
+  commitUpstream: (files: Record<string, string>, message: string) => Promise<string>;
+  /** Branch off the current tip, switch to the new branch, and push it. */
+  createBranch: (name: string) => Promise<void>;
   cleanup: () => Promise<void>;
 };
 
@@ -53,6 +63,22 @@ export async function makeLocalGitFixture(prefix = 'inrepo-fixture-'): Promise<L
     url: bare,
     c1,
     c2,
+    work,
+    commitUpstream: async (files, message) => {
+      for (const [relPath, contents] of Object.entries(files)) {
+        const abs = join(work, relPath);
+        await mkdir(dirname(abs), { recursive: true });
+        await writeFile(abs, contents, 'utf8');
+      }
+      await runGit(['add', '--all', '.'], work);
+      await runGit(['commit', '-m', message], work);
+      await runGit(['push', 'origin', 'HEAD'], work);
+      return runGit(['rev-parse', 'HEAD'], work);
+    },
+    createBranch: async (name) => {
+      await runGit(['checkout', '-b', name], work);
+      await runGit(['push', '-u', 'origin', name], work);
+    },
     cleanup: async () => {
       await rm(root, { recursive: true, force: true });
     },

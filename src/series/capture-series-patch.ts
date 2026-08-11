@@ -10,7 +10,7 @@ import {
 } from '../overlay/tree-utils.js';
 import { applySeries } from './apply-series.js';
 import { tryFormatSeriesPatch } from './format-series-patch.js';
-import { isSeriesPatchFileName, nextSeriesNumber, readSeries } from './read-series.js';
+import { nextSeriesNumber, readSeries, seriesPatchFileName } from './read-series.js';
 import { resolveSeriesAuthor } from './resolve-series-author.js';
 import type { SeriesAuthor } from './series-git.js';
 
@@ -42,16 +42,6 @@ async function newEmptyDirectories(baseRoot: string, moduleRoot: string): Promis
     .filter((relPosix) => !base.has(relPosix))
     .filter((relPosix) => !paths.some((candidate) => candidate.startsWith(`${relPosix}/`)))
     .sort();
-}
-
-/**
- * `git format-patch` derives the file name from the subject, which can collapse
- * to nothing for a subject made entirely of punctuation. The series reader
- * requires `NNNN-<slug>.patch`, so fall back to a generic slug.
- */
-function seriesPatchFileName(produced: string, number: number): string {
-  if (isSeriesPatchFileName(produced)) return produced;
-  return `${String(number).padStart(4, '0')}-patch.patch`;
 }
 
 /**

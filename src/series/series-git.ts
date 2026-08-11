@@ -41,6 +41,10 @@ function seriesGitEnv(): NodeJS.ProcessEnv {
   env.GIT_CONFIG_GLOBAL = NULL_DEVICE;
   env.GIT_CONFIG_SYSTEM = NULL_DEVICE;
   env.GIT_TERMINAL_PROMPT = '0';
+  // Nothing here is interactive: commands that would normally open an editor
+  // (rebase --continue, commit) must reuse the existing message and exit.
+  env.GIT_EDITOR = 'true';
+  env.GIT_SEQUENCE_EDITOR = 'true';
   return env;
 }
 
@@ -66,6 +70,12 @@ function seriesConfigArgs(author: SeriesAuthor): string[] {
     'diff.external=',
     '-c',
     'gc.auto=0',
+    '-c',
+    'core.editor=true',
+    '-c',
+    'sequence.editor=true',
+    '-c',
+    'rerere.enabled=false',
     '-c',
     `user.name=${author.name}`,
     '-c',
@@ -94,6 +104,23 @@ export function runSeriesGitCapture(
     env: seriesGitEnv(),
     trim: opts.trim,
   });
+}
+
+/**
+ * Run a scratch-repo git command whose non-zero exit is a meaningful answer
+ * rather than a failure, such as the `--quiet` diff predicates. Resolves `true`
+ * when git exited 0.
+ */
+export async function trySeriesGit(
+  args: string[],
+  opts: { cwd: string; author?: SeriesAuthor },
+): Promise<boolean> {
+  try {
+    await runSeriesGit(args, opts);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
