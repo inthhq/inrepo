@@ -40,33 +40,66 @@ for (const mode of MODES) {
       await cleanupTmpDir(cwd);
     });
 
-    test('sync -> edit -> patch -> resync preserves text, binary files, and deletions', async () => {
+    test('sync -> edit -> patch -m -> resync preserves text, binary files, and deletions', async () => {
       expect((await runCli(['sync'], { cwd, env: envFor(mode) })).exitCode).toBe(0);
 
       const moduleDir = join(cwd, 'inrepo_modules', 'upstream');
       await writeFile(join(moduleDir, 'src', 'index.ts'), 'export const v = 99;\n', 'utf8');
-      await writeFile(join(moduleDir, 'logo.bin'), new Uint8Array([9, 8, 7, 6]));
+      await writeFile(join(moduleDir, 'logo.bin'), new Uint8Array([0x89, 0x50, 0x00, 0x01]));
       await writeFile(join(moduleDir, 'src', 'local.ts'), 'export const local = true;\n', 'utf8');
       await rm(join(moduleDir, 'docs', 'guide.md'));
 
-      const patch = await runCli(['patch', 'upstream'], { cwd, env: envFor(mode) });
+      const patch = await runCli(['patch', 'upstream', '-m', 'Vendor local tweaks'], {
+        cwd,
+        env: envFor(mode),
+      });
       expect(patch.exitCode).toBe(0);
-      expect(await readFile(join(cwd, 'inrepo_patches', 'upstream', 'src', 'index.ts'), 'utf8')).toBe(
-        'export const v = 99;\n',
-      );
-      expect(await readFile(join(cwd, 'inrepo_patches', 'upstream', 'logo.bin'))).toEqual(
-        Buffer.from([9, 8, 7, 6]),
-      );
-      expect(await readFile(join(cwd, 'inrepo_patches', 'upstream', '.inrepo-deletions'), 'utf8')).toBe(
-        'docs/guide.md\n',
+
+      const seriesDir = join(cwd, 'inrepo_patches', 'upstream', 'series');
+      expect(await readdir(seriesDir)).toEqual(['0001-Vendor-local-tweaks.patch']);
+      expect(await readFile(join(seriesDir, '0001-Vendor-local-tweaks.patch'), 'utf8')).toContain(
+        'Subject: [PATCH] Vendor local tweaks',
       );
 
       expect((await runCli(['sync'], { cwd, env: envFor(mode) })).exitCode).toBe(0);
       expect(await readFile(join(moduleDir, 'src', 'index.ts'), 'utf8')).toBe('export const v = 99;\n');
-      expect(await readFile(join(moduleDir, 'logo.bin'))).toEqual(Buffer.from([9, 8, 7, 6]));
+      expect(await readFile(join(moduleDir, 'logo.bin'))).toEqual(
+        Buffer.from([0x89, 0x50, 0x00, 0x01]),
+      );
       expect(existsSync(join(moduleDir, 'docs', 'guide.md'))).toBe(false);
       expect(await readFile(join(moduleDir, 'src', 'local.ts'), 'utf8')).toBe(
         'export const local = true;\n',
+      );
+    });
+
+    test('packages still on a legacy overlay keep capturing whole-file snapshots', async () => {
+      const overlayDir = join(cwd, 'inrepo_patches', 'upstream');
+      await mkdir(join(overlayDir, 'src'), { recursive: true });
+      await writeFile(join(overlayDir, 'src', 'index.ts'), 'export const v = 42;\n', 'utf8');
+      expect((await runCli(['sync'], { cwd, env: envFor(mode) })).exitCode).toBe(0);
+
+      const moduleDir = join(cwd, 'inrepo_modules', 'upstream');
+      await writeFile(join(moduleDir, 'src', 'index.ts'), 'export const v = 43;\n', 'utf8');
+      await rm(join(moduleDir, 'docs', 'guide.md'));
+
+      const patch = await runCli(['patch', 'upstream'], { cwd, env: envFor(mode) });
+      expect(patch.exitCode).toBe(0);
+      expect(existsSync(join(overlayDir, 'series'))).toBe(false);
+      expect(await readFile(join(overlayDir, 'src', 'index.ts'), 'utf8')).toBe(
+        'export const v = 43;\n',
+      );
+      expect(await readFile(join(overlayDir, '.inrepo-deletions'), 'utf8')).toBe('docs/guide.md\n');
+
+      // -m has nowhere to go in the snapshot format, so it is reported as ignored.
+      await writeFile(join(moduleDir, 'src', 'index.ts'), 'export const v = 44;\n', 'utf8');
+      const withMessage = await runCli(['patch', 'upstream', '-m', 'Bump again'], {
+        cwd,
+        env: envFor(mode),
+      });
+      expect(withMessage.exitCode).toBe(0);
+      expect(withMessage.stderr).toMatch(/Ignoring -m for "upstream"/);
+      expect(await readFile(join(overlayDir, 'src', 'index.ts'), 'utf8')).toBe(
+        'export const v = 44;\n',
       );
     });
 

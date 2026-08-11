@@ -4,7 +4,7 @@ import { cmdPatch } from './commands/patch.js';
 import { cmdSync } from './commands/sync.js';
 import { cmdVerify } from './commands/verify.js';
 import { printBanner } from './rendering.js';
-import { cancel, intro, isCancel, outro, select } from './ui.js';
+import { cancel, intro, isCancel, outro, select, text } from './ui.js';
 
 /**
  * Bare-invocation menu: when the user runs `inrepo` with no arguments in an
@@ -71,7 +71,18 @@ export async function cmdInteractive(cwd: string): Promise<void> {
         cancel('inrepo verify: lockfile and checkouts disagree.');
       }
     } else if (action === 'patch') {
-      await cmdPatch(cwd, [], { suppressBanners: true });
+      // Series capture records the reason as the patch subject, so ask for it
+      // here rather than making the user rerun with -m.
+      const reason = await text({
+        message: 'Why are you capturing these changes?',
+        placeholder: 'Replace the event emitter for static compilation',
+      });
+      if (isCancel(reason)) {
+        cancel('Patch cancelled.');
+        return;
+      }
+      const trimmed = reason.trim();
+      await cmdPatch(cwd, trimmed ? ['-m', trimmed] : [], { suppressBanners: true });
       outro('Patch capture complete.');
     } else {
       const args = await promptAddArgs({ suppressBanners: true });

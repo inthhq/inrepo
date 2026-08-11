@@ -14,6 +14,14 @@ export type SyncArgs = {
 
 export type PatchArgs = {
   name?: string;
+  /** Reason recorded as the patch subject; required for patch-series capture. */
+  message?: string;
+};
+
+export type DiffArgs = {
+  name?: string;
+  /** Show a per-file `+/-` summary instead of the full unified diff. */
+  stat: boolean;
 };
 
 export type MigrateArgs = {

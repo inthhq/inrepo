@@ -1,5 +1,5 @@
 import { isCliError, parseCommandArgs } from 'hexbus';
-import type { AddArgs, MigrateArgs, PatchArgs, SyncArgs } from './types.js';
+import type { AddArgs, DiffArgs, MigrateArgs, PatchArgs, SyncArgs } from './types.js';
 
 function parserDetails(error: unknown): string {
   if (!isCliError(error)) return '';
@@ -86,12 +86,46 @@ export function parseSyncArgs(argv: string[], globalForce = false): SyncArgs {
 export function parsePatchArgs(argv: string[]): PatchArgs {
   try {
     const parsed = parseCommandArgs(argv, {
+      flags: {
+        message: { names: ['-m', '--message'], type: 'string', valueName: 'reason' },
+      },
       positionals: [{ name: 'name' }],
     });
 
-    return parsed.positionals.name === undefined ? {} : { name: parsed.positionals.name };
+    const message = parsed.flags.message?.trim();
+    if (parsed.flags.message !== undefined && !message) {
+      throw new Error('-m requires a message');
+    }
+
+    return {
+      ...(parsed.positionals.name === undefined ? {} : { name: parsed.positionals.name }),
+      ...(message ? { message } : {}),
+    };
   } catch (error) {
-    rethrowCommandArgError(error, {});
+    rethrowCommandArgError(error, {
+      '-m': '-m requires a message',
+      '--message': '-m requires a message',
+    });
+  }
+}
+
+export function parseDiffArgs(argv: string[]): DiffArgs {
+  try {
+    const parsed = parseCommandArgs(argv, {
+      flags: {
+        stat: { names: ['--stat'], type: 'boolean', defaultValue: false },
+      },
+      positionals: [{ name: 'name' }],
+    });
+
+    return {
+      ...(parsed.positionals.name === undefined ? {} : { name: parsed.positionals.name }),
+      stat: parsed.flags.stat,
+    };
+  } catch (error) {
+    rethrowCommandArgError(error, {
+      UNEXPECTED_POSITIONAL: 'diff takes a single package <name>',
+    });
   }
 }
 
