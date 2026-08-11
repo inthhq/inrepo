@@ -19,34 +19,47 @@ export type FormattedSeriesPatch = {
   content: Buffer;
 };
 
-/**
- * Produce one `git format-patch --binary` patch describing
- * `baseRoot -> patchedRoot`.
- *
- * Both trees are staged in a throwaway repository, so the patch carries exact
- * hunks, binary literals, deletions, symlinks, and mode changes.
- */
-export async function formatSeriesPatch(opts: {
+export type FormatSeriesPatchOptions = {
   baseRoot: string;
   patchedRoot: string;
   subject: string;
   author?: SeriesAuthor;
   /** Number used for the `NNNN-` filename prefix (default 1). */
   startNumber?: number;
-}): Promise<FormattedSeriesPatch> {
+  /**
+   * Extra paths to leave out of both trees, on top of `.git`. Callers pass this
+   * when one side carries generated markers (`.inrepo-vendor.json`) or cache
+   * metadata that must not become part of the patch.
+   */
+  skip?: (relPosix: string) => boolean;
+};
+
+/**
+ * Produce one `git format-patch --binary` patch describing
+ * `baseRoot -> patchedRoot`, or `null` when the two trees are identical as far
+ * as git is concerned.
+ *
+ * Both trees are staged in a throwaway repository, so the patch carries exact
+ * hunks, binary literals, deletions, symlinks, and mode changes.
+ */
+export async function tryFormatSeriesPatch(
+  opts: FormatSeriesPatchOptions,
+): Promise<FormattedSeriesPatch | null> {
   const work = await mkdtemp(join(tmpdir(), 'inrepo-series-format-'));
   const repo = join(work, 'repo');
   const out = join(work, 'out');
+  const extraSkip = opts.skip;
+  const skip = extraSkip
+    ? (relPosix: string): boolean => skipGitDir(relPosix) || extraSkip(relPosix)
+    : skipGitDir;
 
   try {
-    await copyTree(opts.baseRoot, repo, { skip: skipGitDir, treatMissingAsEmpty: true });
+    await copyTree(opts.baseRoot, repo, { skip, treatMissingAsEmpty: true });
     await initSeriesBaseRepo(repo);
 
-    await replaceWorkTree(repo, opts.patchedRoot);
+    await replaceWorkTree(repo, opts.patchedRoot, { skip });
     await stageAll(repo);
-    if (!(await hasStagedChanges(repo))) {
-      throw new Error('No differences between the upstream tree and the patched tree');
-    }
+    if (!(await hasStagedChanges(repo))) return null;
     await runSeriesGit(
       ['commit', '--quiet', '--no-verify', '--allow-empty-message', '-m', opts.subject],
       { cwd: repo, author: opts.author },
@@ -81,4 +94,18 @@ export async function formatSeriesPatch(opts: {
   } finally {
     await rm(work, { recursive: true, force: true });
   }
+}
+
+/**
+ * {@link tryFormatSeriesPatch} for callers that treat "no differences" as a
+ * failure rather than a normal outcome.
+ */
+export async function formatSeriesPatch(
+  opts: FormatSeriesPatchOptions,
+): Promise<FormattedSeriesPatch> {
+  const patch = await tryFormatSeriesPatch(opts);
+  if (patch == null) {
+    throw new Error('No differences between the upstream tree and the patched tree');
+  }
+  return patch;
 }

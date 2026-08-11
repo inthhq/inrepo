@@ -1,7 +1,6 @@
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { runGitCapture } from '../git/run-git-capture.js';
 import { applyLegacyOverlayTree } from '../overlay/assemble-module.js';
 import { overlayDirPath, seriesDirPath } from '../overlay/overlay-paths.js';
 import { applySeries } from './apply-series.js';
@@ -9,7 +8,7 @@ import { comparePatchedTrees } from './compare-patched-trees.js';
 import { formatSeriesPatch } from './format-series-patch.js';
 import { listLegacyOverlayEntries, removeLegacyOverlayEntries } from './legacy-overlay.js';
 import { readSeries } from './read-series.js';
-import { DEFAULT_SERIES_AUTHOR, type SeriesAuthor } from './series-git.js';
+import { resolveSeriesAuthor } from './resolve-series-author.js';
 
 export type MigrateResult = {
   /** Absolute path of the patch that now carries the package's changes. */
@@ -23,21 +22,6 @@ export type MigrateResult = {
 
 function defaultSubject(name: string): string {
   return `Import legacy inrepo overlay for ${name}`;
-}
-
-async function resolveRepoAuthor(cwd: string): Promise<SeriesAuthor> {
-  const read = async (key: string): Promise<string> => {
-    try {
-      return await runGitCapture(['config', '--get', key], { cwd });
-    } catch {
-      return '';
-    }
-  };
-  const [name, email] = await Promise.all([read('user.name'), read('user.email')]);
-  return {
-    name: name || DEFAULT_SERIES_AUTHOR.name,
-    email: email || DEFAULT_SERIES_AUTHOR.email,
-  };
 }
 
 function summarizeDifferences(differences: string[]): string {
@@ -89,7 +73,7 @@ export async function migratePackageToSeries(opts: {
       baseRoot: opts.pristineRoot,
       patchedRoot: legacyTree,
       subject: opts.subject ?? defaultSubject(opts.name),
-      author: await resolveRepoAuthor(opts.cwd),
+      author: await resolveSeriesAuthor(opts.cwd),
       startNumber: 1,
     });
 

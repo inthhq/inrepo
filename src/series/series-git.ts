@@ -84,14 +84,15 @@ export function runSeriesGit(
   });
 }
 
-/** Same as {@link runSeriesGit} but returns trimmed stdout. */
+/** Same as {@link runSeriesGit} but returns stdout, trimmed unless told otherwise. */
 export function runSeriesGitCapture(
   args: string[],
-  opts: { cwd: string; author?: SeriesAuthor },
+  opts: { cwd: string; author?: SeriesAuthor; trim?: boolean },
 ): Promise<string> {
   return runGitCapture([...seriesConfigArgs(opts.author ?? DEFAULT_SERIES_AUTHOR), ...args], {
     cwd: opts.cwd,
     env: seriesGitEnv(),
+    trim: opts.trim,
   });
 }
 
@@ -122,15 +123,27 @@ export async function hasStagedChanges(root: string): Promise<boolean> {
   return status !== '';
 }
 
-/** Replace the work tree (everything but `.git`) with the contents of `sourceRoot`. */
-export async function replaceWorkTree(root: string, sourceRoot: string): Promise<void> {
+/**
+ * Replace the work tree (everything but `.git`) with the contents of
+ * `sourceRoot`. `skip` additionally excludes paths the caller does not want the
+ * scratch repository to see, such as generated markers.
+ */
+export async function replaceWorkTree(
+  root: string,
+  sourceRoot: string,
+  opts: { skip?: (relPosix: string) => boolean } = {},
+): Promise<void> {
   for (const entry of await readdir(root)) {
     if (entry === '.git') continue;
     await rm(join(root, entry), { recursive: true, force: true });
   }
   // The scratch repository lives in `root`, so a stray `.git` entry in the
   // source tree must never be copied over it.
-  await copyTree(sourceRoot, root, { skip: skipGitDir, treatMissingAsEmpty: true });
+  const extraSkip = opts.skip;
+  await copyTree(sourceRoot, root, {
+    skip: extraSkip ? (relPosix) => skipGitDir(relPosix) || extraSkip(relPosix) : skipGitDir,
+    treatMissingAsEmpty: true,
+  });
 }
 
 /** Skip predicate that keeps a source tree's `.git` out of a scratch repository. */
