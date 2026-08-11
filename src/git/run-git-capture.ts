@@ -1,9 +1,13 @@
 import { spawn } from 'node:child_process';
 
-export function runGitCapture(args: string[], opts: { cwd?: string } = {}): Promise<string> {
+export function runGitCapture(
+  args: string[],
+  opts: { cwd?: string; env?: NodeJS.ProcessEnv } = {},
+): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn('git', args, {
       cwd: opts.cwd,
+      env: opts.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let stdout = '';

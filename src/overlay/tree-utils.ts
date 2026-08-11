@@ -116,14 +116,23 @@ async function removeForReplacement(absPath: string, nextKind: TreeKind): Promis
   await rm(absPath, { recursive: true, force: true });
 }
 
+/** True when a relative symlink target resolves outside `root`. */
+export function symlinkTargetEscapesRoot(
+  root: string,
+  relPosix: string,
+  target: string,
+): boolean {
+  const absDir = resolve(dirname(relPosixToAbs(root, relPosix)));
+  const resolvedTarget = resolve(absDir, ...target.split(/[\\/]+/));
+  const rel = relative(root, resolvedTarget);
+  return rel.startsWith('..') || isAbsolute(rel);
+}
+
 function assertSymlinkWithinRoot(root: string, relPosix: string, target: string): void {
   if (isAbsolute(target)) {
     throw new Error(`Refusing to capture absolute symlink target at "${relPosix}"`);
   }
-  const absDir = resolve(dirname(relPosixToAbs(root, relPosix)));
-  const resolvedTarget = resolve(absDir, ...target.split(/[\\/]+/));
-  const rel = relative(root, resolvedTarget);
-  if (rel.startsWith('..') || isAbsolute(rel)) {
+  if (symlinkTargetEscapesRoot(root, relPosix, target)) {
     throw new Error(`Refusing to capture symlink escaping module root at "${relPosix}"`);
   }
 }

@@ -45,6 +45,13 @@ export function overlayDeletionsPath(cwd: string, name: string): string {
   return join(overlayDirPath(cwd, name), '.inrepo-deletions');
 }
 
+/** Directory name holding a package's ordered git patch series. */
+export const SERIES_DIR_NAME = 'series';
+
+export function seriesDirPath(cwd: string, name: string): string {
+  return join(overlayDirPath(cwd, name), SERIES_DIR_NAME);
+}
+
 export function cacheDirPath(cwd: string, name: string): string {
   return packageTreePath(join(cwd, '.inrepo', 'cache'), name);
 }
