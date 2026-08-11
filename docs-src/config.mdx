@@ -21,7 +21,8 @@ Prefer `inrepo.json` at the project root:
     }
   ],
   "keep": ["LICENSE"],
-  "exclude": [".github"]
+  "exclude": [".github"],
+  "rewireImports": false
 }
 ```
 
@@ -53,8 +54,11 @@ Package fields:
 | `dev` | When `true`, sync wires the root `package.json#devDependencies`; otherwise it uses `dependencies`. |
 | `keep` | Optional allowlist of relative path prefixes to retain before exclusions run. |
 | `exclude` | Optional relative paths or slash-delimited regexes to remove from the vendored tree. |
+| `rewireImports` | Overrides the root `rewireImports` setting for this package only. |
 
 Root and per-package `keep` lists are merged. Root and per-package `exclude` lists are also merged.
+
+Root `rewireImports` is a project-wide default rather than a merged list, and a package entry overrides it.
 
 Filtering always runs in this order:
 
@@ -66,3 +70,15 @@ If `keep` is set, list every root file you still need, such as `package.json` or
 `inrepo add <package>` updates config by default after a successful checkout. Use `--no-save` for a one-off vendoring operation that should not upsert config.
 
 `inrepo add <package> --with-deps` adds one entry per resolved runtime dependency, each pinned to an exact `git` URL and release-tag `ref` so `sync` stays offline. It cannot be combined with `--no-save`.
+
+## Import rewiring
+
+`rewireImports` is off by default. With it on, `sync` rewrites bare specifiers that name a vendored runtime dependency into relative paths pointing at the sibling checkout, so the vendored graph resolves as plain source with no `node_modules` lookup:
+
+```js
+import pc from '../../picocolors/picocolors.js';
+```
+
+Only packages the recorded `graph` in `inrepo.lock.json` connects are affected, so the setting does nothing until you vendor a dependency graph with `inrepo add <package> --with-deps`. Specifiers are located with a JavaScript lexer in `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, and `.cts` files, covering `import`, `export … from`, `import(…)`, and `require(…)`; a package name inside a string, comment, or regular expression is never touched. A bare package name resolves to the dependency's `exports`, `module`, or `main` entry file, and a specifier that resolves to no file is left unchanged with a warning.
+
+Rewiring is a generated transform applied after the patch series, so it never appears in `inrepo diff` and never lands in a patch captured by `inrepo patch`.

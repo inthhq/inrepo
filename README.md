@@ -284,9 +284,57 @@ Resolution fails — before a single package is vendored — when:
 
 In every case the message names the dependency and the reason, and the fix is to vendor that one package by hand with `npx inrepo add <dep> --git <url> --ref <ref>`.
 
-Overlapping ranges are not a conflict: `^1.0.0` and `>=1.2.0` unify onto the highest published version satisfying both. Bare specifiers inside the vendored source are left exactly as upstream wrote them; `--with-deps` vendors the graph, it does not rewrite imports.
+Overlapping ranges are not a conflict: `^1.0.0` and `>=1.2.0` unify onto the highest published version satisfying both.
 
 `--with-deps` cannot be combined with `--no-save`, since a graph is only replayable from committed config and lockfile entries.
+
+### Rewiring imports between vendored packages
+
+Vendoring the graph does not, on its own, make it self-contained: the source still says `import pc from "picocolors"`, which only resolves through `node_modules`. Turn on import rewiring to point those specifiers at the sibling checkouts instead:
+
+```json
+{
+  "rewireImports": true,
+  "packages": [{ "name": "commander" }, { "name": "picocolors" }]
+}
+```
+
+`inrepo_modules/commander/lib/help.js` then reads:
+
+```js
+import pc from '../../picocolors/picocolors.js';
+```
+
+The setting is off by default, so existing projects are unchanged. Set it at the root to cover every package, or per package to opt one in or out:
+
+```json
+{
+  "rewireImports": true,
+  "packages": [{ "name": "commander", "rewireImports": false }]
+}
+```
+
+What gets rewritten, and what does not:
+
+- Only bare specifiers naming a package that the recorded `graph` lists as a runtime dependency of the importing package. A specifier for anything else — a package you did not vendor, `node:` builtins, relative paths, `#` aliases, URLs — is left alone.
+- `import`, `export … from`, `import(…)`, and `require(…)`, in `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, and `.cts` files. Specifiers are located with a JavaScript lexer, not a text search, so a package name inside a string, comment, template literal, or regular expression is never touched.
+- Subpaths keep their shape: `pkg/sub/thing.js` becomes a relative path to that file inside `inrepo_modules/pkg`.
+- A bare package name resolves to a concrete file — the dependency's `exports`, `module`, or `main` entry, honoring `import` and `require` conditions — because Node's ESM resolver does no directory or `main` lookup for relative specifiers. `import "../picocolors"` would fail where `import "../picocolors/picocolors.js"` works.
+- A specifier that names a vendored dependency but resolves to no file in it (a subpath that does not exist, say) is reported as a warning and left exactly as upstream wrote it, so the generated tree stays reproducible either way.
+
+Rewiring is a **generated** transform, applied after the patch series, and it never enters the patch surface:
+
+- `inrepo diff` renders the patched tree, so it never shows a rewritten specifier.
+- `inrepo patch <package> -m "…"` computes the same rewrites against the patched tree and undoes them before comparing, so a captured patch contains your edit and nothing else — even when you edited the lines next to a rewired import.
+- `inrepo verify` reapplies the transform and compares, so a correctly rewired checkout passes and a hand-edited specifier is reported as drift.
+- `inrepo sync` and `inrepo update` reapply it every time, from committed files only. Rewiring the same tree twice changes nothing.
+
+Because a rewritten specifier points into a dependency's checkout, `sync` vendors dependencies before the packages that need them, and reports what it rewrote:
+
+```text
+Synced "commander" @ a1b2c3d → …/inrepo_modules/commander
+  Rewired 3 import specifiers in 2 files of "commander"
+```
 
 ## Migrating to a patch series
 
