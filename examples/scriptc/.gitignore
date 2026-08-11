@@ -1,0 +1,9 @@
+node_modules/
+inrepo_modules/
+.inrepo/
+.scriptc/
+demo-npm
+demo-vendored
+demo-vendored-dynamic
+*.ll
+*.c

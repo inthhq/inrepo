@@ -1,0 +1,19 @@
+{
+  "lockfileVersion": 1,
+  "modules": {
+    "picocolors": {
+      "source": "picocolors",
+      "gitUrl": "https://github.com/alexeyraspopov/picocolors.git",
+      "commit": "0e7c4af2de299dd7bc5916f2bddd151fa2f66740",
+      "ref": null,
+      "updatedAt": "2026-08-11T07:31:48.873Z"
+    },
+    "commander": {
+      "source": "commander",
+      "gitUrl": "https://github.com/tj/commander.js.git",
+      "commit": "ba6d13ddb4243e5913367734f8c159089ffe7834",
+      "ref": null,
+      "updatedAt": "2026-08-11T07:31:50.138Z"
+    }
+  }
+}
