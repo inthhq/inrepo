@@ -42,13 +42,17 @@ patch workflow does the real work:
 npx inrepo add picocolors
 npx inrepo add commander
 # edit inrepo_modules/* until `scriptc build` is clean
-npx inrepo patch commander && npx inrepo patch picocolors
+npx inrepo patch commander -m "restate operations scriptc has no lowering for yet"
+npx inrepo patch picocolors -m "restate the createColors closure factory as exported functions"
 git commit
 ```
 
-The pinned commit + committed overlays in `inrepo_patches/` make the compiled
-tree reproducible: `inrepo sync` rebuilds it and `inrepo verify` catches drift
-in CI. (scriptc itself is exploring the same idea with its experimental
+Each `inrepo patch` call appends one numbered `git format-patch` file to
+`inrepo_patches/<package>/series/`, and the `-m` message becomes the patch
+subject — the permanent record of *why* that change exists. The pinned commit
+plus the committed series make the compiled tree reproducible: `inrepo sync`
+replays the patches with `git am --3way` and `inrepo verify` catches drift in
+CI. (scriptc itself is exploring the same idea with its experimental
 `--npm-static` and `--provenance-sources` flags; inrepo gets you there today
 with reviewable, committed patches.)
 
@@ -56,7 +60,43 @@ with reviewable, committed patches.)
 
 picocolors was restated from a `createColors()` closure-factory into plain
 exported function declarations (same output, ~40 lines). commander needed
-roughly forty small edits across four files, in a few recurring categories:
+roughly forty small edits across four files, split into one patch per
+rationale:
+
+```
+inrepo_patches/commander/series/
+  0001-Annotate-commander-types-so-scriptc-can-enforce-them.patch
+  0002-Replace-EventEmitter-inheritance-with-a-minimal-Map-.patch
+  0003-Drop-deprecated-and-async-commander-APIs-the-static-.patch
+  0004-Restate-operations-scriptc-has-no-lowering-for-yet.patch
+  0005-Rewrite-union-typed-getters-and-mixed-boolean-chains.patch
+inrepo_patches/picocolors/series/
+  0001-Restate-the-createColors-closure-factory-as-exported.patch
+  0002-Drop-the-CommonJS-type-declarations-that-no-longer-d.patch
+```
+
+`inrepo diff <package> [--stat]` shows the effective delta against the pinned
+upstream commit, with the series that produced it:
+
+```console
+$ npx inrepo diff commander --stat
+commander @ ba6d13d — patch series (5 patches)
+  0001  Annotate commander types so scriptc can enforce them at runtime  (Kaylee, 2026-08-11, 4 files)
+  0002  Replace EventEmitter inheritance with a minimal Map-based emitter  (Kaylee, 2026-08-11, 1 file)
+  0003  Drop deprecated and async commander APIs the static build cannot support  (Kaylee, 2026-08-11, 1 file)
+  0004  Restate operations scriptc has no lowering for yet  (Kaylee, 2026-08-11, 3 files)
+  0005  Rewrite union-typed getters and mixed boolean chains for static narrowing  (Kaylee, 2026-08-11, 2 files)
+
+ lib/command.js        | 411 ++++++++++++++++++++++++++++++++------------------
+ lib/help.js           | 146 ++++++++++++++----
+ lib/option.js         |   3 +
+ lib/suggestSimilar.js |  40 +++--
+ 4 files changed, 413 insertions(+), 187 deletions(-)
+```
+
+(Author emails are abbreviated above; the real output prints them in full.)
+
+The recurring categories behind those patches:
 
 - **JSDoc type tightening** — scriptc *trusts and enforces* JSDoc at runtime.
   Bare `Promise`/`Array` generics, untyped params, and untyped fields
@@ -74,9 +114,9 @@ roughly forty small edits across four files, in a few recurring categories:
   g-flag `match()` (manual scanner), sparse array writes (Levenshtein matrix
   rebuilt with `push`), and out-of-bounds indexing (`arr.slice(-1)[0]`).
 
-Dropped in the static build (documented in the patches): async
-hooks/actions, the deprecated RegExp form of `.option()`'s parse argument,
-`configureHelp()` overrides, and the deprecated `outputHelp(callback)` form.
+Dropped in the static build (patch 0003): async hooks/actions, the deprecated
+RegExp form of `.option()`'s parse argument, `configureHelp()` overrides, and
+the deprecated `outputHelp(callback)` form.
 
 Two scriptc bugs surfaced along the way: the mis-typed-field segfault above,
 and an internal compiler error (`union u0: arm 0 is jsval`) when compiling the
@@ -91,7 +131,9 @@ from the benchmark).
   `scriptc build cli-vendored.ts -o demo-vendored` (no `--dynamic`)
 - `inrepo.json` / `inrepo.lock.json` — pinned upstream commits
 - `inrepo_modules/` — generated vendored checkouts (upstream @ pin + patches)
-- `inrepo_patches/` — committed overlay files that make the deps compile
+- `inrepo_patches/<package>/series/` — the committed, ordered git patch series
+  that makes each dep compile; one numbered `git format-patch` file per
+  rationale, replayed by `inrepo sync` with `git am --3way`
 - `bench.ts` — mitata spawn benchmark
 
 ## Reproduce
@@ -100,7 +142,7 @@ Requires macOS arm64, clang, cmake (for the `--dynamic` build), Node 20+, bun.
 
 ```sh
 npm install                      # commander, picocolors, scriptc, mitata
-npx inrepo sync                  # rebuild inrepo_modules from lock + patches
+npx inrepo sync                  # rebuild inrepo_modules from lock + patch series
 npx scriptc build cli.ts --dynamic -o demo-npm
 npx scriptc build cli-vendored.ts -o demo-vendored
 bun bench.ts
