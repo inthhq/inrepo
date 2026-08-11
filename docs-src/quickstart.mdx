@@ -101,6 +101,28 @@ npx inrepo diff
 
 `diff` prints the effective change from the pinned upstream commit to the patched tree, preceded by the patch series that produced it and each patch's subject, author, and date. `--stat` replaces the hunks with a per-file `+/-` summary. Git renders the diff, so deletions, mode changes, symlinks, and binary files all read correctly, and snapshot-format packages are covered too. `diff` is a viewer: it exits 0 whether or not there are differences.
 
+## Updating to a newer upstream commit
+
+```bash
+npx inrepo update <package>
+npx inrepo update <package> --ref v2.1.0
+```
+
+`update` re-resolves the pinned ref, then rebases the committed patch series onto the new upstream commit in a scratch git repository. A clean rebase rewrites the series — renumbered from `0001`, with each patch's original subject, author, and date preserved — updates `inrepo.lock.json`, saves a `--ref` back to your config, and rebuilds `inrepo_modules/<package>`. Patches upstream has since adopted are dropped. None of that happens until the rebase finishes, so an update that fails changes nothing.
+
+Packages with no patches are re-pinned and rebuilt. Packages still on the snapshot format have to be migrated first.
+
+### Resolving conflicts
+
+When a patch and upstream changed the same lines, `update` stops, names the patch it stopped on, and lists the conflicted files. The half-finished rebase stays in `.inrepo/updates/<package>/repo`, a normal git work tree with normal conflict markers. Edit the files there — staging is handled for you — and then:
+
+```bash
+npx inrepo update <package> --continue
+npx inrepo update <package> --abort
+```
+
+`--continue` resumes the rebase and stops again if a later patch also conflicts; a resolution that leaves a patch with no effect drops that patch. `--abort` deletes the scratch repository and leaves the project as it was. While an update is in progress, starting another one for the same package is refused.
+
 ## Migrating a snapshot overlay
 
 Convert a package from the snapshot format to a series with:

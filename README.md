@@ -189,6 +189,40 @@ npx inrepo diff                    # every vendored package
 
 The diff is rendered by git, so deletions, mode changes, symlinks, and binary files all read correctly. Packages on the snapshot format are covered too, including their `.inrepo-deletions` entries. `inrepo diff` is a viewer: it exits 0 whether or not there are differences, and only fails on an unknown or unvendored package.
 
+## Updating to a newer upstream commit
+
+`inrepo update <package>` re-resolves the pinned ref, rebases the committed patch series onto the new upstream commit, and rebuilds everything:
+
+```bash
+npx inrepo update <package>              # follow the configured ref to its current tip
+npx inrepo update <package> --ref v2.1.0 # move to another branch, tag, or commit
+```
+
+The rebase runs in a scratch git repository, so upstream changes to a patched file are merged instead of hidden. When it succeeds, `inrepo` rewrites the series (renumbered from `0001`, with every patch's original subject, author, and date preserved), updates `inrepo.lock.json`, saves a `--ref` back to your config, and re-syncs `inrepo_modules/<package>`. A patch upstream has since adopted itself is dropped. Nothing is written until the rebase finishes, so a failed update leaves the repository exactly as it was.
+
+Packages with no patches are simply re-pinned and rebuilt. Packages still on the snapshot format cannot be rebased; run `npx inrepo migrate <package>` first.
+
+### Resolving update conflicts
+
+When a patch and upstream touch the same lines, the update stops and reports the patch that failed and the conflicted files. The in-progress rebase is kept in `.inrepo/updates/<package>/repo`, an ordinary git work tree with ordinary conflict markers:
+
+```text
+<<<<<<< HEAD
+export const v = 3;
+=======
+export const v = 42;
+>>>>>>> Bump the exported version
+```
+
+Edit those files in place — there is no need to `git add` anything — then:
+
+```bash
+npx inrepo update <package> --continue   # finish the rebase and move the pin
+npx inrepo update <package> --abort      # throw the update away, changing nothing
+```
+
+`--continue` picks up where git stopped and repeats the report if a later patch conflicts too. If your resolution leaves a patch with nothing to apply, that patch is dropped from the series. Until an update finishes, `inrepo_patches/`, your config, the lockfile, and `inrepo_modules/` are untouched, and starting another update for the same package tells you to finish or abandon this one first.
+
 ## Migrating to a patch series
 
 Convert a package's snapshot overlay into a git patch series:
