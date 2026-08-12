@@ -1,6 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { lockfilePath } from '../paths/lockfile-path.js';
+import { normalizeRepositoryDirectory } from '../registry/normalize-repository-directory.js';
 import type { LockGraph, LockGraphEdge, LockGraphNode } from '../types/lock-graph.js';
 import type { LockModule } from '../types/lock-module.js';
 
@@ -12,17 +13,57 @@ type LockfileShape = {
 
 /**
  * Lockfile versions this build understands. Version 2 only adds the optional
- * `graph` section written by `inrepo add --with-deps`; version 1 files stay
- * valid and keep being written whenever there is no graph to record.
+ * `graph` section written by `inrepo add --with-deps`; version 3 records a
+ * package rooted below its git repository. Older files remain valid and treat
+ * every module as repository-rooted.
  */
-export const SUPPORTED_LOCKFILE_VERSIONS = [1, 2] as const;
+export const SUPPORTED_LOCKFILE_VERSIONS = [1, 2, 3] as const;
+
+function assertLockModule(module: unknown, label: string): LockModule {
+  if (module == null || typeof module !== 'object' || Array.isArray(module)) {
+    throw new Error(`inrepo.lock.json ${label} must be an object`);
+  }
+  const rec = module as Record<string, unknown>;
+  for (const key of ['source', 'gitUrl', 'commit', 'updatedAt']) {
+    if (typeof rec[key] !== 'string') {
+      throw new Error(`inrepo.lock.json ${label}.${key} must be a string`);
+    }
+  }
+  if (rec.ref !== null && typeof rec.ref !== 'string') {
+    throw new Error(`inrepo.lock.json ${label}.ref must be a string or null`);
+  }
+  if (rec.repositoryDirectory != null && typeof rec.repositoryDirectory !== 'string') {
+    throw new Error(
+      `inrepo.lock.json ${label}.repositoryDirectory must be a string when set`,
+    );
+  }
+  const repositoryDirectory =
+    typeof rec.repositoryDirectory === 'string'
+      ? normalizeRepositoryDirectory(
+          rec.repositoryDirectory,
+          `inrepo.lock.json ${label}.repositoryDirectory`,
+        )
+      : null;
+  return {
+    source: rec.source as string,
+    gitUrl: rec.gitUrl as string,
+    ...(repositoryDirectory == null ? {} : { repositoryDirectory }),
+    commit: rec.commit as string,
+    ref: rec.ref as string | null,
+    updatedAt: rec.updatedAt as string,
+  };
+}
 
 function assertLockModules(modules: unknown): Record<string, LockModule> {
   if (modules == null) return {};
   if (typeof modules !== 'object' || Array.isArray(modules)) {
     throw new Error('inrepo.lock.json "modules" must be an object');
   }
-  return modules as Record<string, LockModule>;
+  const out: Record<string, LockModule> = {};
+  for (const [name, module] of Object.entries(modules as Record<string, unknown>)) {
+    out[name] = assertLockModule(module, `modules["${name}"]`);
+  }
+  return out;
 }
 
 function assertGraphEdge(edge: unknown, label: string): LockGraphEdge {
@@ -106,7 +147,7 @@ export async function readLockfile(cwd: string): Promise<{
   const lockfileVersion = rec.lockfileVersion;
   if (
     typeof lockfileVersion !== 'number' ||
-    !SUPPORTED_LOCKFILE_VERSIONS.includes(lockfileVersion as 1 | 2)
+    !SUPPORTED_LOCKFILE_VERSIONS.includes(lockfileVersion as 1 | 2 | 3)
   ) {
     throw new Error(`Unsupported lockfileVersion: ${String(lockfileVersion)}`);
   }

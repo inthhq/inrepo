@@ -43,6 +43,8 @@ export type UpdateArgs = {
 export type PackageSpec = {
   name: string;
   git?: string;
+  /** Package root within the git repository; omitted for the repository root. */
+  repositoryDirectory?: string;
   ref?: string;
   /** Locked commit to reuse. Null/omitted fetches the moving tip of `ref`. */
   commit?: string | null;

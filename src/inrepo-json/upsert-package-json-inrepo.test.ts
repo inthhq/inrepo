@@ -129,6 +129,32 @@ describe('upsertPackageJsonInrepo', () => {
     ]);
   });
 
+  test('records, preserves, and explicitly clears repositoryDirectory', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ name: 'host', inrepo: { packages: [] } }) + '\n',
+      'utf8',
+    );
+    await upsertPackageJsonInrepo(cwd, {
+      name: '@scope/cli',
+      repositoryDirectory: './packages/cli/',
+    });
+    await upsertPackageJsonInrepo(cwd, { name: '@scope/cli', ref: 'v1' });
+    let pkg = await readPkg(cwd);
+    expect((pkg.inrepo as Record<string, unknown>).packages).toEqual([
+      { name: '@scope/cli', repositoryDirectory: 'packages/cli', ref: 'v1' },
+    ]);
+
+    await upsertPackageJsonInrepo(cwd, {
+      name: '@scope/cli',
+      repositoryDirectory: null,
+    });
+    pkg = await readPkg(cwd);
+    expect((pkg.inrepo as Record<string, unknown>).packages).toEqual([
+      { name: '@scope/cli', ref: 'v1' },
+    ]);
+  });
+
   test('accepts a bare-array inrepo and writes back as object root', async () => {
     await writeFile(
       join(cwd, 'package.json'),

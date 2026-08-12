@@ -147,6 +147,39 @@ describe('loadConfig', () => {
     await expect(loadConfig(cwd)).rejects.toThrow(/packages\[0\]\.dev must be a boolean/);
   });
 
+  test('normalizes a package repositoryDirectory', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({
+        packages: [{ name: '@scope/cli', repositoryDirectory: './packages/cli/' }],
+      }),
+      'utf8',
+    );
+    expect((await loadConfig(cwd)).packages).toEqual([
+      { name: '@scope/cli', repositoryDirectory: 'packages/cli' },
+    ]);
+  });
+
+  test('rejects invalid package repositoryDirectory values', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'a', repositoryDirectory: '../a' }] }),
+      'utf8',
+    );
+    await expect(loadConfig(cwd)).rejects.toThrow(
+      /packages\[0\]\.repositoryDirectory.*traversal/,
+    );
+
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'a', repositoryDirectory: 42 }] }),
+      'utf8',
+    );
+    await expect(loadConfig(cwd)).rejects.toThrow(
+      /packages\[0\]\.repositoryDirectory must be a string/,
+    );
+  });
+
   test('throws on empty inrepo.json', async () => {
     await writeFile(join(cwd, 'inrepo.json'), '   \n', 'utf8');
     await expect(loadConfig(cwd)).rejects.toThrow(/inrepo\.json is empty/);

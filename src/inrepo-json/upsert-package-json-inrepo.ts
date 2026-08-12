@@ -1,6 +1,7 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { packageJsonPath } from '../paths/package-json-path.js';
+import { normalizeRepositoryDirectory } from '../registry/normalize-repository-directory.js';
 import type { InrepoJsonEntry } from './upsert-inrepo-json.js';
 
 type InrepoData = {
@@ -64,9 +65,20 @@ export async function upsertPackageJsonInrepo(cwd: string, entry: InrepoJsonEntr
   const next: Record<string, unknown> = { name: entry.name };
   if (entry.git) next.git = entry.git;
   if (entry.ref) next.ref = entry.ref;
+  const repositoryDirectory =
+    typeof entry.repositoryDirectory === 'string'
+      ? normalizeRepositoryDirectory(
+          entry.repositoryDirectory,
+          'repositoryDirectory',
+        )
+      : entry.repositoryDirectory;
+  if (repositoryDirectory != null) next.repositoryDirectory = repositoryDirectory;
 
   if (ix >= 0) {
     const merged = { ...data.packages[ix], ...next };
+    if (entry.repositoryDirectory === null || repositoryDirectory === null) {
+      delete merged.repositoryDirectory;
+    }
     if (entry.dev === true) merged.dev = true;
     else delete merged.dev;
     data.packages[ix] = merged;

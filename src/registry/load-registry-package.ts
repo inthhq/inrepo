@@ -1,6 +1,6 @@
 import { fetchPackument, type Packument, type PackumentVersion } from './fetch-packument.js';
 import { normalizeRepositoryUrl } from './normalize-repository-url.js';
-import { repositoryToUrl } from './resolve-git-url-from-npm.js';
+import { repositoryToSource } from './resolve-git-url-from-npm.js';
 
 /** One published version, reduced to what dependency resolution needs. */
 export type RegistryManifest = {
@@ -9,6 +9,8 @@ export type RegistryManifest = {
   dependencies: Record<string, string>;
   /** Clone URL, or null when the manifest has no usable repository. */
   gitUrl: string | null;
+  /** Package root within the repository; null means the repository root. */
+  repositoryDirectory: string | null;
 };
 
 export type RegistryPackage = {
@@ -28,17 +30,18 @@ function runtimeDependencies(manifest: PackumentVersion): Record<string, string>
 
 /** Normalize a packument into the version list dependency resolution walks. */
 export function toRegistryPackage(name: string, packument: Packument): RegistryPackage {
-  const fallbackRepo = repositoryToUrl(packument.repository);
+  const fallbackRepo = repositoryToSource(packument.repository);
   const versions = packument.versions;
   const manifests: RegistryManifest[] = [];
   if (versions != null && typeof versions === 'object' && !Array.isArray(versions)) {
     for (const [version, manifest] of Object.entries(versions)) {
       if (manifest == null || typeof manifest !== 'object') continue;
-      const repo = repositoryToUrl(manifest.repository) ?? fallbackRepo;
+      const repo = repositoryToSource(manifest.repository) ?? fallbackRepo;
       manifests.push({
         version,
         dependencies: runtimeDependencies(manifest),
-        gitUrl: repo ? normalizeRepositoryUrl(repo) : null,
+        gitUrl: repo ? normalizeRepositoryUrl(repo.gitUrl) : null,
+        repositoryDirectory: repo?.repositoryDirectory ?? null,
       });
     }
   }

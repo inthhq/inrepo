@@ -16,6 +16,7 @@ function node(partial: Partial<ResolvedNode> & { name: string }): ResolvedNode {
   return {
     version: '1.0.0',
     gitUrl: `https://github.com/test/${partial.name}.git`,
+    repositoryDirectory: null,
     ref: null,
     commit: partial.name.padEnd(40, '0'),
     dependencies: {},

@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import { resolveGitUrlFromNpm } from './resolve-git-url-from-npm.js';
+import {
+  resolveGitUrlFromNpm,
+  resolvePackageSourceFromNpm,
+} from './resolve-git-url-from-npm.js';
 
 function mockFetchOnce(
   responses: Array<{ status?: number; body: unknown }>,
@@ -58,6 +61,25 @@ describe('resolveGitUrlFromNpm', () => {
     ]);
     restore = m.restore;
     expect(await resolveGitUrlFromNpm('bar')).toBe('https://github.com/foo/bar.git');
+  });
+
+  test('returns a normalized package directory with the repository source', async () => {
+    const m = mockFetchOnce([
+      {
+        body: {
+          repository: {
+            type: 'git',
+            url: 'https://github.com/c15t/c15t',
+            directory: './packages/cli/',
+          },
+        },
+      },
+    ]);
+    restore = m.restore;
+    expect(await resolvePackageSourceFromNpm('@c15t/cli')).toEqual({
+      gitUrl: 'https://github.com/c15t/c15t.git',
+      repositoryDirectory: 'packages/cli',
+    });
   });
 
   test('falls back to dist-tags.latest version repository', async () => {

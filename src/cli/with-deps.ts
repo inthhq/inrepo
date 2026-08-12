@@ -82,6 +82,7 @@ async function describeVendored(
     name,
     version,
     gitUrl: entry.gitUrl,
+    repositoryDirectory: entry.repositoryDirectory ?? null,
     ref: entry.ref,
     commit: entry.commit,
     dependencies,
@@ -157,6 +158,7 @@ export async function planWithDeps(
       name: root.name,
       version: manifest.version,
       gitUrl: pristine.gitUrl,
+      repositoryDirectory: root.repositoryDirectory ?? null,
       ref,
       commit: pristine.commit,
       dependencies,
@@ -184,6 +186,9 @@ export function dependencySpec(
   return {
     name: node.name,
     git: node.gitUrl,
+    ...(node.repositoryDirectory == null
+      ? {}
+      : { repositoryDirectory: node.repositoryDirectory }),
     ...(node.ref == null ? {} : { ref: node.ref }),
     dev,
     ...(config?.exclude === undefined ? {} : { exclude: config.exclude }),

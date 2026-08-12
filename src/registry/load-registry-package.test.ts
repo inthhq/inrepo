@@ -44,6 +44,7 @@ describe('toRegistryPackage', () => {
         version: '1.0.0',
         dependencies: { gamma: '^2.0.0' },
         gitUrl: 'https://github.com/test/beta.git',
+        repositoryDirectory: null,
       },
     ]);
   });
@@ -54,6 +55,39 @@ describe('toRegistryPackage', () => {
       versions: { '1.0.0': { repository: { url: 'git+ssh://git@github.com/test/new.git' } } },
     });
     expect(pkg.manifests[0].gitUrl).toBe('https://github.com/test/new.git');
+  });
+
+  test('preserves repository.directory and version-level overrides', () => {
+    const pkg = toRegistryPackage('@scope/cli', {
+      repository: {
+        url: 'https://github.com/test/workspace',
+        directory: './packages/cli/',
+      },
+      versions: {
+        '1.0.0': {},
+        '2.0.0': {
+          repository: {
+            url: 'https://github.com/test/workspace',
+            directory: 'packages/cli-v2',
+          },
+        },
+        '3.0.0': { repository: 'https://github.com/test/standalone' },
+      },
+    });
+    expect(pkg.manifests.map((manifest) => manifest.repositoryDirectory)).toEqual([
+      'packages/cli',
+      'packages/cli-v2',
+      null,
+    ]);
+  });
+
+  test('rejects unsafe repository.directory metadata', () => {
+    expect(() =>
+      toRegistryPackage('beta', {
+        repository: { url: 'https://github.com/test/workspace', directory: '../beta' },
+        versions: { '1.0.0': {} },
+      }),
+    ).toThrow(/repository\.directory.*traversal/);
   });
 
   test('reports a null git URL when there is no usable repository', () => {

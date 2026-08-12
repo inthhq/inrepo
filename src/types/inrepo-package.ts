@@ -1,6 +1,8 @@
 export type InrepoPackage = {
   name: string;
   git?: string;
+  /** Package root within the git repository; omitted for the repository root. */
+  repositoryDirectory?: string;
   ref?: string;
   /** When true, sync wires package.json#devDependencies instead of #dependencies. */
   dev?: boolean;

@@ -11,6 +11,7 @@ type FakeVersion = {
   dependencies?: Record<string, string>;
   /** null models a package whose npm metadata has no usable repository. */
   gitUrl?: string | null;
+  repositoryDirectory?: string | null;
   /** false models a repository that never tagged the version. */
   tagged?: boolean;
 };
@@ -38,6 +39,7 @@ function makeIo(registry: FakeRegistry): GraphResolverIo & { fetched: string[] }
             manifest.gitUrl === undefined
               ? `https://github.com/test/${name.replace('@', '').replace('/', '-')}.git`
               : manifest.gitUrl,
+          repositoryDirectory: manifest.repositoryDirectory ?? null,
         })),
       });
     },
@@ -54,6 +56,7 @@ function makeRoot(dependencies: Record<string, string>, name = 'root'): GraphRoo
     name,
     version: '1.0.0',
     gitUrl: `https://github.com/test/${name}.git`,
+    repositoryDirectory: null,
     ref: null,
     commit: commitFor(name, '1.0.0'),
     dependencies,
@@ -171,6 +174,7 @@ describe('resolveDependencyGraph', () => {
           name: 'beta',
           version: '1.1.0',
           gitUrl: 'https://github.com/test/beta.git',
+          repositoryDirectory: null,
           ref: 'v1.1.0',
           commit: 'b'.repeat(40),
           dependencies: { gamma: '^2.0.0' },
@@ -199,6 +203,7 @@ describe('resolveDependencyGraph', () => {
           name: 'beta',
           version: '1.1.0',
           gitUrl: 'https://github.com/test/beta.git',
+          repositoryDirectory: null,
           ref: 'v1.1.0',
           commit: 'b'.repeat(40),
           dependencies: {},
@@ -232,5 +237,34 @@ describe('resolveDependencyGraph', () => {
   test('a root with no dependencies resolves to just itself', async () => {
     const graph = await resolve({}, makeRoot({}));
     expect(graph.nodes.map((node) => node.name)).toEqual(['root']);
+  });
+
+  test('propagates repository directories for root, resolved, and reused nodes', async () => {
+    const root = { ...makeRoot({ beta: '^1.0.0', reused: '^1.0.0' }), repositoryDirectory: 'packages/root' };
+    const vendored = new Map<string, VendoredPackage>([
+      [
+        'reused',
+        {
+          name: 'reused',
+          version: '1.0.0',
+          gitUrl: 'https://github.com/test/workspace.git',
+          repositoryDirectory: 'packages/reused',
+          ref: 'v1.0.0',
+          commit: 'e'.repeat(40),
+          dependencies: {},
+        },
+      ],
+    ]);
+    const graph = await resolve(
+      {
+        beta: { '1.0.0': { repositoryDirectory: 'packages/beta' } },
+        reused: { '1.0.0': {} },
+      },
+      root,
+      vendored,
+    );
+    expect(
+      Object.fromEntries(graph.nodes.map((node) => [node.name, node.repositoryDirectory])),
+    ).toEqual({ root: 'packages/root', beta: 'packages/beta', reused: 'packages/reused' });
   });
 });

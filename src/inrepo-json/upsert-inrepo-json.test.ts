@@ -55,6 +55,24 @@ describe('upsertInrepoJson', () => {
     expect((await readJson(path)).packages).toEqual([{ name: 'a' }]);
   });
 
+  test('records, preserves, and explicitly clears repositoryDirectory', async () => {
+    await upsertInrepoJson(cwd, {
+      name: '@scope/cli',
+      repositoryDirectory: './packages/cli/',
+    });
+    expect((await readJson(path)).packages).toEqual([
+      { name: '@scope/cli', repositoryDirectory: 'packages/cli' },
+    ]);
+
+    await upsertInrepoJson(cwd, { name: '@scope/cli', ref: 'v1' });
+    expect((await readJson(path)).packages).toEqual([
+      { name: '@scope/cli', repositoryDirectory: 'packages/cli', ref: 'v1' },
+    ]);
+
+    await upsertInrepoJson(cwd, { name: '@scope/cli', repositoryDirectory: null });
+    expect((await readJson(path)).packages).toEqual([{ name: '@scope/cli', ref: 'v1' }]);
+  });
+
   test('preserves existing $schema and other top-level keys / order', async () => {
     const original = {
       $schema: 'https://example.com/custom.schema.json',

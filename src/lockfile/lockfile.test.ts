@@ -83,10 +83,10 @@ describe('lockfile read/write/upsert', () => {
   test('rejects unsupported lockfileVersion', async () => {
     await writeFile(
       lockfilePath(cwd),
-      JSON.stringify({ lockfileVersion: 3, modules: {} }),
+      JSON.stringify({ lockfileVersion: 4, modules: {} }),
       'utf8',
     );
-    await expect(readLockfile(cwd)).rejects.toThrow(/Unsupported lockfileVersion: 3/);
+    await expect(readLockfile(cwd)).rejects.toThrow(/Unsupported lockfileVersion: 4/);
   });
 
   test('a project without a graph keeps writing lockfileVersion 1', async () => {
@@ -120,6 +120,73 @@ describe('lockfile read/write/upsert', () => {
     const lf = await readLockfile(cwd);
     expect(lf.lockfileVersion).toBe(2);
     expect(lf.graph).toEqual(graph);
+  });
+
+  test('round-trips repositoryDirectory and raises the lockfile to version 3', async () => {
+    await writeLockfile(
+      cwd,
+      {
+        '@scope/cli': {
+          source: '@scope/cli',
+          gitUrl: 'https://github.com/c15t/c15t.git',
+          repositoryDirectory: './packages/cli/',
+          commit: 'a'.repeat(40),
+          ref: '@scope/cli@1.0.0',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      { '@scope/cli': { version: '1.0.0', root: true } },
+    );
+    const onDisk = JSON.parse(await readFile(lockfilePath(cwd), 'utf8')) as {
+      lockfileVersion: number;
+      modules: Record<string, { repositoryDirectory?: string }>;
+    };
+    expect(onDisk.lockfileVersion).toBe(3);
+    expect(onDisk.modules['@scope/cli'].repositoryDirectory).toBe('packages/cli');
+    expect((await readLockfile(cwd)).modules['@scope/cli'].repositoryDirectory).toBe(
+      'packages/cli',
+    );
+  });
+
+  test('accepts version 3 without a graph and treats old module entries as repository-rooted', async () => {
+    await writeFile(
+      lockfilePath(cwd),
+      JSON.stringify({
+        lockfileVersion: 3,
+        modules: {
+          root: {
+            source: 'root',
+            gitUrl: 'https://github.com/x/root.git',
+            commit: 'a'.repeat(40),
+            ref: null,
+            updatedAt: '2026-01-01T00:00:00.000Z',
+          },
+        },
+      }),
+      'utf8',
+    );
+    const lock = await readLockfile(cwd);
+    expect(lock.lockfileVersion).toBe(3);
+    expect(lock.modules.root.repositoryDirectory).toBeUndefined();
+  });
+
+  test('rejects unsafe repositoryDirectory values while reading and writing', async () => {
+    const module = {
+      source: 'cli',
+      gitUrl: 'https://github.com/x/workspace.git',
+      repositoryDirectory: '../cli',
+      commit: 'a'.repeat(40),
+      ref: null,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await expect(writeLockfile(cwd, { cli: module })).rejects.toThrow(/traversal/);
+
+    await writeFile(
+      lockfilePath(cwd),
+      JSON.stringify({ lockfileVersion: 3, modules: { cli: module } }),
+      'utf8',
+    );
+    await expect(readLockfile(cwd)).rejects.toThrow(/traversal/);
   });
 
   test('upsertLockModule preserves an existing graph', async () => {

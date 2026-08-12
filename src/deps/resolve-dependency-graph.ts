@@ -14,6 +14,7 @@ export type VendoredPackage = {
   /** `version` from the vendored checkout's package.json; null when unreadable. */
   version: string | null;
   gitUrl: string;
+  repositoryDirectory: string | null;
   ref: string | null;
   commit: string;
   /** Runtime dependency specifiers declared by the vendored checkout. */
@@ -25,6 +26,7 @@ export type GraphRoot = {
   name: string;
   version: string | null;
   gitUrl: string;
+  repositoryDirectory: string | null;
   ref: string | null;
   commit: string;
   dependencies: Record<string, string>;
@@ -35,6 +37,7 @@ export type ResolvedNode = {
   /** Exact published version; null only when the root checkout declares none. */
   version: string | null;
   gitUrl: string;
+  repositoryDirectory: string | null;
   /** Tag or ref to pin. Null keeps the upstream default branch. */
   ref: string | null;
   commit: string;
@@ -167,6 +170,7 @@ export async function resolveDependencyGraph(
           name,
           version: existing.version,
           gitUrl: existing.gitUrl,
+          repositoryDirectory: existing.repositoryDirectory,
           ref: existing.ref,
           commit: existing.commit,
           dependencies: existing.dependencies,
@@ -222,6 +226,7 @@ export async function resolveDependencyGraph(
       name,
       version: picked,
       gitUrl: manifest.gitUrl,
+      repositoryDirectory: manifest.repositoryDirectory,
       ref: tag.ref,
       commit: tag.commit,
       dependencies: manifest.dependencies,
@@ -258,6 +263,7 @@ export async function resolveDependencyGraph(
     name: root.name,
     version: root.version,
     gitUrl: root.gitUrl,
+    repositoryDirectory: root.repositoryDirectory,
     ref: root.ref,
     commit: root.commit,
     dependencies: root.dependencies,

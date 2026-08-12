@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { inrepoConfigPath } from '../paths/inrepo-config-path.js';
 import { packageJsonPath } from '../paths/package-json-path.js';
+import { normalizeRepositoryDirectory } from '../registry/normalize-repository-directory.js';
 import type { InrepoPackage } from '../types/inrepo-package.js';
 import type { LoadedConfig } from '../types/loaded-config.js';
 import { validateExcludeList } from './validate-exclude-list.js';
@@ -68,6 +69,18 @@ function validatePackage(entry: unknown, index: number): InrepoPackage {
       throw new Error(`packages[${index}].git must be a non-empty string when set`);
     }
     pkg.git = rec.git.trim();
+  }
+  if (rec.repositoryDirectory != null) {
+    if (typeof rec.repositoryDirectory !== 'string') {
+      throw new Error(
+        `packages[${index}].repositoryDirectory must be a string when set`,
+      );
+    }
+    const repositoryDirectory = normalizeRepositoryDirectory(
+      rec.repositoryDirectory,
+      `packages[${index}].repositoryDirectory`,
+    );
+    if (repositoryDirectory != null) pkg.repositoryDirectory = repositoryDirectory;
   }
   if (rec.ref != null) {
     if (typeof rec.ref !== 'string' || !rec.ref.trim()) {
