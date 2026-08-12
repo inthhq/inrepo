@@ -16,19 +16,21 @@ Answer: yes, and by a lot.
 A tiny terminal app (`demo greet <name> --upper --repeat <n>`) built with
 commander + picocolors, compiled two ways from the same app logic:
 
-| variant         | deps come from                | scriptc mode          | binary | avg run (spawn) |
-| --------------- | ----------------------------- | --------------------- | ------ | --------------- |
-| `demo-vendored` | `inrepo_modules/` (this repo) | **static**            | 750 KB | **2.65 ms**     |
-| `demo-npm`      | `node_modules/` (npm)         | `--dynamic` (QuickJS) | 1.2 MB | 17.81 ms        |
-| baseline        | `node_modules/`               | `bun cli.ts`          | —      | 33.13 ms        |
-| baseline        | `node_modules/`               | `node cli.ts`         | —      | 73.89 ms        |
+| variant         | deps come from                | scriptc mode          | binary | observed avg run (spawn) |
+| --------------- | ----------------------------- | --------------------- | ------ | ------------------------ |
+| `demo-vendored` | `inrepo_modules/` (this repo) | **static**            | 750 KB | **1.98–2.65 ms**         |
+| `demo-npm`      | `node_modules/` (npm)         | `--dynamic` (QuickJS) | 1.2 MB | 12.77–17.81 ms           |
+| baseline        | `node_modules/`               | `bun cli.ts`          | —      | 23.90–33.13 ms           |
+| baseline        | `node_modules/`               | `node cli.ts`         | —      | 54.33–73.89 ms           |
 
-(mitata spawn-per-iteration benchmark, Apple M5 Pro, scriptc 0.0.25 —
-rerun with `bun bench.ts`.)
+(Two clean mitata spawn-per-iteration runs on an Apple M5 Pro with scriptc
+0.0.25. The range shows the reported run averages; cold-spawn timing moves
+with CPU power state. Reproduce with `npm run bench`.)
 
-The statically compiled vendored build is ~6.7× faster than the same app with
-npm deps in dynamic mode, and ~28× faster than node. Both binaries produce
-byte-identical output and exit codes across greet/help/version/error paths.
+The statically compiled vendored build was ~6.5–6.7× faster than the same app
+with npm deps in dynamic mode, and ~27–28× faster than node. Both binaries
+produce byte-identical output and exit codes across greet/help/version/error
+paths.
 
 ## Why inrepo is the enabler
 
