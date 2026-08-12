@@ -25,10 +25,11 @@ export async function cmdSync(
 
   if (!opts.suppressBanners) intro(`inrepo sync — ${packages.length} package(s)`);
   for (const pkg of orderByDependencies(packages, graph)) {
+    const module = pkg.module ?? pkg.name;
     await materializePackage(cwd, pkg, globalExclude, globalKeep, {
       mode: 'sync',
       force: args.force,
-      lockEntry: modules[pkg.name],
+      lockEntry: modules[module],
     });
   }
   if (!opts.suppressBanners) outro(`Done. ${packages.length} package(s) synced.`);

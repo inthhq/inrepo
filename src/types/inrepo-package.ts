@@ -1,5 +1,7 @@
 export type InrepoPackage = {
   name: string;
+  /** Storage identity for a graph-managed package instance; defaults to name. */
+  module?: string;
   git?: string;
   /** Package root within the git repository; omitted for the repository root. */
   repositoryDirectory?: string;

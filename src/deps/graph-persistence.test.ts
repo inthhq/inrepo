@@ -14,6 +14,7 @@ import { verifyLockGraph } from './verify-lock-graph.js';
 
 function node(partial: Partial<ResolvedNode> & { name: string }): ResolvedNode {
   return {
+    module: partial.name,
     version: '1.0.0',
     gitUrl: `https://github.com/test/${partial.name}.git`,
     repositoryDirectory: null,
@@ -22,15 +23,32 @@ function node(partial: Partial<ResolvedNode> & { name: string }): ResolvedNode {
     dependencies: {},
     root: false,
     reused: false,
+    resolvedDependencies: {},
     ...partial,
   };
 }
 
 const graph: DependencyGraph = {
   rootName: 'alpha',
+  rootModule: 'alpha',
   nodes: [
-    node({ name: 'alpha', root: true, dependencies: { beta: '^1.0.0', gamma: '~2.0.0' } }),
-    node({ name: 'beta', version: '1.4.0', dependencies: { gamma: '~2.0.0' } }),
+    node({
+      name: 'alpha',
+      root: true,
+      dependencies: { beta: '^1.0.0', gamma: '~2.0.0' },
+      resolvedDependencies: {
+        beta: { range: '^1.0.0', version: '1.4.0', module: 'beta' },
+        gamma: { range: '~2.0.0', version: '2.0.3', module: 'gamma' },
+      },
+    }),
+    node({
+      name: 'beta',
+      version: '1.4.0',
+      dependencies: { gamma: '~2.0.0' },
+      resolvedDependencies: {
+        gamma: { range: '~2.0.0', version: '2.0.3', module: 'gamma' },
+      },
+    }),
     node({ name: 'gamma', version: '2.0.3' }),
   ],
 };
@@ -57,6 +75,7 @@ describe('buildLockGraph', () => {
   test('omits a version the root checkout does not declare', () => {
     const built = buildLockGraph({
       rootName: 'alpha',
+      rootModule: 'alpha',
       nodes: [node({ name: 'alpha', root: true, version: null })],
     });
     expect(built.alpha).toEqual({ root: true });
@@ -110,9 +129,24 @@ describe('renderDependencyTree', () => {
   test('marks reused packages and cycles', () => {
     const cyclic: DependencyGraph = {
       rootName: 'alpha',
+      rootModule: 'alpha',
       nodes: [
-        node({ name: 'alpha', root: true, dependencies: { beta: '^1.0.0' } }),
-        node({ name: 'beta', reused: true, dependencies: { beta: '^1.0.0' } }),
+        node({
+          name: 'alpha',
+          root: true,
+          dependencies: { beta: '^1.0.0' },
+          resolvedDependencies: {
+            beta: { range: '^1.0.0', version: '1.0.0', module: 'beta' },
+          },
+        }),
+        node({
+          name: 'beta',
+          reused: true,
+          dependencies: { beta: '^1.0.0' },
+          resolvedDependencies: {
+            beta: { range: '^1.0.0', version: '1.0.0', module: 'beta' },
+          },
+        }),
       ],
     };
     expect(renderDependencyTree(cyclic)).toBe(
@@ -174,6 +208,47 @@ describe('verifyLockGraph', () => {
     expect(
       verifyLockGraph({ graph: broken, moduleNames, vendoredVersions: versions })[0],
     ).toMatch(/"beta" depends on "gamma" \^3\.0\.0, which 2\.0\.3 does not satisfy/);
+  });
+
+  test('reports an edge whose module contains a different source package', () => {
+    expect(
+      verifyLockGraph({
+        graph: built,
+        moduleNames,
+        vendoredVersions: versions,
+        moduleSources: new Map([
+          ['alpha', 'alpha'],
+          ['beta', 'beta'],
+          ['gamma', 'not-gamma'],
+        ]),
+      }),
+    ).toContain('"beta" depends on "gamma" but module "gamma" contains "not-gamma"');
+  });
+
+  test('trusts the immutable pin for graph instances whose checkout version was publish-transformed', () => {
+    const instanceGraph = {
+      root: {
+        root: true,
+        dependencies: {
+          shared: { range: '^2.0.0', version: '2.1.0', module: 'shared@2.1.0' },
+        },
+      },
+      'shared@2.1.0': { version: '2.1.0' },
+    };
+    expect(
+      verifyLockGraph({
+        graph: instanceGraph,
+        moduleNames: new Set(['root', 'shared@2.1.0']),
+        vendoredVersions: new Map([
+          ['root', '1.0.0'],
+          ['shared@2.1.0', '0.0.0-dev'],
+        ]),
+        moduleSources: new Map([
+          ['root', 'root'],
+          ['shared@2.1.0', 'shared'],
+        ]),
+      }),
+    ).toEqual([]);
   });
 
   test('reports an edge pinned to a version the target no longer holds', () => {

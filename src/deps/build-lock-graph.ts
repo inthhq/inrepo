@@ -1,5 +1,5 @@
 import type { LockGraph, LockGraphEdge, LockGraphNode } from '../types/lock-graph.js';
-import { runtimeEdges, type DependencyGraph } from './resolve-dependency-graph.js';
+import type { DependencyGraph } from './resolve-dependency-graph.js';
 
 /**
  * Flatten a resolved closure into the `graph` section of `inrepo.lock.json`.
@@ -9,7 +9,6 @@ import { runtimeEdges, type DependencyGraph } from './resolve-dependency-graph.j
  * the registry.
  */
 export function buildLockGraph(graph: DependencyGraph): LockGraph {
-  const versions = new Map(graph.nodes.map((node) => [node.name, node.version] as const));
   const out: LockGraph = {};
 
   for (const node of graph.nodes) {
@@ -18,18 +17,16 @@ export function buildLockGraph(graph: DependencyGraph): LockGraph {
     if (node.root) entry.root = true;
 
     const dependencies: Record<string, LockGraphEdge> = {};
-    for (const edge of runtimeEdges(node.name, node.dependencies)) {
-      if (!versions.has(edge.dependency)) continue;
-      const version = versions.get(edge.dependency) ?? null;
-      dependencies[edge.dependency] = {
+    for (const [dependency, edge] of Object.entries(node.resolvedDependencies)) {
+      dependencies[dependency] = {
         range: edge.range,
-        module: edge.dependency,
-        ...(version == null ? {} : { version }),
+        module: edge.module,
+        ...(edge.version == null ? {} : { version: edge.version }),
       };
     }
     if (Object.keys(dependencies).length > 0) entry.dependencies = dependencies;
 
-    out[node.name] = entry;
+    out[node.module] = entry;
   }
 
   return out;

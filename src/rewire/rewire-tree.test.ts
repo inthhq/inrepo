@@ -53,6 +53,17 @@ describe('relativeSpecifier', () => {
       }),
     ).toBe('../../@other/beta/index.js');
   });
+
+  test('targets a version-qualified module while preserving the bare import identity', () => {
+    expect(
+      relativeSpecifier({
+        modulePath: '@scope/alpha',
+        fileRelPosix: 'src/index.js',
+        depModulePath: '@other/beta@2.3.1',
+        depFileRelPosix: 'dist/index.js',
+      }),
+    ).toBe('../../../@other/beta@2.3.1/dist/index.js');
+  });
 });
 
 describe('rewireTree', () => {

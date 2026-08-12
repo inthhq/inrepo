@@ -7,8 +7,9 @@ import type { LockModule } from '../types/lock-module.js';
 /**
  * Write the lockfile. A project without a recorded dependency graph keeps
  * producing byte-identical version 1 output. A graph raises it to version 2;
- * any package below a repository root raises it to version 3 so older clients
- * fail safely instead of silently vendoring the wrong tree.
+ * any package below a repository root raises it to version 3; version-qualified
+ * dependency instances raise it to version 4 so older clients fail safely
+ * instead of conflating incompatible versions of the same source package.
  */
 export async function writeLockfile(
   cwd: string,
@@ -34,7 +35,16 @@ export async function writeLockfile(
   const hasRepositoryDirectory = Object.values(normalizedModules).some(
     (module) => module.repositoryDirectory != null,
   );
-  const lockfileVersion = hasRepositoryDirectory ? 3 : hasGraph ? 2 : 1;
+  const hasModuleInstances = Object.entries(normalizedModules).some(
+    ([module, entry]) => module !== entry.source,
+  );
+  const lockfileVersion = hasModuleInstances
+    ? 4
+    : hasRepositoryDirectory
+      ? 3
+      : hasGraph
+        ? 2
+        : 1;
   const payload = hasGraph
     ? { lockfileVersion, modules: normalizedModules, graph }
     : { lockfileVersion, modules: normalizedModules };

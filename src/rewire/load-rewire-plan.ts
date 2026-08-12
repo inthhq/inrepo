@@ -16,7 +16,7 @@ export async function loadRewirePlan(cwd: string, name: string): Promise<RewireP
   let enabled: boolean;
   try {
     const config = await loadConfig(cwd);
-    const pkg = config.packages.find((entry) => entry.name === name);
+    const pkg = config.packages.find((entry) => (entry.module ?? entry.name) === name);
     enabled = pkg?.rewireImports ?? config.rewireImports;
   } catch (e) {
     if (!isLoadConfigNotFoundError(e)) throw e;

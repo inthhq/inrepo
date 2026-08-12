@@ -137,7 +137,8 @@ export async function materializePackage(
   globalKeep: string[],
   opts: MaterializeOptions,
 ): Promise<void> {
-  const dest = moduleDestPath(cwd, pkg.name);
+  const module = pkg.module ?? pkg.name;
+  const dest = moduleDestPath(cwd, module);
   const ref = normalizedRef(pkg.ref);
 
   // Pre-checkout warning needs to be on stderr (e2e contract). We emit it
@@ -183,7 +184,7 @@ export async function materializePackage(
     );
     const pristine = await ensurePristine({
       cwd,
-      name: pkg.name,
+      name: module,
       gitUrl,
       repositoryDirectory,
       ref: ref ?? null,
@@ -206,7 +207,7 @@ export async function materializePackage(
       }
     }
 
-    const overlayHash = await hashTree(overlayDirPath(cwd, pkg.name));
+    const overlayHash = await hashTree(overlayDirPath(cwd, module));
     const stage = await makeSiblingStage(dest, '.inrepo-next-');
     let rewire: RewireReport | null = null;
 
@@ -214,7 +215,7 @@ export async function materializePackage(
       s.message('Assembling generated vendor tree');
       await assembleModuleTree({
         cwd,
-        name: pkg.name,
+        name: module,
         pristineRoot: pristine.dir,
         commit: pristine.commit,
         gitUrl,
@@ -226,7 +227,7 @@ export async function materializePackage(
       });
 
       const stageHash = await hashTree(stage);
-      const state = await readModuleState(cwd, pkg.name);
+      const state = await readModuleState(cwd, module);
       const currentModuleHash = existsSync(dest) ? await hashTree(dest) : EMPTY_TREE_HASH;
 
       if (existsSync(dest)) {
@@ -234,21 +235,21 @@ export async function materializePackage(
           const overlayChanged = overlayHash !== state.overlayHash;
           const moduleChanged = currentModuleHash !== state.moduleHash;
           if (!opts.force && overlayChanged && moduleChanged) {
-            throw new Error(overlayConflictMessage(pkg.name));
+            throw new Error(overlayConflictMessage(module));
           }
           if (!opts.force && !overlayChanged && moduleChanged) {
-            throw new Error(uncapturedEditsMessage(pkg.name));
+            throw new Error(uncapturedEditsMessage(module));
           }
         } else {
           const drift = await compareTrees(stage, dest);
           if (!opts.force && hasTreeDrift(drift)) {
-            throw new Error(uncapturedEditsMessage(pkg.name));
+            throw new Error(uncapturedEditsMessage(module));
           }
         }
 
         if (opts.force && currentModuleHash !== stageHash) {
           s.message('Saving working tree backup');
-          const backup = await snapshotModuleBackup(cwd, pkg.name, dest);
+          const backup = await snapshotModuleBackup(cwd, module, dest);
           warn(`Saved checkout backup: ${backup}`);
         }
 
@@ -257,7 +258,7 @@ export async function materializePackage(
       }
 
       await rename(stage, dest);
-      await writeModuleState(cwd, pkg.name, {
+      await writeModuleState(cwd, module, {
         overlayHash,
         moduleHash: stageHash,
       });
@@ -275,7 +276,7 @@ export async function materializePackage(
       opts.lockEntry.ref !== (ref ?? null)
     ) {
       s.message('Updating lockfile');
-      await upsertLockModule(cwd, pkg.name, {
+      await upsertLockModule(cwd, module, {
         source: pkg.name,
         gitUrl,
         ...(repositoryDirectory == null ? {} : { repositoryDirectory }),
@@ -285,8 +286,13 @@ export async function materializePackage(
       });
     }
 
-    s.message('Updating package.json');
-    await upsertRootPackageJsonDependency(cwd, pkg.name, pkg.dev === true);
+    // Graph-managed dependency instances are reached through each dependent's
+    // recorded/re-written edge. Linking them all into the host package.json
+    // would collapse incompatible versions back to one package-name key.
+    if (module === pkg.name) {
+      s.message('Updating package.json');
+      await upsertRootPackageJsonDependency(cwd, pkg.name, pkg.dev === true, module);
+    }
 
     // Final stop message preserves the e2e contract: `Synced "<name>" @ <sha7>` on stdout.
     s.stop(`Synced "${pkg.name}" @ ${pristine.commit.slice(0, 7)} → ${dest}`);

@@ -161,7 +161,13 @@ type UpdateContext = {
 async function loadUpdateContext(cwd: string, name: string): Promise<UpdateContext> {
   const { packages, modules, globalExclude, globalKeep } = await selectPackages(cwd, name, 'update');
   const pkg = packages[0];
-  const lockEntry = modules[pkg.name];
+  const module = pkg.module ?? pkg.name;
+  if (module !== pkg.name) {
+    throw new Error(
+      `Graph-managed module "${module}" cannot be updated directly; rerun add --with-deps for a graph root.`,
+    );
+  }
+  const lockEntry = modules[module];
   if (!lockEntry) {
     throw new Error(
       `Cannot update "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`,

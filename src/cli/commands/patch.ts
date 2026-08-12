@@ -51,7 +51,8 @@ export async function cmdPatch(
   if (!opts.suppressBanners) intro(`inrepo patch — ${packageList.length} package(s)`);
 
   for (const pkg of packageList) {
-    const lockEntry = modules[pkg.name];
+    const module = pkg.module ?? pkg.name;
+    const lockEntry = modules[module];
     if (!lockEntry) {
       throw new Error(
         `Cannot patch "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`,
@@ -61,27 +62,27 @@ export async function cmdPatch(
       throw updateInProgressError(cwd, pkg.name, 'patching');
     }
 
-    const dest = moduleDestPath(cwd, pkg.name);
-    const overlayRoot = overlayDirPath(cwd, pkg.name);
+    const dest = moduleDestPath(cwd, module);
+    const overlayRoot = overlayDirPath(cwd, module);
     const s = spinner();
-    s.start(`Capturing "${pkg.name}"`);
+    s.start(`Capturing "${module}"`);
 
     try {
       if (!existsSync(dest)) {
-        throw new Error(`Missing directory for "${pkg.name}": ${dest}`);
+        throw new Error(`Missing directory for "${module}": ${dest}`);
       }
 
       // A package is on the patch series once it has one, and new packages
       // start there too. Only a package that still carries legacy snapshot
       // files keeps the whole-file overlay capture.
-      const seriesPatches = await readSeries(seriesDirPath(cwd, pkg.name));
+      const seriesPatches = await readSeries(seriesDirPath(cwd, module));
       const legacyEntries = await listLegacyOverlayEntries(overlayRoot);
       const useSeries = seriesPatches.length > 0 || legacyEntries.length === 0;
 
-      if (useSeries && !args.message) throw missingMessageError(pkg.name);
+      if (useSeries && !args.message) throw missingMessageError(module);
       if (!useSeries && args.message) {
         warn(
-          `Ignoring -m for "${pkg.name}": it still uses a legacy overlay, which records no message. Run "inrepo migrate ${pkg.name}" to move it to a patch series.`,
+          `Ignoring -m for "${module}": it still uses a legacy overlay, which records no message. Run "inrepo migrate ${module}" to move it to a patch series.`,
         );
       }
 
@@ -91,7 +92,7 @@ export async function cmdPatch(
       s.message(`Preparing upstream cache @ ${lockEntry.commit.slice(0, 7)}`);
       const pristine = await ensurePristine({
         cwd,
-        name: pkg.name,
+        name: module,
         gitUrl: lockEntry.gitUrl,
         repositoryDirectory: pkg.repositoryDirectory ?? lockEntry.repositoryDirectory,
         ref: lockEntry.ref,
@@ -100,7 +101,7 @@ export async function cmdPatch(
         exclude: excludeList,
       });
 
-      const state = await readModuleState(cwd, pkg.name);
+      const state = await readModuleState(cwd, module);
       const overlayHashBefore = await hashTree(overlayRoot);
       const moduleHash = await hashTree(dest);
 
@@ -108,11 +109,11 @@ export async function cmdPatch(
         const overlayChanged = overlayHashBefore !== state.overlayHash;
         const moduleChanged = moduleHash !== state.moduleHash;
         if (overlayChanged && moduleChanged) {
-          throw new Error(overlayConflictMessage(pkg.name));
+          throw new Error(overlayConflictMessage(module));
         }
         if (overlayChanged) {
           throw new Error(
-            `overlay for "${pkg.name}" changed since the last sync; run "inrepo sync" before patching`,
+            `overlay for "${module}" changed since the last sync; run "inrepo sync" before patching`,
           );
         }
       } else if (overlayHashBefore !== EMPTY_TREE_HASH) {
@@ -120,7 +121,7 @@ export async function cmdPatch(
         try {
           await assembleModuleTree({
             cwd,
-            name: pkg.name,
+            name: module,
             pristineRoot: pristine.dir,
             commit: pristine.commit,
             gitUrl: lockEntry.gitUrl,
@@ -130,7 +131,7 @@ export async function cmdPatch(
           const drift = await compareTrees(stage, dest);
           if (hasTreeDrift(drift)) {
             throw new Error(
-              `overlay for "${pkg.name}" exists but this checkout has no sync state; run "inrepo sync" before patching`,
+              `overlay for "${module}" exists but this checkout has no sync state; run "inrepo sync" before patching`,
             );
           }
         } finally {
@@ -142,14 +143,14 @@ export async function cmdPatch(
         s.message('Appending a patch to the series');
         const result = await captureSeriesPatch({
           cwd,
-          name: pkg.name,
+          name: module,
           pristineRoot: pristine.dir,
           moduleRoot: dest,
           subject: args.message ?? '',
         });
 
         if (!result.captured) {
-          s.stop(`Nothing to capture for "${pkg.name}"`);
+          s.stop(`Nothing to capture for "${module}"`);
           continue;
         }
         if (result.droppedEmptyDirectories.length > 0) {
@@ -158,11 +159,11 @@ export async function cmdPatch(
           );
         }
 
-        await writeModuleState(cwd, pkg.name, {
+        await writeModuleState(cwd, module, {
           overlayHash: await hashTree(overlayRoot),
           moduleHash,
         });
-        s.stop(`Patched "${pkg.name}" → ${relative(cwd, result.patchPath)}`);
+        s.stop(`Patched "${module}" → ${relative(cwd, result.patchPath)}`);
         continue;
       }
 
@@ -173,13 +174,13 @@ export async function cmdPatch(
         overlayRoot,
       });
       const overlayHashAfter = await hashTree(overlayRoot);
-      await writeModuleState(cwd, pkg.name, {
+      await writeModuleState(cwd, module, {
         overlayHash: overlayHashAfter,
         moduleHash,
       });
-      s.stop(`Patched "${pkg.name}" → ${overlayRoot}`);
+      s.stop(`Patched "${module}" → ${overlayRoot}`);
     } catch (e) {
-      s.error(`Failed to patch "${pkg.name}"`);
+      s.error(`Failed to patch "${module}"`);
       throw e;
     }
   }

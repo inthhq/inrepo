@@ -64,6 +64,12 @@ function validatePackage(entry: unknown, index: number): InrepoPackage {
     throw new Error(`packages[${index}].name is required and must be a non-empty string`);
   }
   const pkg: InrepoPackage = { name: name.trim() };
+  if (rec.module != null) {
+    if (typeof rec.module !== 'string' || !rec.module.trim()) {
+      throw new Error(`packages[${index}].module must be a non-empty string when set`);
+    }
+    pkg.module = rec.module.trim();
+  }
   if (rec.git != null) {
     if (typeof rec.git !== 'string' || !rec.git.trim()) {
       throw new Error(`packages[${index}].git must be a non-empty string when set`);

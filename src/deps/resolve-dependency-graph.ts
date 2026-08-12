@@ -11,6 +11,8 @@ export class DependencyResolutionError extends Error {
 /** A package already vendored in this project, used to dedupe instead of re-pinning. */
 export type VendoredPackage = {
   name: string;
+  /** Storage identity under config, lockfile, and inrepo_modules. */
+  module?: string;
   /** `version` from the vendored checkout's package.json; null when unreadable. */
   version: string | null;
   gitUrl: string;
@@ -34,6 +36,7 @@ export type GraphRoot = {
 
 export type ResolvedNode = {
   name: string;
+  module: string;
   /** Exact published version; null only when the root checkout declares none. */
   version: string | null;
   gitUrl: string;
@@ -46,19 +49,21 @@ export type ResolvedNode = {
   root: boolean;
   /** True when an existing vendored pin already satisfied every requirement. */
   reused: boolean;
+  /** Bare dependency name -> the exact resolved module instance. */
+  resolvedDependencies: Record<string, ResolvedDependencyEdge>;
+};
+
+export type ResolvedDependencyEdge = {
+  range: string;
+  module: string;
+  version: string | null;
 };
 
 export type DependencyGraph = {
   rootName: string;
+  rootModule: string;
   /** Root first, then every transitive dependency sorted by name. */
   nodes: ResolvedNode[];
-};
-
-export type DependencyOrigin = {
-  /** Package that declared the requirement. */
-  from: string;
-  /** Specifier it declared, normalized to a semver range. */
-  range: string;
 };
 
 export type GraphResolverIo = {
@@ -83,12 +88,8 @@ export type ResolveDependencyGraphInput = {
   io: GraphResolverIo;
 };
 
-// Each pass may only change resolutions that a previous pass pulled in, so the
-// loop converges quickly; the cap only guards against pathological metadata.
-const MAX_PASSES = 64;
-
-function formatOrigins(origins: DependencyOrigin[]): string {
-  return origins.map((origin) => `  ${origin.from} requires ${origin.range}`).join('\n');
+export function dependencyModuleId(name: string, version: string): string {
+  return `${name}@${version}`;
 }
 
 /**
@@ -116,43 +117,6 @@ export function runtimeEdges(
   return edges;
 }
 
-/**
- * Requirements reachable from the root through the packages resolved so far.
- * Rebuilt from scratch on every pass so a changed version never leaves stale
- * edges behind.
- */
-function collectRequirements(
-  root: GraphRoot,
-  resolved: Map<string, ResolvedNode>,
-): Map<string, DependencyOrigin[]> {
-  const requirements = new Map<string, DependencyOrigin[]>();
-  const queue: Array<{ name: string; dependencies: Record<string, string> }> = [
-    { name: root.name, dependencies: root.dependencies },
-  ];
-  const seen = new Set<string>([root.name]);
-
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) break;
-    for (const edge of runtimeEdges(current.name, current.dependencies)) {
-      if (edge.dependency === root.name) continue;
-      const origins = requirements.get(edge.dependency) ?? [];
-      origins.push({ from: current.name, range: edge.range });
-      requirements.set(edge.dependency, origins);
-      if (seen.has(edge.dependency)) continue;
-      seen.add(edge.dependency);
-      const node = resolved.get(edge.dependency);
-      if (node) queue.push({ name: node.name, dependencies: node.dependencies });
-    }
-  }
-  return requirements;
-}
-
-function satisfiesAll(version: string | null, ranges: string[]): boolean {
-  if (version == null) return false;
-  return ranges.every((range) => satisfies(version, range));
-}
-
 export async function resolveDependencyGraph(
   input: ResolveDependencyGraphInput,
 ): Promise<DependencyGraph> {
@@ -168,43 +132,45 @@ export async function resolveDependencyGraph(
     return loaded;
   };
 
-  const resolveOne = async (
-    name: string,
-    origins: DependencyOrigin[],
-  ): Promise<ResolvedNode> => {
-    const ranges = origins.map((origin) => origin.range);
-    const existing = vendored.get(name);
+  const resolveOne = async (name: string, range: string): Promise<ResolvedNode> => {
+    const existingCandidates = [...vendored.values()].filter(
+      (candidate) => candidate.name === name && candidate.version != null,
+    );
+    const existingVersion = maxSatisfyingAll(
+      existingCandidates.flatMap((candidate) =>
+        candidate.version == null ? [] : [candidate.version],
+      ),
+      [range],
+    );
+    const existing = existingCandidates.find((candidate) => candidate.version === existingVersion);
     if (existing?.version != null) {
-      if (satisfiesAll(existing.version, ranges)) {
-        return {
-          name,
-          version: existing.version,
-          gitUrl: existing.gitUrl,
-          repositoryDirectory: existing.repositoryDirectory,
-          ref: existing.ref,
-          commit: existing.commit,
-          dependencies: existing.dependencies,
-          root: false,
-          reused: true,
-        };
-      }
-      throw new DependencyResolutionError(
-        `"${name}" is already vendored at ${existing.version}, which does not satisfy every requirement in the dependency graph of "${root.name}":\n` +
-          `${formatOrigins(origins)}\n` +
-          `Run "inrepo update ${name} --ref <tag>" to move it, or remove it before retrying.`,
-      );
+      return {
+        name,
+        module: existing.module ?? existing.name,
+        version: existing.version,
+        gitUrl: existing.gitUrl,
+        repositoryDirectory: existing.repositoryDirectory,
+        ref: existing.ref,
+        commit: existing.commit,
+        dependencies: existing.dependencies,
+        root: false,
+        reused: true,
+        resolvedDependencies: {},
+      };
     }
 
     const registryPackage = await loadRegistry(name);
     const versions = registryPackage.manifests.map((manifest) => manifest.version);
-    const picked = maxSatisfyingAll(versions, ranges);
+    const picked = maxSatisfyingAll(versions, [range]);
     if (picked == null) {
       throw new DependencyResolutionError(
-        `Cannot satisfy "${name}" in the dependency graph of "${root.name}":\n` +
-          `${formatOrigins(origins)}\n` +
-          `No published version satisfies every range. Resolving version conflicts is out of scope; vendor the conflicting packages separately.`,
+        `Cannot satisfy "${name}" ${range} in the dependency graph of "${root.name}".`,
       );
     }
+
+    const module = dependencyModuleId(name, picked);
+    const alreadyResolved = resolved.get(module);
+    if (alreadyResolved) return alreadyResolved;
 
     const manifest = registryPackage.manifests.find((entry) => entry.version === picked);
     if (!manifest) {
@@ -212,9 +178,7 @@ export async function resolveDependencyGraph(
     }
     if (!manifest.gitUrl) {
       throw new DependencyResolutionError(
-        `Unsupported dependency source: "${name}@${picked}" (required by ${origins
-          .map((origin) => origin.from)
-          .join(', ')}) has no usable "repository" clone URL on the npm registry. ` +
+        `Unsupported dependency source: "${name}@${picked}" has no usable "repository" clone URL on the npm registry. ` +
           `Vendor it by hand with "inrepo add ${name} --git <url> --ref <ref>".`,
       );
     }
@@ -223,7 +187,7 @@ export async function resolveDependencyGraph(
     if (pins.length === 0) {
       throw new DependencyResolutionError(
         `Unsupported dependency source: no tag for "${name}@${picked}" in ${manifest.gitUrl} ` +
-          `(required by ${origins.map((origin) => origin.from).join(', ')}). ` +
+        `while resolving ${range}. ` +
           `Vendor it by hand with "inrepo add ${name} --git ${manifest.gitUrl} --ref <ref>".`,
       );
     }
@@ -258,6 +222,7 @@ export async function resolveDependencyGraph(
 
     return {
       name,
+      module,
       version: picked,
       gitUrl: manifest.gitUrl,
       repositoryDirectory: selected.repositoryDirectory,
@@ -266,35 +231,13 @@ export async function resolveDependencyGraph(
       dependencies: manifest.dependencies,
       root: false,
       reused: false,
+      resolvedDependencies: {},
     };
   };
 
-  for (let pass = 0; ; pass++) {
-    if (pass >= MAX_PASSES) {
-      throw new DependencyResolutionError(
-        `Dependency resolution for "${root.name}" did not settle after ${MAX_PASSES} passes.`,
-      );
-    }
-
-    const requirements = collectRequirements(root, resolved);
-    for (const name of [...resolved.keys()]) {
-      if (!requirements.has(name)) resolved.delete(name);
-    }
-
-    let changed = false;
-    for (const [name, origins] of [...requirements].sort((a, b) => a[0].localeCompare(b[0]))) {
-      const current = resolved.get(name);
-      if (current && satisfiesAll(current.version, origins.map((origin) => origin.range))) {
-        continue;
-      }
-      resolved.set(name, await resolveOne(name, origins));
-      changed = true;
-    }
-    if (!changed) break;
-  }
-
   const rootNode: ResolvedNode = {
     name: root.name,
+    module: root.name,
     version: root.version,
     gitUrl: root.gitUrl,
     repositoryDirectory: root.repositoryDirectory,
@@ -303,7 +246,44 @@ export async function resolveDependencyGraph(
     dependencies: root.dependencies,
     root: true,
     reused: false,
+    resolvedDependencies: {},
   };
-  const dependencies = [...resolved.values()].sort((a, b) => a.name.localeCompare(b.name));
-  return { rootName: root.name, nodes: [rootNode, ...dependencies] };
+  resolved.set(rootNode.module, rootNode);
+  const queue = [rootNode];
+  const expanded = new Set<string>();
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || expanded.has(current.module)) continue;
+    expanded.add(current.module);
+    for (const edge of runtimeEdges(current.name, current.dependencies)) {
+      let target: ResolvedNode;
+      if (
+        edge.dependency === root.name &&
+        root.version != null &&
+        satisfies(root.version, edge.range)
+      ) {
+        target = rootNode;
+      } else {
+        const candidate = await resolveOne(edge.dependency, edge.range);
+        target = resolved.get(candidate.module) ?? candidate;
+        if (!resolved.has(candidate.module)) {
+          resolved.set(candidate.module, candidate);
+          queue.push(candidate);
+        }
+      }
+      current.resolvedDependencies[edge.dependency] = {
+        range: edge.range,
+        module: target.module,
+        version: target.version,
+      };
+    }
+  }
+  const dependencies = [...resolved.values()]
+    .filter((node) => !node.root)
+    .sort((a, b) => a.module.localeCompare(b.module));
+  return {
+    rootName: root.name,
+    rootModule: rootNode.module,
+    nodes: [rootNode, ...dependencies],
+  };
 }

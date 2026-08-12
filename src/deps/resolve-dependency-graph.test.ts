@@ -139,8 +139,8 @@ describe('resolveDependencyGraph', () => {
     expect(io.fetched.filter((name) => name === 'shared')).toHaveLength(1);
   });
 
-  test('fails when two dependents need non-overlapping ranges', async () => {
-    const promise = resolve(
+  test('keeps incompatible dependency requirements as separate module instances', async () => {
+    const graph = await resolve(
       {
         beta: { '1.0.0': { dependencies: { shared: '^1.0.0' } } },
         gamma: { '1.0.0': { dependencies: { shared: '^2.0.0' } } },
@@ -149,9 +149,13 @@ describe('resolveDependencyGraph', () => {
       makeRoot({ beta: '^1.0.0', gamma: '^1.0.0' }),
     );
 
-    await expect(promise).rejects.toThrow(/Cannot satisfy "shared"/);
-    await expect(promise).rejects.toThrow(/beta requires \^1\.0\.0/);
-    await expect(promise).rejects.toThrow(/gamma requires \^2\.0\.0/);
+    expect(
+      graph.nodes.filter((node) => node.name === 'shared').map((node) => node.module),
+    ).toEqual(['shared@1.0.0', 'shared@2.0.0']);
+    const beta = graph.nodes.find((node) => node.name === 'beta');
+    const gamma = graph.nodes.find((node) => node.name === 'gamma');
+    expect(beta?.resolvedDependencies.shared.module).toBe('shared@1.0.0');
+    expect(gamma?.resolvedDependencies.shared.module).toBe('shared@2.0.0');
   });
 
   test('names the dependent and reason for an unsupported specifier', async () => {
@@ -204,7 +208,7 @@ describe('resolveDependencyGraph', () => {
     expect(graph.nodes.map((node) => node.name)).toContain('gamma');
   });
 
-  test('fails when an already vendored package cannot satisfy the graph', async () => {
+  test('coexists with an already vendored incompatible package', async () => {
     const vendored = new Map<string, VendoredPackage>([
       [
         'beta',
@@ -219,9 +223,12 @@ describe('resolveDependencyGraph', () => {
         },
       ],
     ]);
-    await expect(
-      resolve({ beta: { '2.0.0': {} } }, makeRoot({ beta: '^2.0.0' }), vendored),
-    ).rejects.toThrow(/"beta" is already vendored at 1\.1\.0/);
+    const graph = await resolve(
+      { beta: { '2.0.0': {} } },
+      makeRoot({ beta: '^2.0.0' }),
+      vendored,
+    );
+    expect(graph.nodes.find((node) => node.name === 'beta')?.module).toBe('beta@2.0.0');
   });
 
   test('terminates on a dependency cycle', async () => {

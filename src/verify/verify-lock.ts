@@ -99,7 +99,13 @@ async function collectGraphErrors(
       vendoredVersions.set(name, null);
     }
   }
-  return verifyLockGraph({ graph, moduleNames, vendoredVersions });
+  const { modules } = await readLockfile(cwd);
+  return verifyLockGraph({
+    graph,
+    moduleNames,
+    vendoredVersions,
+    moduleSources: new Map(Object.entries(modules).map(([module, entry]) => [module, entry.source])),
+  });
 }
 
 export async function verifyLock(cwd: string): Promise<VerifyResult> {
@@ -111,6 +117,7 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
 
   let configPackages: Array<{
     name: string;
+    module?: string;
     exclude?: string[];
     keep?: string[];
   }> = [];
@@ -124,7 +131,9 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
   } catch (e) {
     if (!isLoadConfigNotFoundError(e)) throw e;
   }
-  const configByName = new Map(configPackages.map((pkg) => [pkg.name, pkg] as const));
+  const configByName = new Map(
+    configPackages.map((pkg) => [pkg.module ?? pkg.name, pkg] as const),
+  );
 
   const errors: string[] = [];
   const verifyTmpRoot = join(cwd, '.inrepo', 'verify');

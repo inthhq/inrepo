@@ -42,11 +42,11 @@ export function dependencyModules(graph: LockGraph, name: string): Record<string
  * their original order, and a dependency cycle falls back to it rather than
  * dropping a package.
  */
-export function orderByDependencies<T extends { name: string }>(
+export function orderByDependencies<T extends { name: string; module?: string }>(
   packages: T[],
   graph: LockGraph,
 ): T[] {
-  const byName = new Map(packages.map((pkg) => [pkg.name, pkg] as const));
+  const byName = new Map(packages.map((pkg) => [pkg.module ?? pkg.name, pkg] as const));
   const state = new Map<string, 'visiting' | 'done'>();
   const out: T[] = [];
 
@@ -62,7 +62,7 @@ export function orderByDependencies<T extends { name: string }>(
     if (pkg) out.push(pkg);
   };
 
-  for (const pkg of packages) visit(pkg.name);
+  for (const pkg of packages) visit(pkg.module ?? pkg.name);
   return out;
 }
 

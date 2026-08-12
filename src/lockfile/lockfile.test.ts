@@ -83,10 +83,10 @@ describe('lockfile read/write/upsert', () => {
   test('rejects unsupported lockfileVersion', async () => {
     await writeFile(
       lockfilePath(cwd),
-      JSON.stringify({ lockfileVersion: 4, modules: {} }),
+      JSON.stringify({ lockfileVersion: 5, modules: {} }),
       'utf8',
     );
-    await expect(readLockfile(cwd)).rejects.toThrow(/Unsupported lockfileVersion: 4/);
+    await expect(readLockfile(cwd)).rejects.toThrow(/Unsupported lockfileVersion: 5/);
   });
 
   test('a project without a graph keeps writing lockfileVersion 1', async () => {
@@ -146,6 +146,26 @@ describe('lockfile read/write/upsert', () => {
     expect((await readLockfile(cwd)).modules['@scope/cli'].repositoryDirectory).toBe(
       'packages/cli',
     );
+  });
+
+  test('round-trips version-qualified instances and raises the lockfile to version 4', async () => {
+    await writeLockfile(
+      cwd,
+      {
+        'shared@1.0.0': {
+          source: 'shared',
+          gitUrl: 'https://github.com/x/shared.git',
+          commit: 'a'.repeat(40),
+          ref: 'v1.0.0',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      },
+      { 'shared@1.0.0': { version: '1.0.0' } },
+    );
+    const lock = await readLockfile(cwd);
+    expect(lock.lockfileVersion).toBe(4);
+    expect(lock.modules['shared@1.0.0'].source).toBe('shared');
+    expect(lock.graph['shared@1.0.0'].version).toBe('1.0.0');
   });
 
   test('accepts version 3 without a graph and treats old module entries as repository-rooted', async () => {

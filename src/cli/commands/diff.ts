@@ -57,7 +57,8 @@ export async function cmdDiff(cwd: string, argv: string[]): Promise<void> {
 
   let first = true;
   for (const pkg of packages) {
-    const lockEntry = modules[pkg.name];
+    const module = pkg.module ?? pkg.name;
+    const lockEntry = modules[module];
     if (!lockEntry) {
       throw new Error(
         `Cannot diff "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`,
@@ -66,7 +67,7 @@ export async function cmdDiff(cwd: string, argv: string[]): Promise<void> {
 
     const pristine = await ensurePristine({
       cwd,
-      name: pkg.name,
+      name: module,
       gitUrl: lockEntry.gitUrl,
       repositoryDirectory: pkg.repositoryDirectory ?? lockEntry.repositoryDirectory,
       ref: lockEntry.ref,
@@ -75,14 +76,14 @@ export async function cmdDiff(cwd: string, argv: string[]): Promise<void> {
       exclude: mergedVendorExcludes(globalExclude, pkg),
     });
 
-    const headers = await readSeriesHeaders(seriesDirPath(cwd, pkg.name));
-    const legacyEntries = await listLegacyOverlayEntries(overlayDirPath(cwd, pkg.name));
-    const work = await mkdtemp(join(workRoot, `${pkg.name.replaceAll('/', '__')}-`));
+    const headers = await readSeriesHeaders(seriesDirPath(cwd, module));
+    const legacyEntries = await listLegacyOverlayEntries(overlayDirPath(cwd, module));
+    const work = await mkdtemp(join(workRoot, `${module.replaceAll('/', '__')}-`));
     try {
       const patched = join(work, 'patched');
       await assemblePatchedTree({
         cwd,
-        name: pkg.name,
+        name: module,
         pristineRoot: pristine.dir,
         targetRoot: patched,
       });
@@ -101,7 +102,7 @@ export async function cmdDiff(cwd: string, argv: string[]): Promise<void> {
           : legacyEntries.length > 0
             ? 'legacy overlay'
             : 'no committed changes';
-      console.log(`${pkg.name} @ ${pristine.commit.slice(0, 7)} — ${source}`);
+      console.log(`${module} @ ${pristine.commit.slice(0, 7)} — ${source}`);
       for (const line of patchProvenanceLines(headers)) console.log(line);
       console.log('');
       console.log(rendered === '' ? '  (no differences)' : rendered);

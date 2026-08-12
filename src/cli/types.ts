@@ -44,6 +44,8 @@ export type UpdateArgs = {
 
 export type PackageSpec = {
   name: string;
+  /** Storage identity under inrepo_modules; defaults to name. */
+  module?: string;
   git?: string;
   /** Package root within the git repository; omitted for the repository root. */
   repositoryDirectory?: string;

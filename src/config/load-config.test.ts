@@ -147,6 +147,24 @@ describe('loadConfig', () => {
     await expect(loadConfig(cwd)).rejects.toThrow(/packages\[0\]\.dev must be a boolean/);
   });
 
+  test('loads and validates version-qualified module identities', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'shared', module: 'shared@1.0.0' }] }),
+      'utf8',
+    );
+    expect((await loadConfig(cwd)).packages).toEqual([
+      { name: 'shared', module: 'shared@1.0.0' },
+    ]);
+
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'shared', module: '' }] }),
+      'utf8',
+    );
+    await expect(loadConfig(cwd)).rejects.toThrow(/packages\[0\]\.module/);
+  });
+
   test('normalizes a package repositoryDirectory', async () => {
     await writeFile(
       join(cwd, 'inrepo.json'),

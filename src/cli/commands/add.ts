@@ -64,6 +64,7 @@ async function vendorPlannedDependencies(
   for (const node of plan.pending) {
     await saveConfigEntry(cwd, {
       name: node.name,
+      module: node.module,
       git: node.gitUrl,
       ...(node.repositoryDirectory == null ? {} : { repositoryDirectory: node.repositoryDirectory }),
       ...(node.ref == null ? {} : { ref: node.ref }),
@@ -73,12 +74,15 @@ async function vendorPlannedDependencies(
 
   const { modules } = await readLockfile(cwd);
   for (const node of orderByDependencies(plan.pending, graph)) {
-    const config = ctx.configByName.get(node.name);
+    const config = ctx.configByName.get(node.module);
     const spec = dependencySpec(node, ctx.dev, config);
     await materializePackage(cwd, spec, ctx.globalExclude, ctx.globalKeep, {
       mode: 'add',
-      force: config == null && !modules[node.name] && existsSync(moduleDestPath(cwd, node.name)),
-      lockEntry: modules[node.name],
+      force:
+        config == null &&
+        !modules[node.module] &&
+        existsSync(moduleDestPath(cwd, node.module)),
+      lockEntry: modules[node.module],
       resolvedCommit: node.commit,
     });
   }
@@ -108,7 +112,7 @@ export async function performAdd(
     const cfg = await loadConfig(cwd);
     globalExclude = cfg.exclude;
     globalKeep = cfg.keep;
-    for (const pkg of cfg.packages) configByName.set(pkg.name, pkg);
+    for (const pkg of cfg.packages) configByName.set(pkg.module ?? pkg.name, pkg);
     const entry = configByName.get(args.name);
     hasConfigEntry = entry != null;
     pkgExclude = entry?.exclude;

@@ -10,7 +10,7 @@ import {
 import { runCli } from '../test-utils/run-cli.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
 
-type ConfigPackage = { name: string; git?: string; ref?: string };
+type ConfigPackage = { name: string; module?: string; git?: string; ref?: string };
 
 /** Points at a closed port: proves sync and verify never reach the registry. */
 const OFFLINE_REGISTRY = 'http://127.0.0.1:9';
@@ -61,8 +61,8 @@ describe('CLI: add --with-deps (e2e)', () => {
     expect(add.stdout).toContain('gamma ^2.0.0 → 2.1.0');
     expect(add.stdout).toMatch(/Vendored 3 package\(s\) for "alpha"/);
 
-    for (const name of ['alpha', 'beta', 'gamma']) {
-      expect(existsSync(join(cwd, 'inrepo_modules', name, 'package.json'))).toBe(true);
+    for (const module of ['alpha', 'beta@1.2.0', 'gamma@2.1.0']) {
+      expect(existsSync(join(cwd, 'inrepo_modules', module, 'package.json'))).toBe(true);
     }
 
     const cfg = await readJson(join(cwd, 'inrepo.json'));
@@ -73,28 +73,28 @@ describe('CLI: add --with-deps (e2e)', () => {
     expect(packages.find((p) => p.name === 'gamma')?.ref).toBe('v2.1.0');
 
     const lock = await readJson(join(cwd, 'inrepo.lock.json'));
-    expect(lock.lockfileVersion).toBe(2);
+    expect(lock.lockfileVersion).toBe(4);
     expect(lock.graph).toEqual({
       alpha: {
         version: '1.0.0',
         root: true,
         dependencies: {
-          beta: { range: '^1.0.0', version: '1.2.0', module: 'beta' },
-          gamma: { range: '^2.0.0', version: '2.1.0', module: 'gamma' },
+          beta: { range: '^1.0.0', version: '1.2.0', module: 'beta@1.2.0' },
+          gamma: { range: '^2.0.0', version: '2.1.0', module: 'gamma@2.1.0' },
         },
       },
-      beta: {
+      'beta@1.2.0': {
         version: '1.2.0',
-        dependencies: { gamma: { range: '^2.0.0', version: '2.1.0', module: 'gamma' } },
+        dependencies: {
+          gamma: { range: '^2.0.0', version: '2.1.0', module: 'gamma@2.1.0' },
+        },
       },
-      gamma: { version: '2.1.0' },
+      'gamma@2.1.0': { version: '2.1.0' },
     });
 
     const pkg = await readJson(join(cwd, 'package.json'));
     expect(pkg.dependencies).toEqual({
       alpha: 'file:inrepo_modules/alpha',
-      beta: 'file:inrepo_modules/beta',
-      gamma: 'file:inrepo_modules/gamma',
     });
   });
 
@@ -182,8 +182,8 @@ describe('CLI: add --with-deps (e2e)', () => {
 
     const add = await runCli(['add', '--with-deps', 'alpha'], { cwd, env });
     expect(add.exitCode).toBe(0);
-    expect(existsSync(join(cwd, 'inrepo_modules', 'beta', 'package.json'))).toBe(true);
-    expect(existsSync(join(cwd, 'inrepo_modules', 'gamma', 'package.json'))).toBe(true);
+    expect(existsSync(join(cwd, 'inrepo_modules', 'beta@1.2.0', 'package.json'))).toBe(true);
+    expect(existsSync(join(cwd, 'inrepo_modules', 'gamma@2.1.0', 'package.json'))).toBe(true);
 
     const after = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
       modules: Record<string, { commit: string; gitUrl: string }>;
@@ -210,7 +210,7 @@ describe('CLI: add --with-deps (e2e)', () => {
 
       const add = await runCli(['add', '--with-deps', 'alpha'], { cwd, env });
       expect(add.exitCode).toBe(0);
-      expect(existsSync(join(cwd, 'inrepo_modules', 'beta', 'package.json'))).toBe(true);
+      expect(existsSync(join(cwd, 'inrepo_modules', 'beta@1.2.0', 'package.json'))).toBe(true);
 
       const after = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
         modules: Record<string, { gitUrl: string; commit: string }>;
@@ -259,7 +259,7 @@ describe('CLI: add --with-deps (e2e)', () => {
 
       const add = await runCli(['add', '--with-deps', 'root-pkg'], { cwd, env: patchedEnv });
       expect(add.exitCode).toBe(0);
-      expect(existsSync(join(cwd, 'inrepo_modules', 'extra', 'package.json'))).toBe(true);
+      expect(existsSync(join(cwd, 'inrepo_modules', 'extra@1.0.0', 'package.json'))).toBe(true);
       expect(add.stdout).toContain('extra ^1.0.0 → 1.0.0');
 
       const lock = await readJson(join(cwd, 'inrepo.lock.json'));
@@ -268,12 +268,12 @@ describe('CLI: add --with-deps (e2e)', () => {
           version: '1.0.0',
           root: true,
           dependencies: {
-            leaf: { range: '^1.0.0', version: '1.0.0', module: 'leaf' },
-            extra: { range: '^1.0.0', version: '1.0.0', module: 'extra' },
+            leaf: { range: '^1.0.0', version: '1.0.0', module: 'leaf@1.0.0' },
+            extra: { range: '^1.0.0', version: '1.0.0', module: 'extra@1.0.0' },
           },
         },
-        leaf: { version: '1.0.0' },
-        extra: { version: '1.0.0' },
+        'leaf@1.0.0': { version: '1.0.0' },
+        'extra@1.0.0': { version: '1.0.0' },
       });
     } finally {
       await patched.cleanup();
@@ -309,11 +309,10 @@ describe('CLI: add --with-deps (e2e)', () => {
         { cwd, env: scopedEnv },
       );
       expect(add.exitCode).toBe(0);
-      for (const name of ['root', 'leaf']) {
-        expect(existsSync(join(cwd, 'inrepo_modules', '@scope', name, 'package.json'))).toBe(
-          true,
-        );
-      }
+      expect(existsSync(join(cwd, 'inrepo_modules', '@scope', 'root', 'package.json'))).toBe(true);
+      expect(
+        existsSync(join(cwd, 'inrepo_modules', '@scope', 'leaf@1.1.0', 'package.json')),
+      ).toBe(true);
 
       const lock = await readJson(join(cwd, 'inrepo.lock.json'));
       expect(lock.graph).toEqual({
@@ -321,10 +320,14 @@ describe('CLI: add --with-deps (e2e)', () => {
           version: '1.0.0',
           root: true,
           dependencies: {
-            '@scope/leaf': { range: '^1.0.0', version: '1.1.0', module: '@scope/leaf' },
+            '@scope/leaf': {
+              range: '^1.0.0',
+              version: '1.1.0',
+              module: '@scope/leaf@1.1.0',
+            },
           },
         },
-        '@scope/leaf': { version: '1.1.0' },
+        '@scope/leaf@1.1.0': { version: '1.1.0' },
       });
 
       const offline = { ...envFor('inrepo.json'), INREPO_REGISTRY: OFFLINE_REGISTRY };
@@ -361,7 +364,7 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
     expect(cfg.packages).toEqual([]);
   }
 
-  test('non-overlapping ranges fail before anything is vendored', async () => {
+  test('non-overlapping ranges materialize separate exact module instances', async () => {
     const fx = await makePackageGraphFixture([
       {
         name: 'root-pkg',
@@ -376,11 +379,50 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
         cwd,
         env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl },
       });
-      expect(r.exitCode).toBe(1);
-      expect(r.stderr).toMatch(/Cannot satisfy "shared"/);
-      expect(r.stderr).toMatch(/left requires \^1\.0\.0/);
-      expect(r.stderr).toMatch(/right requires \^2\.0\.0/);
-      await expectNothingVendored();
+      expect(r.exitCode).toBe(0);
+      for (const module of [
+        'root-pkg',
+        'left@1.0.0',
+        'right@1.0.0',
+        'shared@1.0.0',
+        'shared@2.0.0',
+      ]) {
+        expect(existsSync(join(cwd, 'inrepo_modules', module, 'package.json'))).toBe(true);
+      }
+
+      const config = await readJson(join(cwd, 'inrepo.json'));
+      const packages = config.packages as ConfigPackage[];
+      expect(
+        packages
+          .filter((pkg) => pkg.name === 'shared')
+          .map((pkg) => pkg.module)
+          .sort(),
+      ).toEqual(['shared@1.0.0', 'shared@2.0.0']);
+
+      const lock = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+        lockfileVersion: number;
+        modules: Record<string, { source: string }>;
+        graph: Record<string, { dependencies?: Record<string, { module: string; version: string }> }>;
+      };
+      expect(lock.lockfileVersion).toBe(4);
+      expect(lock.modules['shared@1.0.0']?.source).toBe('shared');
+      expect(lock.modules['shared@2.0.0']?.source).toBe('shared');
+      expect(lock.graph['left@1.0.0']?.dependencies?.shared).toMatchObject({
+        module: 'shared@1.0.0',
+        version: '1.0.0',
+      });
+      expect(lock.graph['right@1.0.0']?.dependencies?.shared).toMatchObject({
+        module: 'shared@2.0.0',
+        version: '2.0.0',
+      });
+      expect(
+        (
+          await runCli(['verify'], {
+            cwd,
+            env: { ...envFor('inrepo.json'), INREPO_REGISTRY: OFFLINE_REGISTRY },
+          })
+        ).exitCode,
+      ).toBe(0);
     } finally {
       await fx.cleanup();
     }

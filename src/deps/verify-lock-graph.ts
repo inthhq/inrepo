@@ -11,6 +11,8 @@ export type VerifyLockGraphInput = {
    * can legitimately cause, so it is not treated as drift.
    */
   vendoredVersions: Map<string, string | null>;
+  /** Storage module -> npm source name from lockfile. */
+  moduleSources?: Map<string, string>;
 };
 
 /**
@@ -29,7 +31,14 @@ export function verifyLockGraph(input: VerifyLockGraphInput): string[] {
     }
 
     const vendoredVersion = vendoredVersions.get(name) ?? null;
-    if (node.version != null && vendoredVersion != null && vendoredVersion !== node.version) {
+    const sourceName = input.moduleSources?.get(name);
+    const isGraphManagedInstance = sourceName != null && sourceName !== name;
+    if (
+      !isGraphManagedInstance &&
+      node.version != null &&
+      vendoredVersion != null &&
+      vendoredVersion !== node.version
+    ) {
       errors.push(
         `"${name}": vendored version ${vendoredVersion} does not match graph version ${node.version}`,
       );
@@ -44,6 +53,12 @@ export function verifyLockGraph(input: VerifyLockGraphInput): string[] {
           `"${name}" depends on "${dependency}" resolved to module "${edge.module}", which is not in the dependency graph`,
         );
         continue;
+      }
+      const targetSource = input.moduleSources?.get(edge.module);
+      if (targetSource != null && targetSource !== dependency) {
+        errors.push(
+          `"${name}" depends on "${dependency}" but module "${edge.module}" contains "${targetSource}"`,
+        );
       }
       if (edge.version != null && target.version != null && edge.version !== target.version) {
         errors.push(

@@ -76,6 +76,7 @@ describe('CLI: monorepo add --with-deps (e2e)', () => {
       },
       {
         name: '@scope/leaf',
+        module: '@scope/leaf@1.0.0',
         git: fx.gitUrl('@scope/leaf'),
         repositoryDirectory: 'packages/leaf',
         ref: 'v1.0.0',
@@ -87,20 +88,24 @@ describe('CLI: monorepo add --with-deps (e2e)', () => {
       modules: Record<string, { commit: string; repositoryDirectory?: string }>;
       graph: Record<string, { dependencies?: Record<string, { range: string }> }>;
     };
-    expect(lock.lockfileVersion).toBe(3);
+    expect(lock.lockfileVersion).toBe(4);
     expect(lock.modules['@scope/root']).toMatchObject({
       commit: fx.commit,
       repositoryDirectory: 'packages/root',
     });
-    expect(lock.modules['@scope/leaf']).toMatchObject({
+    expect(lock.modules['@scope/leaf@1.0.0']).toMatchObject({
       commit: fx.commit,
       repositoryDirectory: 'packages/leaf',
     });
-    expect(lock.graph['@scope/root']?.dependencies?.['@scope/leaf']?.range).toBe('^1.0.0');
+    expect(lock.graph['@scope/root']?.dependencies?.['@scope/leaf']).toMatchObject({
+      range: '^1.0.0',
+      module: '@scope/leaf@1.0.0',
+      version: '1.0.0',
+    });
 
     expect(await readdir(join(cwd, '.inrepo', 'repositories'))).toHaveLength(1);
     const rootIndex = join(cwd, 'inrepo_modules', '@scope', 'root', 'index.js');
-    expect(await readFile(rootIndex, 'utf8')).toContain("from '../leaf/index.js'");
+    expect(await readFile(rootIndex, 'utf8')).toContain("from '../leaf@1.0.0/index.js'");
     expect(existsSync(join(cwd, 'inrepo_modules', '@scope', 'root', 'packages'))).toBe(false);
 
     const execution = Bun.spawn(['node', rootIndex], {
@@ -115,7 +120,7 @@ describe('CLI: monorepo add --with-deps (e2e)', () => {
     const offlineEnv = { ...env, INREPO_REGISTRY: OFFLINE_REGISTRY };
     expect((await runCli(['sync'], { cwd, env: offlineEnv })).exitCode).toBe(0);
     expect((await runCli(['verify'], { cwd, env: offlineEnv })).exitCode).toBe(0);
-    expect(await readFile(rootIndex, 'utf8')).toContain("from '../leaf/index.js'");
+    expect(await readFile(rootIndex, 'utf8')).toContain("from '../leaf@1.0.0/index.js'");
   });
 
   test('plain registry add persists its discovered repository directory', async () => {

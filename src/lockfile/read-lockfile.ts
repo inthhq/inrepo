@@ -17,7 +17,7 @@ type LockfileShape = {
  * package rooted below its git repository. Older files remain valid and treat
  * every module as repository-rooted.
  */
-export const SUPPORTED_LOCKFILE_VERSIONS = [1, 2, 3] as const;
+export const SUPPORTED_LOCKFILE_VERSIONS = [1, 2, 3, 4] as const;
 
 function assertLockModule(module: unknown, label: string): LockModule {
   if (module == null || typeof module !== 'object' || Array.isArray(module)) {
@@ -147,7 +147,7 @@ export async function readLockfile(cwd: string): Promise<{
   const lockfileVersion = rec.lockfileVersion;
   if (
     typeof lockfileVersion !== 'number' ||
-    !SUPPORTED_LOCKFILE_VERSIONS.includes(lockfileVersion as 1 | 2 | 3)
+    !SUPPORTED_LOCKFILE_VERSIONS.includes(lockfileVersion as 1 | 2 | 3 | 4)
   ) {
     throw new Error(`Unsupported lockfileVersion: ${String(lockfileVersion)}`);
   }

@@ -129,6 +129,29 @@ describe('upsertPackageJsonInrepo', () => {
     ]);
   });
 
+  test('keys duplicate source packages by their module identity', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ name: 'host', inrepo: { packages: [] } }) + '\n',
+      'utf8',
+    );
+    await upsertPackageJsonInrepo(cwd, {
+      name: 'shared',
+      module: 'shared@1.0.0',
+      ref: 'v1.0.0',
+    });
+    await upsertPackageJsonInrepo(cwd, {
+      name: 'shared',
+      module: 'shared@2.0.0',
+      ref: 'v2.0.0',
+    });
+    const pkg = await readPkg(cwd);
+    expect((pkg.inrepo as Record<string, unknown>).packages).toEqual([
+      { name: 'shared', module: 'shared@1.0.0', ref: 'v1.0.0' },
+      { name: 'shared', module: 'shared@2.0.0', ref: 'v2.0.0' },
+    ]);
+  });
+
   test('records, preserves, and explicitly clears repositoryDirectory', async () => {
     await writeFile(
       join(cwd, 'package.json'),

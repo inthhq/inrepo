@@ -59,10 +59,13 @@ export async function upsertPackageJsonInrepo(cwd: string, entry: InrepoJsonEntr
 
   const data = parseExistingInrepo(pkg.inrepo);
 
-  const ix = data.packages.findIndex(
-    (p) => p && typeof p === 'object' && p.name === entry.name,
-  );
+  const identity = entry.module ?? entry.name;
+  const ix = data.packages.findIndex((p) => {
+    if (!p || typeof p !== 'object') return false;
+    return (typeof p.module === 'string' ? p.module : p.name) === identity;
+  });
   const next: Record<string, unknown> = { name: entry.name };
+  if (entry.module) next.module = entry.module;
   if (entry.git) next.git = entry.git;
   if (entry.ref) next.ref = entry.ref;
   const repositoryDirectory =

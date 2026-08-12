@@ -1,13 +1,6 @@
 import { existsSync } from 'node:fs';
 import { rename, rm } from 'node:fs/promises';
 import { relative } from 'node:path';
-import {
-  isLoadConfigNotFoundError,
-  loadConfig,
-  loadGlobalExclude,
-  loadGlobalKeep,
-} from '../../config/load-config.js';
-import { readLockfile } from '../../lockfile/read-lockfile.js';
 import { assembleModuleTree } from '../../overlay/assemble-module.js';
 import { ensurePristine } from '../../overlay/cache.js';
 import { writeModuleState } from '../../overlay/module-state.js';
@@ -17,8 +10,9 @@ import { moduleDestPath } from '../../paths/module-dest-path.js';
 import { migratePackageToSeries } from '../../series/migrate-package.js';
 import { isUpdateInProgress, updateInProgressError } from '../../series/update-state.js';
 import { parseMigrateArgs } from '../args.js';
+import { selectPackages } from '../package-selection.js';
 import { printBanner } from '../rendering.js';
-import type { DispatchOpts, PackageSpec } from '../types.js';
+import type { DispatchOpts } from '../types.js';
 import { intro, outro, spinner, warn } from '../ui.js';
 import { makeSiblingStage, mergedVendorExcludes, mergedVendorKeeps } from '../vendor.js';
 
@@ -35,41 +29,32 @@ export async function cmdMigrate(
   const args = parseMigrateArgs(argv);
   if (!opts.suppressBanners) printBanner();
 
-  let configPackages: PackageSpec[] = [];
-  let globalExclude: string[] = [];
-  let globalKeep: string[] = [];
-  try {
-    const cfg = await loadConfig(cwd);
-    configPackages = cfg.packages;
-    globalExclude = cfg.exclude;
-    globalKeep = cfg.keep;
-  } catch (e) {
-    if (!isLoadConfigNotFoundError(e)) throw e;
-    globalExclude = await loadGlobalExclude(cwd);
-    globalKeep = await loadGlobalKeep(cwd);
-  }
-
-  const { modules } = await readLockfile(cwd);
-  const lockEntry = modules[args.name];
+  const { packages, modules, globalExclude, globalKeep } = await selectPackages(
+    cwd,
+    args.name,
+    'migrate',
+  );
+  const pkg = packages[0];
+  const module = pkg.module ?? pkg.name;
+  const lockEntry = modules[module];
   if (!lockEntry) {
     throw new Error(
       `Cannot migrate "${args.name}" without a lockfile entry. Run "inrepo add ${args.name}" or "inrepo sync" first.`,
     );
   }
-  const pkg = configPackages.find((entry) => entry.name === args.name) ?? { name: args.name };
-  if (isUpdateInProgress(cwd, args.name)) {
-    throw updateInProgressError(cwd, args.name, 'migrating');
+  if (isUpdateInProgress(cwd, module)) {
+    throw updateInProgressError(cwd, module, 'migrating');
   }
 
-  if (!opts.suppressBanners) intro(`inrepo migrate — ${args.name}`);
+  if (!opts.suppressBanners) intro(`inrepo migrate — ${module}`);
 
   const s = spinner();
-  s.start(`Migrating "${args.name}" to a patch series`);
+  s.start(`Migrating "${module}" to a patch series`);
   try {
     s.message(`Preparing upstream cache @ ${lockEntry.commit.slice(0, 7)}`);
     const pristine = await ensurePristine({
       cwd,
-      name: args.name,
+      name: module,
       gitUrl: lockEntry.gitUrl,
       repositoryDirectory: pkg.repositoryDirectory ?? lockEntry.repositoryDirectory,
       ref: lockEntry.ref,
@@ -81,7 +66,7 @@ export async function cmdMigrate(
     s.message('Generating patch series');
     const result = await migratePackageToSeries({
       cwd,
-      name: args.name,
+      name: module,
       pristineRoot: pristine.dir,
     });
 
@@ -95,12 +80,12 @@ export async function cmdMigrate(
     // contain ones the series omitted. Rebuild dest the same way sync/verify
     // do and record hashes of the post-rebuild trees.
     s.message('Rebuilding generated vendor tree');
-    const dest = moduleDestPath(cwd, args.name);
+    const dest = moduleDestPath(cwd, module);
     const stage = await makeSiblingStage(dest, '.inrepo-next-');
     try {
       await assembleModuleTree({
         cwd,
-        name: args.name,
+        name: module,
         pristineRoot: pristine.dir,
         commit: lockEntry.commit,
         gitUrl: lockEntry.gitUrl,
@@ -115,18 +100,18 @@ export async function cmdMigrate(
       throw error;
     }
 
-    await writeModuleState(cwd, args.name, {
-      overlayHash: await hashTree(overlayDirPath(cwd, args.name)),
+    await writeModuleState(cwd, module, {
+      overlayHash: await hashTree(overlayDirPath(cwd, module)),
       moduleHash: await hashTree(dest),
     });
 
-    s.stop(`Migrated "${args.name}" → ${relative(cwd, result.patchPath)}`);
+    s.stop(`Migrated "${module}" → ${relative(cwd, result.patchPath)}`);
   } catch (e) {
-    s.error(`Failed to migrate "${args.name}"`);
+    s.error(`Failed to migrate "${module}"`);
     throw e;
   }
 
   if (!opts.suppressBanners) {
-    outro(`Legacy overlay for "${args.name}" replaced by a patch series.`);
+    outro(`Legacy overlay for "${module}" replaced by a patch series.`);
   }
 }

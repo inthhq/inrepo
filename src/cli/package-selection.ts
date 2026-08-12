@@ -44,17 +44,20 @@ export async function selectPackages(
   }
 
   const { modules } = await readLockfile(cwd);
-  const configByName = new Map(configPackages.map((pkg) => [pkg.name, pkg] as const));
+  const configByName = new Map(
+    configPackages.map((pkg) => [pkg.module ?? pkg.name, pkg] as const),
+  );
 
-  const fromLock = (packageName: string): PackageSpec => ({
-    name: packageName,
-    git: modules[packageName]?.gitUrl,
-    repositoryDirectory: modules[packageName]?.repositoryDirectory,
-    ref: modules[packageName]?.ref ?? undefined,
+  const fromLock = (module: string): PackageSpec => ({
+    name: modules[module]?.source ?? module,
+    ...(module === (modules[module]?.source ?? module) ? {} : { module }),
+    git: modules[module]?.gitUrl,
+    repositoryDirectory: modules[module]?.repositoryDirectory,
+    ref: modules[module]?.ref ?? undefined,
   });
 
   const withLockedSource = (pkg: PackageSpec): PackageSpec => {
-    const locked = modules[pkg.name];
+    const locked = modules[pkg.module ?? pkg.name];
     if (!locked) return pkg;
     const configGit = pkg.git?.trim();
     const sameRepository =

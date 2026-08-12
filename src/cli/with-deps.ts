@@ -81,10 +81,11 @@ async function publishedRootDependencies(
  */
 async function describeVendored(
   cwd: string,
-  name: string,
+  module: string,
   entry: LockModule,
 ): Promise<VendoredPackage> {
-  const dest = moduleDestPath(cwd, name);
+  const name = entry.source;
+  const dest = moduleDestPath(cwd, module);
   let version: string | null = null;
   let dependencies: Record<string, string> = {};
   if (existsSync(dest)) {
@@ -98,6 +99,7 @@ async function describeVendored(
   }
   return {
     name,
+    module,
     version,
     gitUrl: entry.gitUrl,
     repositoryDirectory: entry.repositoryDirectory ?? null,
@@ -178,9 +180,9 @@ export async function planWithDeps(
   }
 
   const vendored = new Map<string, VendoredPackage>();
-  for (const [name, entry] of Object.entries(modules)) {
-    if (name === root.name) continue;
-    vendored.set(name, await describeVendored(cwd, name, entry));
+  for (const [module, entry] of Object.entries(modules)) {
+    if (module === root.name) continue;
+    vendored.set(module, await describeVendored(cwd, module, entry));
   }
 
   const graph = await resolveDependencyGraph({
@@ -225,7 +227,7 @@ export async function preflightWithDeps(
   },
 ): Promise<void> {
   for (const node of plan.pending) {
-    const spec = dependencySpec(node, input.dev, input.configByName.get(node.name));
+    const spec = dependencySpec(node, input.dev, input.configByName.get(node.module));
     const pristine = await ensurePristine({
       cwd,
       name: node.name,
@@ -261,6 +263,7 @@ export function dependencySpec(
 ): PackageSpec {
   return {
     name: node.name,
+    module: node.module,
     git: node.gitUrl,
     ...(node.repositoryDirectory == null
       ? {}
