@@ -49,7 +49,8 @@ Package fields:
 
 | Field | Meaning |
 | --- | --- |
-| `name` | Package name and destination under `inrepo_modules/`. |
+| `name` | npm package/source name used by imports and the root dependency key. |
+| `module` | Optional storage identity under config, lockfile, `inrepo_modules/`, and `inrepo_patches/`. Generated as `name@version` for `--with-deps` dependencies; otherwise defaults to `name`. |
 | `git` | Optional git clone URL. Required when npm registry lookup cannot resolve a GitHub repository. |
 | `repositoryDirectory` | Optional package root inside the repository. Discovered from npm `repository.directory`, or set explicitly for a manual git source. |
 | `ref` | Optional branch, tag, or commit to pin before resolving the lockfile commit. |
@@ -69,11 +70,13 @@ Filtering always runs in this order:
 
 If `keep` is set, list every root file you still need, such as `package.json` or `LICENSE`. Nothing is kept implicitly.
 
-For a monorepo package, filtering and patches are relative to `repositoryDirectory`, not the repository root. The selected directory is recorded in lockfile version 3 and replayed offline by `sync`, `verify`, `diff`, `patch`, and `update`. Use `inrepo add <name> --git <url> --repository-directory <path>` when npm metadata cannot provide it.
+For a monorepo package, filtering and patches are relative to `repositoryDirectory`, not the repository root. Registry dependency resolution uses npm `repository.directory` when present; otherwise it searches the immutable checkout for a unique package manifest matching the published name and version. The selected directory is recorded and replayed offline by `sync`, `verify`, `diff`, and `patch`. Use `inrepo add <name> --git <url> --repository-directory <path>` for a manual source.
 
 `inrepo add <package>` updates config by default after a successful checkout. Use `--no-save` for a one-off vendoring operation that should not upsert config.
 
-`inrepo add <package> --with-deps` adds one entry per resolved runtime dependency, each pinned to an exact `git` URL and release-tag `ref` so `sync` stays offline. It cannot be combined with `--no-save`.
+`inrepo add <package> --with-deps` adds one entry per resolved runtime dependency instance. A generated entry such as `{ "name": "citty", "module": "citty@0.2.2", … }` separates the npm import name from its storage identity, allowing incompatible versions to coexist. Each entry is pinned to an exact `git` URL and immutable commit so `sync` stays offline. Graph-managed instances cannot be updated directly; rerun `add --with-deps` for the graph root. The command cannot be combined with `--no-save`.
+
+Lockfile versions 1–3 remain readable. Version 4 is written when a module identity differs from its package source name; graph edges point to that exact module instance, and the module's lock entry retains its `source` name.
 
 ## Import rewiring
 

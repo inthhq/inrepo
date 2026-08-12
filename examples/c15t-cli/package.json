@@ -11,7 +11,8 @@
     "build:npm": "scriptc build cli-npm.ts --dynamic -o demo-npm",
     "build:static": "scriptc build cli-static.ts -o demo-static",
     "check": "bun check.ts",
-    "bench": "bun check.ts && bun bench.ts"
+    "bench": "bun check.ts && bun bench.ts",
+    "probe:with-deps": "bun with-deps-probe.ts"
   },
   "dependencies": {
     "@c15t/cli": "2.2.0",

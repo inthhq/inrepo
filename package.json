@@ -35,6 +35,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test ./src",
     "test:c15t-cli-case": "bun examples/c15t-cli/probe.ts",
+    "test:c15t-cli-with-deps": "bun examples/c15t-cli/with-deps-probe.ts",
     "test:scriptc-example": "bun examples/scriptc/verify.ts",
     "test:watch": "bun test --watch ./src",
     "version": "changeset version && bun install",

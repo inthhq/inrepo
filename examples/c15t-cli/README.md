@@ -99,20 +99,38 @@ materialized source:
 bun run test:c15t-cli-case
 ```
 
+The current `--with-deps` implementation also has a separate executable probe.
+It runs the real registry resolver and materializer for `@c15t/cli@2.2.0`,
+asserts lockfile version 4 and distinct `citty`, `content-type`, and `hono`
+module instances, removes the generated module tree, and proves that `sync` and
+`verify` can rebuild and check it with registry access disabled:
+
+```sh
+cd examples/c15t-cli
+npm run probe:with-deps
+```
+
+The clean reference run for this stack resolved, materialized, synced, and
+verified 188 exact runtime module instances. The probe accepts at least 180 so
+new compatible transitive releases do not make the case artificially brittle.
+This is a graph and source-materialization result, not an executable full-CLI
+result: the probe deliberately stops before running the vendored
+`@c15t/cli` entrypoint.
+
 ## Why this is not full CLI parity
 
-The complete published `@c15t/cli` runtime graph remains beyond the current
-case study:
+The complete published `@c15t/cli` runtime graph now resolves and materializes,
+including incompatible versions, npm repository shorthand, missing monorepo
+directory metadata, and releases pinned through npm publish metadata or
+registry-hosted provenance. Full CLI execution remains beyond this case study:
 
-- the runtime closure needs multiple incompatible versions of `citty` and
-  `content-type`, while current graph vendoring supports one module per name;
-- `nypm@0.6.9` exposes repository shorthand not currently normalized;
-- `@c15t/schema` shares the c15t workspace but omits `repository.directory`,
-  so it still needs an explicit source-directory override;
-- several selected releases have no tag matching inrepo's current tag
-  candidates;
+- `--with-deps` follows published `dependencies`, but not npm peer or optional
+  dependency installation semantics;
 - package exports point at untracked build output under `dist/`, while source
-  uses workspace aliases and extensionless imports;
+  dependencies expose subpaths such as `@c15t/scripts/registry` through their
+  missing `dist` output;
+- source uses workspace aliases such as `~/*` and extensionless imports, which
+  import rewiring does not currently translate;
 - the real CLI entrypoint eagerly imports setup, codemod, backend, telemetry,
   filesystem, process, and browser-opening paths even for `--help`.
 

@@ -129,7 +129,7 @@ Do not commit these:
 - `inrepo_modules/<package>/` is rebuilt by `inrepo sync`.
 - `.inrepo/` stores cache, state, and backups.
 
-The generated module is wired into your root `package.json` as a local `file:inrepo_modules/<package>` dependency. Use `npx inrepo add <package> -D` or `"dev": true` in config when it should land in `devDependencies`.
+The package you add is wired into your root `package.json` as a local `file:inrepo_modules/<package>` dependency. Graph-managed transitive instances are reached through their recorded dependency edges instead of becoming host dependency keys. Use `npx inrepo add <package> -D` or `"dev": true` in config when the root should land in `devDependencies`.
 
 ## Config
 
@@ -155,7 +155,8 @@ Prefer `inrepo.json` at the project root:
 
 You can also put the same object under `package.json#inrepo`.
 
-- `name` is the package name and destination under `inrepo_modules/`.
+- `name` is the npm package/source name. It is also the destination for packages added directly.
+- `module` is an optional storage identity under config, lockfile, `inrepo_modules/`, and `inrepo_patches/`; `--with-deps` generates version-qualified values for transitive instances.
 - `git` is optional when npm metadata can resolve the GitHub repository.
 - `repositoryDirectory` selects the package root inside a monorepo. npm's `repository.directory` is discovered automatically; use `--repository-directory <path>` with a manual `--git` source.
 - `ref` can be a branch, tag, or commit before the lockfile resolves the exact commit.
@@ -239,7 +240,7 @@ npx inrepo update <package> --abort      # throw the update away, changing nothi
 npx inrepo add <package> --with-deps
 ```
 
-For registry-resolved roots, `inrepo` reads the exact published `dependencies` (including npm's rewrites of workspace ranges), resolves each range to an exact published version, maps that version to its repository and release tag, and recurses. A manual `--git` root remains authoritative and uses its checkout manifest. Only runtime `dependencies` are followed — `devDependencies` and `peerDependencies` are deliberately out of scope, because neither is needed to run the vendored source.
+For registry-resolved roots, `inrepo` reads the exact published `dependencies` (including npm's rewrites of workspace ranges), resolves each range to an exact published version, maps that version to an immutable repository commit, and recurses. It prefers npm's publish-time `gitHead`, then a matching release tag, and can fall back to a source commit bound to the published tarball by npm provenance. A manual `--git` root remains authoritative and uses its checkout manifest. Only runtime `dependencies` are followed — `devDependencies`, `peerDependencies`, and `optionalDependencies` are not added automatically.
 
 The resolved tree is printed before anything is written:
 
@@ -250,45 +251,53 @@ commander 12.1.0 (a1b2c3d)
    └─ picocolors ^1.0.0 → 1.1.1 (9f3e21c) (deduped)
 ```
 
-Every resolved package is then vendored exactly like a package you added by hand: a config entry pinned to its release tag, its own lockfile entry, a materialized `inrepo_modules/<package>`, and an empty patch surface you can start capturing patches into. A dependency that is already vendored at a compatible version is reused rather than re-pinned, and running `--with-deps` again on a package you already vendored simply completes the missing part of its graph.
+Every resolved package is then vendored like a package you added by hand, but graph-managed dependencies have a versioned module identity. For example, `citty@0.1.6` and `citty@0.2.2` are separate config and lock entries, materialized at `inrepo_modules/citty@0.1.6` and `inrepo_modules/citty@0.2.2`. Each graph edge still uses the bare dependency name and points it at the exact module instance selected for that dependent. The root keeps its normal package name. A compatible instance is reused rather than re-pinned, and running `--with-deps` again on a package you already vendored completes the missing part of its graph.
 
-Scoped names retain their npm layout throughout the workflow: `@scope/pkg` is materialized at `inrepo_modules/@scope/pkg`, recorded under that full name in the graph, and replays through `sync` and `verify` like an unscoped package.
+Scoped instances retain their npm layout: `@scope/pkg@1.2.3` is materialized at `inrepo_modules/@scope/pkg@1.2.3`. The generated config entry keeps `name: "@scope/pkg"` as the import identity and records `module: "@scope/pkg@1.2.3"` as its storage identity. `sync`, `verify`, `diff`, `patch`, import rewiring, and patch paths use that module identity consistently.
 
-When npm metadata declares `repository.directory`, the selected subtree becomes the module root: filters, patches, diffs, updates, and import rewiring all use package-relative paths. Packages at the same repository commit share one unfiltered repository snapshot while retaining separate filtered module trees. The directory is pinned beside the git URL and commit in the lockfile; any such entry raises the lockfile to version 3 so older clients fail safely instead of silently materializing the repository root.
+When npm metadata declares `repository.directory`, the selected subtree becomes the module root: filters, patches, diffs, updates, and import rewiring all use package-relative paths. When that metadata is missing, registry dependency resolution scans the immutable checkout for a unique `package.json` matching the published package name and version (or a unique name match) and records the discovered directory. Packages at the same repository commit share one unfiltered repository snapshot while retaining separate filtered module trees. A strict npm `owner/repo` repository shorthand is normalized as GitHub metadata too.
 
-The edges themselves are recorded under `graph` in `inrepo.lock.json`, which raises the file to `lockfileVersion: 2`:
+The edges themselves are recorded under `graph` in `inrepo.lock.json`. A graph containing versioned module instances uses `lockfileVersion: 4`:
 
 ```json
 {
-  "lockfileVersion": 2,
-  "modules": { "…": {} },
+  "lockfileVersion": 4,
+  "modules": {
+    "picocolors@1.1.1": {
+      "source": "picocolors",
+      "gitUrl": "https://github.com/alexeyraspopov/picocolors.git",
+      "commit": "9f3e21c…",
+      "ref": "9f3e21c…",
+      "updatedAt": "…"
+    }
+  },
   "graph": {
     "commander": {
       "version": "12.1.0",
       "root": true,
       "dependencies": {
-        "picocolors": { "range": "^1.0.0", "version": "1.1.1", "module": "picocolors" }
+        "picocolors": { "range": "^1.0.0", "version": "1.1.1", "module": "picocolors@1.1.1" }
       }
     },
-    "picocolors": { "version": "1.1.1" }
+    "picocolors@1.1.1": { "version": "1.1.1" }
   }
 }
 ```
 
-Because every dependency entry pins an exact git URL and tag, `inrepo sync` and `inrepo verify` replay and check the whole graph from committed files with no registry access at all. A project with no recorded graph or package subdirectory keeps writing `lockfileVersion: 1`; a root-only graph uses version 2, and any selected repository directory uses version 3.
+Because every dependency entry pins an exact git URL and immutable commit, `inrepo sync` and `inrepo verify` replay and check the whole graph from committed files with no registry access. Lockfile versions 1–3 remain readable: version 1 is the original module map, version 2 adds a graph, and version 3 records repository subdirectories. Version 4 identifies module instances separately from their npm source names, and therefore also safely carries directory metadata.
 
-`inrepo update <package>` keeps that graph in step with the pin it moves: the package's recorded `version` and the resolved `version` on every edge pointing at it are re-read from the rebuilt checkout, so `inrepo verify` stays clean. Ranges are not re-resolved — that is `--with-deps`'s job — so when the new version no longer satisfies a dependent's recorded range, `update` names the dependent and the range in a warning and leaves the range alone.
+`inrepo update <package>` keeps a graph root in step with the pin it moves: the root's recorded `version` and the resolved `version` on every edge pointing at it are re-read from the rebuilt checkout, so `inrepo verify` stays clean. A versioned, graph-managed module instance cannot be updated directly; rerun `add --with-deps` for the graph root so its ranges are resolved together.
 
 Resolution fails — before a single package is vendored — when:
 
-- two packages need the same dependency at ranges no published version satisfies. The message names both dependents and their ranges. Resolving version conflicts is out of scope; vendor the conflicting packages separately.
+- no published version satisfies one dependency range.
 - a dependency uses a source `inrepo` cannot pin: `workspace:`, `file:`, `link:`, `catalog:`, `npm:` aliases, git URLs, tarball URLs, or a dist-tag.
-- a selected repository directory is missing, has no package manifest, or declares a different package.
-- a dependency has no usable `repository` URL on the registry, or its repository has no tag for the resolved version.
+- a selected repository directory is missing or declares a different package, or automatic directory discovery is missing or ambiguous.
+- a dependency has no usable `repository` URL on the registry, or npm metadata, release tags, and cross-checked registry-hosted provenance provide no immutable source commit.
 
 In every case the message names the dependency and the reason. A private or manually supplied monorepo package can be selected with `npx inrepo add <dep> --git <url> --repository-directory <path> --ref <ref>`.
 
-Overlapping ranges are not a conflict: `^1.0.0` and `>=1.2.0` unify onto the highest published version satisfying both.
+Compatible ranges reuse the same versioned module instance; incompatible ranges resolve to separate instances instead of conflicting.
 
 `--with-deps` cannot be combined with `--no-save`, since a graph is only replayable from committed config and lockfile entries.
 
@@ -363,7 +372,7 @@ node dist/cli.mjs --help
 ## Examples
 
 - [`examples/scriptc`](examples/scriptc) is the controlled performance benchmark: identical CLI behavior with registry-backed npm dependencies in dynamic scriptc versus patched upstream source in static scriptc.
-- [`examples/c15t-cli`](examples/c15t-cli) is the real-world `--with-deps` feasibility case study for `@c15t/cli@2.2.0`. Its executable probe records the current monorepo-subdirectory boundary without publishing a misleading benchmark.
+- [`examples/c15t-cli`](examples/c15t-cli) keeps the selected help-renderer benchmark narrow while a separate `--with-deps` probe resolves, materializes, syncs, and verifies the real 188-instance runtime graph. It does not claim full CLI execution.
 
 ## Documentation
 
