@@ -74,19 +74,13 @@ describe('CLI: help and argument validation (e2e)', () => {
 
   test('init is a no-op when already initialized', async () => {
     await writeFile(join(cwd, 'inrepo.json'), '{"packages":[]}\n', 'utf8');
-    const r = await runCli(['init'], {
-      cwd,
-      env: { INREPO_NONINTERACTIVE: '1' },
-    });
+    const r = await runCli(['init'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toMatch(/already initialized/);
   });
 
   test('init in non-TTY without INREPO_CONFIG fails with the setup hint', async () => {
-    const r = await runCli(['init'], {
-      cwd,
-      env: { INREPO_NONINTERACTIVE: '1' },
-    });
+    const r = await runCli(['init'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/first-time setup needs an interactive terminal/);
   });
@@ -172,30 +166,25 @@ describe('CLI: help and argument validation (e2e)', () => {
   });
 
   test('sync without config fails with first-time-setup hint in non-interactive mode', async () => {
-    const r = await runCli(['sync'], {
-      cwd,
-      env: { INREPO_NONINTERACTIVE: '1' },
-    });
+    const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/first-time setup needs an interactive terminal/);
   });
 
   test('sync with empty inrepo.json packages array reports a friendly empty-config error', async () => {
     await writeFile(join(cwd, 'inrepo.json'), JSON.stringify({ packages: [] }), 'utf8');
-    const r = await runCli(['sync'], {
-      cwd,
-      env: { INREPO_NONINTERACTIVE: '1' },
-    });
+    const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/empty "packages" array/);
   });
 
   test('sync with empty package.json#inrepo packages array reports the same error', async () => {
-    await writeFile(join(cwd, 'package.json'), JSON.stringify({ name: 'host', inrepo: { packages: [] } }), 'utf8');
-    const r = await runCli(['sync'], {
-      cwd,
-      env: { INREPO_NONINTERACTIVE: '1' },
-    });
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ name: 'host', inrepo: { packages: [] } }),
+      'utf8',
+    );
+    const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/empty "packages" array/);
   });
@@ -208,30 +197,21 @@ describe('CLI: help and argument validation (e2e)', () => {
 
   test('sync with malformed inrepo.json surfaces a clear error', async () => {
     await writeFile(join(cwd, 'inrepo.json'), '{ broken', 'utf8');
-    const r = await runCli(['sync'], {
-      cwd,
-      env: { INREPO_NONINTERACTIVE: '1' },
-    });
+    const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/Invalid JSON in inrepo\.json/);
   });
 
   test('sync with malformed package.json surfaces a clear error', async () => {
     await writeFile(join(cwd, 'package.json'), '{ broken', 'utf8');
-    const r = await runCli(['sync'], {
-      cwd,
-      env: { INREPO_NONINTERACTIVE: '1' },
-    });
+    const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/Invalid package\.json/);
   });
 
   test('sync with empty package.json surfaces a clear "file is empty" error (not a first-time-setup hint)', async () => {
     await writeFile(join(cwd, 'package.json'), '   \n', 'utf8');
-    const r = await runCli(['sync'], {
-      cwd,
-      env: { INREPO_NONINTERACTIVE: '1' },
-    });
+    const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/Invalid package\.json: file is empty/);
     expect(r.stderr).not.toMatch(/first-time setup needs an interactive terminal/);

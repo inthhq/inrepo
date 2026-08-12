@@ -46,11 +46,7 @@ export function parseAddArgs(argv: string[]): AddArgs {
           defaultValue: true,
           negatedName: '--no-save',
         },
-        withDeps: {
-          names: ['--with-deps'],
-          type: 'boolean',
-          defaultValue: false,
-        },
+        withDeps: { names: ['--with-deps'], type: 'boolean', defaultValue: false },
       },
       positionals: [{ name: 'name', required: true }],
     });
@@ -97,11 +93,7 @@ export function parseSyncArgs(argv: string[], globalForce = false): SyncArgs {
   try {
     const parsed = parseCommandArgs(argv, {
       flags: {
-        force: {
-          names: ['--force'],
-          type: 'boolean',
-          defaultValue: globalForce,
-        },
+        force: { names: ['--force'], type: 'boolean', defaultValue: globalForce },
       },
     });
 
@@ -117,11 +109,7 @@ export function parsePatchArgs(argv: string[]): PatchArgs {
   try {
     const parsed = parseCommandArgs(argv, {
       flags: {
-        message: {
-          names: ['-m', '--message'],
-          type: 'string',
-          valueName: 'reason',
-        },
+        message: { names: ['-m', '--message'], type: 'string', valueName: 'reason' },
       },
       positionals: [{ name: 'name' }],
     });
@@ -168,11 +156,7 @@ export function parseUpdateArgs(argv: string[]): UpdateArgs {
     const parsed = parseCommandArgs(argv, {
       flags: {
         ref: { names: ['--ref'], type: 'string', valueName: 'ref' },
-        continue: {
-          names: ['--continue'],
-          type: 'boolean',
-          defaultValue: false,
-        },
+        continue: { names: ['--continue'], type: 'boolean', defaultValue: false },
         abort: { names: ['--abort'], type: 'boolean', defaultValue: false },
       },
       positionals: [{ name: 'name', required: true }],

@@ -79,7 +79,11 @@ async function publishedRootDependencies(
  * Describe an already vendored package well enough to dedupe against it, using
  * only committed state: its lockfile pin plus the checkout's package.json.
  */
-async function describeVendored(cwd: string, name: string, entry: LockModule): Promise<VendoredPackage> {
+async function describeVendored(
+  cwd: string,
+  name: string,
+  entry: LockModule,
+): Promise<VendoredPackage> {
   const dest = moduleDestPath(cwd, name);
   let version: string | null = null;
   let dependencies: Record<string, string> = {};
@@ -108,7 +112,10 @@ async function describeVendored(cwd: string, name: string, entry: LockModule): P
  * written. Conflicts and unsupported sources throw here, so a failed
  * `--with-deps` leaves the project exactly as it was.
  */
-export async function planWithDeps(cwd: string, input: PlanWithDepsInput): Promise<WithDepsPlan> {
+export async function planWithDeps(
+  cwd: string,
+  input: PlanWithDepsInput,
+): Promise<WithDepsPlan> {
   const { root, globalExclude, globalKeep } = input;
   const { modules } = await readLockfile(cwd);
   const lockEntry = modules[root.name];
@@ -148,7 +155,7 @@ export async function planWithDeps(cwd: string, input: PlanWithDepsInput): Promi
         ? `Cannot resolve dependencies for "${root.name}": its selected package.json has no name.`
         : repositoryDirectory == null
         ? `Cannot resolve dependencies for "${root.name}": the repository root declares package "${manifest.name}". ` +
-          'Monorepo package subdirectories are not supported yet.'
+            'Monorepo package subdirectories are not supported yet.'
         : `Cannot resolve dependencies for "${root.name}": the selected repository directory declares package "${manifest.name}".`,
     );
   }
@@ -248,11 +255,17 @@ export async function preflightWithDeps(
 }
 
 /** Turn a resolved dependency into the spec `materializePackage` expects. */
-export function dependencySpec(node: ResolvedNode, dev: boolean, config: InrepoPackage | undefined): PackageSpec {
+export function dependencySpec(
+  node: ResolvedNode,
+  dev: boolean,
+  config: InrepoPackage | undefined,
+): PackageSpec {
   return {
     name: node.name,
     git: node.gitUrl,
-    ...(node.repositoryDirectory == null ? {} : { repositoryDirectory: node.repositoryDirectory }),
+    ...(node.repositoryDirectory == null
+      ? {}
+      : { repositoryDirectory: node.repositoryDirectory }),
     ...(node.ref == null ? {} : { ref: node.ref }),
     dev,
     ...(config?.exclude === undefined ? {} : { exclude: config.exclude }),

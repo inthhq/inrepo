@@ -21,7 +21,10 @@ import type { MaterializeOptions, PackageSpec } from './types.js';
 
 export const EMPTY_TREE_HASH = createHash('sha256').update('', 'utf8').digest('hex');
 
-export function mergedVendorExcludes(globalExclude: string[], pkg: { exclude?: string[] }): string[] {
+export function mergedVendorExcludes(
+  globalExclude: string[],
+  pkg: { exclude?: string[] },
+): string[] {
   return [...new Set([...globalExclude, ...(pkg.exclude ?? [])])];
 }
 
@@ -42,7 +45,9 @@ async function resolvePackageSource(
   if (pkg.git?.trim()) {
     const gitUrl = pkg.git.trim();
     const sameRepository =
-      fallback != null && normalizeRepositoryUrlIdentity(gitUrl) === normalizeRepositoryUrlIdentity(fallback.gitUrl);
+      fallback != null &&
+      normalizeRepositoryUrlIdentity(gitUrl) ===
+        normalizeRepositoryUrlIdentity(fallback.gitUrl);
     return {
       gitUrl,
       repositoryDirectory:
@@ -104,7 +109,9 @@ function reportRewire(name: string, report: RewireReport | null): void {
   if (report.unresolved.length > 0) {
     const shown = report.unresolved.slice(0, 5);
     const suffix =
-      report.unresolved.length > shown.length ? `, … (+${report.unresolved.length - shown.length} more)` : '';
+      report.unresolved.length > shown.length
+        ? `, … (+${report.unresolved.length - shown.length} more)`
+        : '';
     warn(
       `Warning: could not rewire ${countLabel(report.unresolved.length, 'specifier')} in "${name}" ` +
         `(left unchanged): ` +
@@ -116,7 +123,10 @@ function reportRewire(name: string, report: RewireReport | null): void {
 
 export function hasTreeDrift(result: Awaited<ReturnType<typeof compareTrees>>): boolean {
   return (
-    result.added.length > 0 || result.modified.length > 0 || result.removed.length > 0 || result.typeChanges.length > 0
+    result.added.length > 0 ||
+    result.modified.length > 0 ||
+    result.removed.length > 0 ||
+    result.typeChanges.length > 0
   );
 }
 

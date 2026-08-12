@@ -1,6 +1,11 @@
 import { existsSync } from 'node:fs';
 import { ensureInrepoInitialized } from '../../config/ensure-inrepo-initialized.js';
-import { isLoadConfigNotFoundError, loadConfig, loadGlobalExclude, loadGlobalKeep } from '../../config/load-config.js';
+import {
+  isLoadConfigNotFoundError,
+  loadConfig,
+  loadGlobalExclude,
+  loadGlobalKeep,
+} from '../../config/load-config.js';
 import { buildLockGraph } from '../../deps/build-lock-graph.js';
 import { renderDependencyTree } from '../../deps/render-dependency-tree.js';
 import { orderByDependencies } from '../../deps/vendored-graph.js';
@@ -79,7 +84,11 @@ async function vendorPlannedDependencies(
   }
 }
 
-export async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): Promise<void> {
+export async function performAdd(
+  cwd: string,
+  args: AddArgs,
+  opts: DispatchOpts = {},
+): Promise<void> {
   if (!opts.suppressBanners) printBanner();
   // First-time setup is only required when we're going to persist the entry.
   // `--no-save` is an explicit one-off vendor operation.
@@ -139,7 +148,10 @@ export async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts 
       globalExclude,
       globalKeep,
     });
-    ui.note(renderDependencyTree(plan.graph), `Dependency graph — ${plan.graph.nodes.length} package(s)`);
+    ui.note(
+      renderDependencyTree(plan.graph),
+      `Dependency graph — ${plan.graph.nodes.length} package(s)`,
+    );
     await preflightWithDeps(cwd, plan, {
       dev: args.dev,
       globalExclude,
@@ -181,7 +193,10 @@ export async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts 
       globalKeep,
       {
         mode: 'add',
-        force: !hasConfigEntry && !modules[args.name] && existsSync(moduleDestPath(cwd, args.name)),
+        force:
+          !hasConfigEntry &&
+          !modules[args.name] &&
+          existsSync(moduleDestPath(cwd, args.name)),
         lockEntry: modules[args.name],
         resolvedCommit: plan?.graph.nodes.find((node) => node.root)?.commit,
       },
@@ -219,7 +234,11 @@ export async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts 
       );
       return;
     }
-    outro(args.save ? `Recorded "${args.name}" in inrepo config.` : `Vendored "${args.name}" (not saved to config).`);
+    outro(
+      args.save
+        ? `Recorded "${args.name}" in inrepo config.`
+        : `Vendored "${args.name}" (not saved to config).`,
+    );
   }
 }
 
@@ -242,7 +261,8 @@ export async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | 
   const name = await text({
     message: 'Package name',
     placeholder: 'e.g. lodash or @scope/pkg',
-    validate: (value) => (value == null || value.trim() === '' ? 'Package name is required' : undefined),
+    validate: (value) =>
+      value == null || value.trim() === '' ? 'Package name is required' : undefined,
   });
   if (isCancel(name)) return onCancel();
 
