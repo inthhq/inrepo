@@ -20,6 +20,8 @@ export type FixturePackageSpec = {
   versions: Record<string, FixtureVersion>;
   /** Serve a packument with no `repository` field. */
   noRepository?: boolean;
+  /** Package root advertised by npm for this otherwise single-package repo. */
+  repositoryDirectory?: string;
   /** Commit the versions but never tag them. */
   untagged?: boolean;
 };
@@ -35,6 +37,18 @@ export type PackageGraphFixture = {
    */
   commitUpstream(name: string, files: Record<string, string>, message: string): Promise<string>;
   cleanup(): Promise<void>;
+};
+
+export type MonorepoFixturePackageSpec = {
+  name: string;
+  directory: string;
+  version: string;
+  /** Dependencies in the git checkout, before publishing rewrites workspace ranges. */
+  checkoutDependencies?: Record<string, string>;
+  /** Exact dependencies exposed by the npm registry manifest. */
+  publishedDependencies?: Record<string, string>;
+  manifest?: Record<string, unknown>;
+  files?: Record<string, string>;
 };
 
 function safeDirName(name: string): string {
@@ -101,7 +115,15 @@ function packumentFor(spec: FixturePackageSpec, bare: string): Record<string, un
   return {
     name: spec.name,
     'dist-tags': { latest: published[published.length - 1] },
-    ...(spec.noRepository ? {} : { repository: { type: 'git', url: bare } }),
+    ...(spec.noRepository
+      ? {}
+      : {
+          repository: {
+            type: 'git',
+            url: bare,
+            ...(spec.repositoryDirectory == null ? {} : { directory: spec.repositoryDirectory }),
+          },
+        }),
     versions,
   };
 }
@@ -165,6 +187,123 @@ export async function makePackageGraphFixture(
       await runGit(['push', 'origin', 'HEAD'], work);
       return runGit(['rev-parse', 'HEAD'], work);
     },
+    cleanup: async () => {
+      await server.stop(true);
+      await rm(root, { recursive: true, force: true });
+    },
+  };
+}
+
+/**
+ * Build several packages at one commit in one repository. Each packument points
+ * at its package subtree through `repository.directory`.
+ */
+export async function makeMonorepoPackageGraphFixture(
+  specs: MonorepoFixturePackageSpec[],
+  prefix = 'inrepo-monorepo-graph-fixture-',
+): Promise<PackageGraphFixture & { commit: string; gitConfigPath: string }> {
+  const root = await makeTmpDir(prefix);
+  const bare = join(root, 'monorepo.git');
+  const work = join(root, 'monorepo-work');
+  await runGit(['init', '--bare', '-b', 'main', bare]);
+  await runGit(['init', '-b', 'main', work]);
+  await mkdir(work, { recursive: true });
+  await writeFile(
+    join(work, 'package.json'),
+    `${JSON.stringify({ name: 'fixture-workspace', private: true, workspaces: ['packages/*'] }, null, 2)}\n`,
+    'utf8',
+  );
+
+  for (const spec of specs) {
+    const packageRoot = join(work, ...spec.directory.split('/'));
+    await mkdir(packageRoot, { recursive: true });
+    await writeFile(
+      join(packageRoot, 'package.json'),
+      `${JSON.stringify(
+        {
+          name: spec.name,
+          version: spec.version,
+          main: 'index.js',
+          ...(spec.manifest ?? {}),
+          ...(spec.checkoutDependencies ? { dependencies: spec.checkoutDependencies } : {}),
+        },
+        null,
+        2,
+      )}\n`,
+      'utf8',
+    );
+    for (const [path, contents] of Object.entries(
+      spec.files ?? {
+        'index.js': `module.exports = ${JSON.stringify(spec.name)};\n`,
+      },
+    )) {
+      const abs = join(packageRoot, ...path.split('/'));
+      await mkdir(dirname(abs), { recursive: true });
+      await writeFile(abs, contents, 'utf8');
+    }
+  }
+
+  await runGit(['add', '--all', '.'], work);
+  await runGit(['commit', '-m', 'publish workspace packages'], work);
+  const commit = (await runGit(['rev-parse', 'HEAD'], work)).trim();
+  for (const version of new Set(specs.map((spec) => spec.version))) {
+    await runGit(['tag', `v${version}`], work);
+  }
+  await runGit(['remote', 'add', 'origin', bare], work);
+  await runGit(['push', '-u', 'origin', 'main'], work);
+  await runGit(['push', 'origin', '--tags'], work);
+
+  const publicGitUrl = 'https://github.com/inrepo-fixture/monorepo.git';
+  const gitConfigPath = join(root, 'gitconfig');
+  await writeFile(gitConfigPath, `[url "${bare}"]\n\tinsteadOf = ${publicGitUrl}\n`, 'utf8');
+
+  const packuments = new Map<string, Record<string, unknown>>();
+  for (const spec of specs) {
+    const repository = {
+      type: 'git',
+      url: publicGitUrl,
+      directory: spec.directory,
+    };
+    packuments.set(spec.name, {
+      name: spec.name,
+      'dist-tags': { latest: spec.version },
+      repository,
+      versions: {
+        [spec.version]: {
+          name: spec.name,
+          version: spec.version,
+          repository,
+          ...(spec.publishedDependencies ? { dependencies: spec.publishedDependencies } : {}),
+        },
+      },
+    });
+  }
+
+  const server = Bun.serve({
+    hostname: '127.0.0.1',
+    port: 0,
+    fetch(request) {
+      const name = decodeURIComponent(new URL(request.url).pathname.slice(1));
+      const packument = packuments.get(name);
+      return packument
+        ? new Response(JSON.stringify(packument), {
+            headers: { 'content-type': 'application/json' },
+          })
+        : new Response(JSON.stringify({ error: 'Not found' }), {
+            status: 404,
+            headers: { 'content-type': 'application/json' },
+          });
+    },
+  });
+
+  return {
+    registryUrl: `http://127.0.0.1:${server.port}`,
+    gitUrl(name: string): string {
+      if (!packuments.has(name)) throw new Error(`No fixture package "${name}"`);
+      return publicGitUrl;
+    },
+    commit,
+    gitConfigPath,
     cleanup: async () => {
       await server.stop(true);
       await rm(root, { recursive: true, force: true });

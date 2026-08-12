@@ -3,6 +3,8 @@ import type { LockModule } from '../types/lock-module.js';
 export type AddArgs = {
   name: string;
   git?: string;
+  /** Package root within a manually supplied git repository. */
+  repositoryDirectory?: string;
   ref?: string;
   save: boolean;
   dev: boolean;
@@ -57,6 +59,8 @@ export type MaterializeOptions = {
   mode: 'sync' | 'add';
   force: boolean;
   lockEntry?: LockModule;
+  /** Exact graph commit already resolved and preflighted by `add --with-deps`. */
+  resolvedCommit?: string;
 };
 
 export type DispatchOpts = {

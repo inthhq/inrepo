@@ -9,6 +9,7 @@ import { backupDirPath, overlayDirPath } from '../overlay/overlay-paths.js';
 import { hashTree } from '../overlay/tree-hash.js';
 import { copyTree } from '../overlay/tree-utils.js';
 import { upsertRootPackageJsonDependency } from '../package-json/upsert-vendored-package-ref.js';
+import { readPackageManifest } from '../package-json/read-package-manifest.js';
 import { moduleDestPath } from '../paths/module-dest-path.js';
 import { normalizeRepositoryUrlIdentity } from '../registry/normalize-repository-url-identity.js';
 import { resolvePackageSourceFromNpm } from '../registry/resolve-git-url-from-npm.js';
@@ -20,10 +21,7 @@ import type { MaterializeOptions, PackageSpec } from './types.js';
 
 export const EMPTY_TREE_HASH = createHash('sha256').update('', 'utf8').digest('hex');
 
-export function mergedVendorExcludes(
-  globalExclude: string[],
-  pkg: { exclude?: string[] },
-): string[] {
+export function mergedVendorExcludes(globalExclude: string[], pkg: { exclude?: string[] }): string[] {
   return [...new Set([...globalExclude, ...(pkg.exclude ?? [])])];
 }
 
@@ -44,9 +42,7 @@ async function resolvePackageSource(
   if (pkg.git?.trim()) {
     const gitUrl = pkg.git.trim();
     const sameRepository =
-      fallback != null &&
-      normalizeRepositoryUrlIdentity(gitUrl) ===
-        normalizeRepositoryUrlIdentity(fallback.gitUrl);
+      fallback != null && normalizeRepositoryUrlIdentity(gitUrl) === normalizeRepositoryUrlIdentity(fallback.gitUrl);
     return {
       gitUrl,
       repositoryDirectory:
@@ -108,9 +104,7 @@ function reportRewire(name: string, report: RewireReport | null): void {
   if (report.unresolved.length > 0) {
     const shown = report.unresolved.slice(0, 5);
     const suffix =
-      report.unresolved.length > shown.length
-        ? `, … (+${report.unresolved.length - shown.length} more)`
-        : '';
+      report.unresolved.length > shown.length ? `, … (+${report.unresolved.length - shown.length} more)` : '';
     warn(
       `Warning: could not rewire ${countLabel(report.unresolved.length, 'specifier')} in "${name}" ` +
         `(left unchanged): ` +
@@ -122,10 +116,7 @@ function reportRewire(name: string, report: RewireReport | null): void {
 
 export function hasTreeDrift(result: Awaited<ReturnType<typeof compareTrees>>): boolean {
   return (
-    result.added.length > 0 ||
-    result.modified.length > 0 ||
-    result.removed.length > 0 ||
-    result.typeChanges.length > 0
+    result.added.length > 0 || result.modified.length > 0 || result.removed.length > 0 || result.typeChanges.length > 0
   );
 }
 
@@ -169,7 +160,11 @@ export async function materializePackage(
       opts.lockEntry != null &&
       resolvedLockGitUrl === normalizeRepositoryUrlIdentity(gitUrl) &&
       opts.lockEntry.ref === (ref ?? null);
-    const pinnedCommit = pkg.commit?.trim() || (usePinnedLock ? opts.lockEntry?.commit : null) || null;
+    const pinnedCommit =
+      pkg.commit?.trim() ||
+      (usePinnedLock ? opts.lockEntry?.commit : null) ||
+      (opts.mode === 'add' ? (opts.resolvedCommit ?? null) : null) ||
+      null;
 
     s.message(
       pinnedCommit
@@ -187,6 +182,19 @@ export async function materializePackage(
       exclude: excludeList,
     });
     gitUrl = pristine.gitUrl;
+    if (opts.mode === 'add' && repositoryDirectory != null) {
+      const manifest = await readPackageManifest(pristine.dir);
+      if (manifest == null) {
+        throw new Error(`Cannot vendor "${pkg.name}": its selected repository directory has no package.json.`);
+      }
+      if (manifest.name !== pkg.name) {
+        throw new Error(
+          manifest.name == null
+            ? `Cannot vendor "${pkg.name}": its selected repository directory package.json has no name.`
+            : `Cannot vendor "${pkg.name}": its selected repository directory declares package "${manifest.name}".`,
+        );
+      }
+    }
 
     const overlayHash = await hashTree(overlayDirPath(cwd, pkg.name));
     const stage = await makeSiblingStage(dest, '.inrepo-next-');

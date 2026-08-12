@@ -57,15 +57,29 @@ export function resolveExistingRootPin(
   return { git, ref, commit };
 }
 
+async function publishedRootDependencies(
+  name: string,
+  version: string | null,
+): Promise<Record<string, string> | null> {
+  if (version == null) return null;
+  try {
+    const registryPackage = await loadRegistryPackage(name);
+    return (
+      registryPackage.manifests.find((manifest) => manifest.version === version)?.dependencies ??
+      null
+    );
+  } catch {
+    // A manually supplied git source must remain usable without registry
+    // metadata. Its checkout manifest is the compatibility fallback.
+    return null;
+  }
+}
+
 /**
  * Describe an already vendored package well enough to dedupe against it, using
  * only committed state: its lockfile pin plus the checkout's package.json.
  */
-async function describeVendored(
-  cwd: string,
-  name: string,
-  entry: LockModule,
-): Promise<VendoredPackage> {
+async function describeVendored(cwd: string, name: string, entry: LockModule): Promise<VendoredPackage> {
   const dest = moduleDestPath(cwd, name);
   let version: string | null = null;
   let dependencies: Record<string, string> = {};
@@ -94,10 +108,7 @@ async function describeVendored(
  * written. Conflicts and unsupported sources throw here, so a failed
  * `--with-deps` leaves the project exactly as it was.
  */
-export async function planWithDeps(
-  cwd: string,
-  input: PlanWithDepsInput,
-): Promise<WithDepsPlan> {
+export async function planWithDeps(cwd: string, input: PlanWithDepsInput): Promise<WithDepsPlan> {
   const { root, globalExclude, globalKeep } = input;
   const { modules } = await readLockfile(cwd);
   const lockEntry = modules[root.name];
@@ -131,24 +142,31 @@ export async function planWithDeps(
         'Monorepo package subdirectories are not supported yet.',
     );
   }
-  if (manifest.name != null && manifest.name !== root.name) {
+  if (manifest.name !== root.name) {
     throw new DependencyResolutionError(
-      `Cannot resolve dependencies for "${root.name}": the repository root declares package "${manifest.name}". ` +
-        'Monorepo package subdirectories are not supported yet.',
+      manifest.name == null
+        ? `Cannot resolve dependencies for "${root.name}": its selected package.json has no name.`
+        : repositoryDirectory == null
+        ? `Cannot resolve dependencies for "${root.name}": the repository root declares package "${manifest.name}". ` +
+          'Monorepo package subdirectories are not supported yet.'
+        : `Cannot resolve dependencies for "${root.name}": the selected repository directory declares package "${manifest.name}".`,
     );
   }
+  let dependencies =
+    (!root.git?.trim()
+      ? await publishedRootDependencies(root.name, manifest.version)
+      : null) ?? manifest.dependencies;
 
   // The generated checkout is the patched tree (series already applied). Prefer
   // its dependencies over the pristine cache so a committed series that edits
   // package.json#dependencies is visible to graph resolution.
   const dest = moduleDestPath(cwd, root.name);
-  let dependencies = manifest.dependencies;
   if (existsSync(dest)) {
     try {
       const patched = await readPackageManifest(dest);
       if (patched != null) dependencies = patched.dependencies;
     } catch {
-      // Unreadable checkout: fall back to the pristine manifest.
+      // Unreadable checkout: fall back to the published/pristine manifest.
     }
   }
 
@@ -182,18 +200,59 @@ export async function planWithDeps(
   };
 }
 
+/**
+ * Prepare and validate every newly selected dependency subtree before config,
+ * graph, or generated module state is mutated.
+ */
+export async function preflightWithDeps(
+  cwd: string,
+  plan: WithDepsPlan,
+  input: {
+    dev: boolean;
+    globalExclude: string[];
+    globalKeep: string[];
+    configByName: Map<string, InrepoPackage>;
+  },
+): Promise<void> {
+  for (const node of plan.pending) {
+    const spec = dependencySpec(node, input.dev, input.configByName.get(node.name));
+    const pristine = await ensurePristine({
+      cwd,
+      name: node.name,
+      gitUrl: node.gitUrl,
+      repositoryDirectory: node.repositoryDirectory,
+      ref: node.ref,
+      commit: node.commit,
+      keep: mergedVendorKeeps(input.globalKeep, spec),
+      exclude: mergedVendorExcludes(input.globalExclude, spec),
+    });
+    const manifest = await readPackageManifest(pristine.dir);
+    if (manifest == null) {
+      throw new DependencyResolutionError(
+        `Cannot vendor "${node.name}": its selected repository directory has no package.json.`,
+      );
+    }
+    if (manifest.name !== node.name) {
+      throw new DependencyResolutionError(
+        manifest.name == null
+          ? `Cannot vendor "${node.name}": its selected repository directory package.json has no name.`
+          : `Cannot vendor "${node.name}": its selected repository directory declares package "${manifest.name}".`,
+      );
+    }
+    if (manifest.version != null && node.version != null && manifest.version !== node.version) {
+      throw new DependencyResolutionError(
+        `Cannot vendor "${node.name}@${node.version}": its selected repository directory declares version "${manifest.version}".`,
+      );
+    }
+  }
+}
+
 /** Turn a resolved dependency into the spec `materializePackage` expects. */
-export function dependencySpec(
-  node: ResolvedNode,
-  dev: boolean,
-  config: InrepoPackage | undefined,
-): PackageSpec {
+export function dependencySpec(node: ResolvedNode, dev: boolean, config: InrepoPackage | undefined): PackageSpec {
   return {
     name: node.name,
     git: node.gitUrl,
-    ...(node.repositoryDirectory == null
-      ? {}
-      : { repositoryDirectory: node.repositoryDirectory }),
+    ...(node.repositoryDirectory == null ? {} : { repositoryDirectory: node.repositoryDirectory }),
     ...(node.ref == null ? {} : { ref: node.ref }),
     dev,
     ...(config?.exclude === undefined ? {} : { exclude: config.exclude }),

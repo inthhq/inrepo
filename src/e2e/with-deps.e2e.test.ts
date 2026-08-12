@@ -3,10 +3,7 @@ import { existsSync } from 'node:fs';
 import { cp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { bootstrapHostPackageJson, envFor, readJson } from '../test-utils/e2e-harness.js';
-import {
-  makePackageGraphFixture,
-  type PackageGraphFixture,
-} from '../test-utils/package-graph-fixture.js';
+import { makePackageGraphFixture, type PackageGraphFixture } from '../test-utils/package-graph-fixture.js';
 import { runCli } from '../test-utils/run-cli.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
 
@@ -24,7 +21,9 @@ describe('CLI: add --with-deps (e2e)', () => {
     fx = await makePackageGraphFixture([
       {
         name: 'alpha',
-        versions: { '1.0.0': { dependencies: { beta: '^1.0.0', gamma: '^2.0.0' } } },
+        versions: {
+          '1.0.0': { dependencies: { beta: '^1.0.0', gamma: '^2.0.0' } },
+        },
       },
       {
         name: 'beta',
@@ -85,7 +84,9 @@ describe('CLI: add --with-deps (e2e)', () => {
       },
       beta: {
         version: '1.2.0',
-        dependencies: { gamma: { range: '^2.0.0', version: '2.1.0', module: 'gamma' } },
+        dependencies: {
+          gamma: { range: '^2.0.0', version: '2.1.0', module: 'gamma' },
+        },
       },
       gamma: { version: '2.1.0' },
     });
@@ -99,12 +100,12 @@ describe('CLI: add --with-deps (e2e)', () => {
   });
 
   test('sync and verify replay a committed graph with no registry access', async () => {
-    expect(
-      (await runCli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha'], { cwd, env }))
-        .exitCode,
-    ).toBe(0);
+    expect((await runCli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha'], { cwd, env })).exitCode).toBe(0);
 
-    const offline = { ...envFor('inrepo.json'), INREPO_REGISTRY: OFFLINE_REGISTRY };
+    const offline = {
+      ...envFor('inrepo.json'),
+      INREPO_REGISTRY: OFFLINE_REGISTRY,
+    };
     const sync = await runCli(['sync'], { cwd, env: offline });
     expect(sync.exitCode).toBe(0);
     expect(sync.stdout).toMatch(/Done\. 3 package\(s\) synced/);
@@ -115,10 +116,7 @@ describe('CLI: add --with-deps (e2e)', () => {
   });
 
   test('verify fails when the committed graph disagrees with the lockfile', async () => {
-    expect(
-      (await runCli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha'], { cwd, env }))
-        .exitCode,
-    ).toBe(0);
+    expect((await runCli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha'], { cwd, env })).exitCode).toBe(0);
 
     const lockPath = join(cwd, 'inrepo.lock.json');
     const lock = await readJson(lockPath);
@@ -166,7 +164,12 @@ describe('CLI: add --with-deps (e2e)', () => {
 
   test('completes the graph when the root is already vendored', async () => {
     expect(
-      (await runCli(['add', '--git', fx.gitUrl('alpha'), 'alpha'], { cwd, env })).exitCode,
+      (
+        await runCli(['add', '--git', fx.gitUrl('alpha'), 'alpha'], {
+          cwd,
+          env,
+        })
+      ).exitCode,
     ).toBe(0);
     expect(existsSync(join(cwd, 'inrepo_modules', 'beta'))).toBe(false);
 
@@ -281,7 +284,10 @@ describe('CLI: add --with-deps (e2e)', () => {
   });
 
   test('plain add is unchanged: one package, lockfileVersion 1, no graph', async () => {
-    const add = await runCli(['add', '--git', fx.gitUrl('alpha'), 'alpha'], { cwd, env });
+    const add = await runCli(['add', '--git', fx.gitUrl('alpha'), 'alpha'], {
+      cwd,
+      env,
+    });
     expect(add.exitCode).toBe(0);
     expect(add.stdout).toMatch(/Recorded "alpha" in inrepo config/);
 
@@ -303,16 +309,17 @@ describe('CLI: add --with-deps (e2e)', () => {
       { name: '@scope/leaf', versions: { '1.1.0': {} } },
     ]);
     try {
-      const scopedEnv = { ...envFor('inrepo.json'), INREPO_REGISTRY: scoped.registryUrl };
-      const add = await runCli(
-        ['add', '--git', scoped.gitUrl('@scope/root'), '--with-deps', '@scope/root'],
-        { cwd, env: scopedEnv },
-      );
+      const scopedEnv = {
+        ...envFor('inrepo.json'),
+        INREPO_REGISTRY: scoped.registryUrl,
+      };
+      const add = await runCli(['add', '--git', scoped.gitUrl('@scope/root'), '--with-deps', '@scope/root'], {
+        cwd,
+        env: scopedEnv,
+      });
       expect(add.exitCode).toBe(0);
       for (const name of ['root', 'leaf']) {
-        expect(existsSync(join(cwd, 'inrepo_modules', '@scope', name, 'package.json'))).toBe(
-          true,
-        );
+        expect(existsSync(join(cwd, 'inrepo_modules', '@scope', name, 'package.json'))).toBe(true);
       }
 
       const lock = await readJson(join(cwd, 'inrepo.lock.json'));
@@ -321,13 +328,20 @@ describe('CLI: add --with-deps (e2e)', () => {
           version: '1.0.0',
           root: true,
           dependencies: {
-            '@scope/leaf': { range: '^1.0.0', version: '1.1.0', module: '@scope/leaf' },
+            '@scope/leaf': {
+              range: '^1.0.0',
+              version: '1.1.0',
+              module: '@scope/leaf',
+            },
           },
         },
         '@scope/leaf': { version: '1.1.0' },
       });
 
-      const offline = { ...envFor('inrepo.json'), INREPO_REGISTRY: OFFLINE_REGISTRY };
+      const offline = {
+        ...envFor('inrepo.json'),
+        INREPO_REGISTRY: OFFLINE_REGISTRY,
+      };
       expect((await runCli(['sync'], { cwd, env: offline })).exitCode).toBe(0);
       expect((await runCli(['verify'], { cwd, env: offline })).exitCode).toBe(0);
     } finally {
@@ -336,7 +350,10 @@ describe('CLI: add --with-deps (e2e)', () => {
   });
 
   test('--with-deps cannot be combined with --no-save', async () => {
-    const r = await runCli(['add', '--with-deps', '--no-save', 'alpha'], { cwd, env });
+    const r = await runCli(['add', '--with-deps', '--no-save', 'alpha'], {
+      cwd,
+      env,
+    });
     expect(r.exitCode).toBe(1);
     expect(r.stderr).toMatch(/--with-deps cannot be combined with --no-save/);
   });
@@ -365,10 +382,18 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
     const fx = await makePackageGraphFixture([
       {
         name: 'root-pkg',
-        versions: { '1.0.0': { dependencies: { left: '^1.0.0', right: '^1.0.0' } } },
+        versions: {
+          '1.0.0': { dependencies: { left: '^1.0.0', right: '^1.0.0' } },
+        },
       },
-      { name: 'left', versions: { '1.0.0': { dependencies: { shared: '^1.0.0' } } } },
-      { name: 'right', versions: { '1.0.0': { dependencies: { shared: '^2.0.0' } } } },
+      {
+        name: 'left',
+        versions: { '1.0.0': { dependencies: { shared: '^1.0.0' } } },
+      },
+      {
+        name: 'right',
+        versions: { '1.0.0': { dependencies: { shared: '^2.0.0' } } },
+      },
       { name: 'shared', versions: { '1.0.0': {}, '2.0.0': {} } },
     ]);
     try {
@@ -390,7 +415,9 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
     const fx = await makePackageGraphFixture([
       {
         name: 'root-pkg',
-        versions: { '1.0.0': { dependencies: { 'internal-tool': 'workspace:^' } } },
+        versions: {
+          '1.0.0': { dependencies: { 'internal-tool': 'workspace:^' } },
+        },
       },
     ]);
     try {
@@ -399,9 +426,7 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
         env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl },
       });
       expect(r.exitCode).toBe(1);
-      expect(r.stderr).toMatch(
-        /"root-pkg" depends on "internal-tool" as "workspace:\^" \(workspace protocol/,
-      );
+      expect(r.stderr).toMatch(/"root-pkg" depends on "internal-tool" as "workspace:\^" \(workspace protocol/);
       await expectNothingVendored();
     } finally {
       await fx.cleanup();
@@ -418,10 +443,10 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
       { name: 'leaf', versions: { '1.0.0': {} } },
     ]);
     try {
-      const r = await runCli(
-        ['add', '--git', fx.gitUrl('@scope/cli'), '--with-deps', '@scope/cli'],
-        { cwd, env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl } },
-      );
+      const r = await runCli(['add', '--git', fx.gitUrl('@scope/cli'), '--with-deps', '@scope/cli'], {
+        cwd,
+        env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl },
+      });
       expect(r.exitCode).toBe(1);
       expect(r.stderr).toContain(
         'the repository root declares package "workspace-root". Monorepo package subdirectories are not supported yet.',
@@ -434,7 +459,10 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
 
   test('a dependency with no published tag fails with the package named', async () => {
     const fx = await makePackageGraphFixture([
-      { name: 'root-pkg', versions: { '1.0.0': { dependencies: { loose: '^1.0.0' } } } },
+      {
+        name: 'root-pkg',
+        versions: { '1.0.0': { dependencies: { loose: '^1.0.0' } } },
+      },
       { name: 'loose', versions: { '1.0.0': {} }, untagged: true },
     ]);
     try {
@@ -452,7 +480,10 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
 
   test('a dependency with no repository metadata fails with the package named', async () => {
     const fx = await makePackageGraphFixture([
-      { name: 'root-pkg', versions: { '1.0.0': { dependencies: { hidden: '^1.0.0' } } } },
+      {
+        name: 'root-pkg',
+        versions: { '1.0.0': { dependencies: { hidden: '^1.0.0' } } },
+      },
       { name: 'hidden', versions: { '1.0.0': {} }, noRepository: true },
     ]);
     try {
@@ -462,6 +493,31 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
       });
       expect(r.exitCode).toBe(1);
       expect(r.stderr).toMatch(/"hidden@1\.0\.0".*no usable "repository" clone URL/s);
+      await expectNothingVendored();
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  test('an invalid dependency subtree fails before config, graph, or modules are written', async () => {
+    const fx = await makePackageGraphFixture([
+      {
+        name: 'root-pkg',
+        versions: { '1.0.0': { dependencies: { broken: '^1.0.0' } } },
+      },
+      {
+        name: 'broken',
+        versions: { '1.0.0': {} },
+        repositoryDirectory: 'packages/missing',
+      },
+    ]);
+    try {
+      const r = await runCli(['add', '--git', fx.gitUrl('root-pkg'), '--with-deps', 'root-pkg'], {
+        cwd,
+        env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl },
+      });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/Repository directory "packages\/missing" for "broken" does not exist/);
       await expectNothingVendored();
     } finally {
       await fx.cleanup();

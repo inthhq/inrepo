@@ -1,4 +1,5 @@
 import { isCliError, parseCommandArgs } from 'hexbus';
+import { normalizeRepositoryDirectory } from '../registry/normalize-repository-directory.js';
 import type { AddArgs, DiffArgs, MigrateArgs, PatchArgs, SyncArgs, UpdateArgs } from './types.js';
 
 function parserDetails(error: unknown): string {
@@ -33,6 +34,11 @@ export function parseAddArgs(argv: string[]): AddArgs {
       flags: {
         dev: { names: ['-D', '--dev'], type: 'boolean', defaultValue: false },
         git: { names: ['--git'], type: 'string', valueName: 'url' },
+        repositoryDirectory: {
+          names: ['--repository-directory'],
+          type: 'string',
+          valueName: 'path',
+        },
         ref: { names: ['--ref'], type: 'string', valueName: 'ref' },
         save: {
           names: ['--save'],
@@ -40,7 +46,11 @@ export function parseAddArgs(argv: string[]): AddArgs {
           defaultValue: true,
           negatedName: '--no-save',
         },
-        withDeps: { names: ['--with-deps'], type: 'boolean', defaultValue: false },
+        withDeps: {
+          names: ['--with-deps'],
+          type: 'boolean',
+          defaultValue: false,
+        },
       },
       positionals: [{ name: 'name', required: true }],
     });
@@ -50,6 +60,13 @@ export function parseAddArgs(argv: string[]): AddArgs {
     }
     if (parsed.flags.ref !== undefined && parsed.flags.ref.trim() === '') {
       throw new Error('--ref requires a value');
+    }
+    const repositoryDirectory =
+      parsed.flags.repositoryDirectory === undefined
+        ? undefined
+        : normalizeRepositoryDirectory(parsed.flags.repositoryDirectory, '--repository-directory');
+    if (parsed.flags.repositoryDirectory !== undefined && repositoryDirectory == null) {
+      throw new Error('--repository-directory requires a package subdirectory');
     }
     // The dependency graph is only replayable from committed files, so there is
     // nothing meaningful `--with-deps --no-save` could leave behind.
@@ -61,6 +78,7 @@ export function parseAddArgs(argv: string[]): AddArgs {
       name: parsed.positionals.name,
       save: parsed.flags.save,
       git: parsed.flags.git?.trim() || undefined,
+      ...(repositoryDirectory == null ? {} : { repositoryDirectory }),
       ref: parsed.flags.ref?.trim() || undefined,
       dev: parsed.flags.dev,
       withDeps: parsed.flags.withDeps,
@@ -69,6 +87,7 @@ export function parseAddArgs(argv: string[]): AddArgs {
     rethrowCommandArgError(error, {
       POSITIONAL_REQUIRED: 'add requires a package <name>',
       '--git': '--git requires a URL',
+      '--repository-directory': '--repository-directory requires a path',
       '--ref': '--ref requires a value',
     });
   }
@@ -78,7 +97,11 @@ export function parseSyncArgs(argv: string[], globalForce = false): SyncArgs {
   try {
     const parsed = parseCommandArgs(argv, {
       flags: {
-        force: { names: ['--force'], type: 'boolean', defaultValue: globalForce },
+        force: {
+          names: ['--force'],
+          type: 'boolean',
+          defaultValue: globalForce,
+        },
       },
     });
 
@@ -94,7 +117,11 @@ export function parsePatchArgs(argv: string[]): PatchArgs {
   try {
     const parsed = parseCommandArgs(argv, {
       flags: {
-        message: { names: ['-m', '--message'], type: 'string', valueName: 'reason' },
+        message: {
+          names: ['-m', '--message'],
+          type: 'string',
+          valueName: 'reason',
+        },
       },
       positionals: [{ name: 'name' }],
     });
@@ -141,7 +168,11 @@ export function parseUpdateArgs(argv: string[]): UpdateArgs {
     const parsed = parseCommandArgs(argv, {
       flags: {
         ref: { names: ['--ref'], type: 'string', valueName: 'ref' },
-        continue: { names: ['--continue'], type: 'boolean', defaultValue: false },
+        continue: {
+          names: ['--continue'],
+          type: 'boolean',
+          defaultValue: false,
+        },
         abort: { names: ['--abort'], type: 'boolean', defaultValue: false },
       },
       positionals: [{ name: 'name', required: true }],

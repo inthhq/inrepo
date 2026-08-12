@@ -1,11 +1,6 @@
 import { existsSync } from 'node:fs';
 import { ensureInrepoInitialized } from '../../config/ensure-inrepo-initialized.js';
-import {
-  isLoadConfigNotFoundError,
-  loadConfig,
-  loadGlobalExclude,
-  loadGlobalKeep,
-} from '../../config/load-config.js';
+import { isLoadConfigNotFoundError, loadConfig, loadGlobalExclude, loadGlobalKeep } from '../../config/load-config.js';
 import { buildLockGraph } from '../../deps/build-lock-graph.js';
 import { renderDependencyTree } from '../../deps/render-dependency-tree.js';
 import { orderByDependencies } from '../../deps/vendored-graph.js';
@@ -24,6 +19,7 @@ import { materializePackage } from '../vendor.js';
 import {
   dependencySpec,
   planWithDeps,
+  preflightWithDeps,
   resolveExistingRootPin,
   type WithDepsPlan,
 } from '../with-deps.js';
@@ -64,6 +60,7 @@ async function vendorPlannedDependencies(
     await saveConfigEntry(cwd, {
       name: node.name,
       git: node.gitUrl,
+      ...(node.repositoryDirectory == null ? {} : { repositoryDirectory: node.repositoryDirectory }),
       ...(node.ref == null ? {} : { ref: node.ref }),
       dev: ctx.dev,
     });
@@ -77,15 +74,12 @@ async function vendorPlannedDependencies(
       mode: 'add',
       force: config == null && !modules[node.name] && existsSync(moduleDestPath(cwd, node.name)),
       lockEntry: modules[node.name],
+      resolvedCommit: node.commit,
     });
   }
 }
 
-export async function performAdd(
-  cwd: string,
-  args: AddArgs,
-  opts: DispatchOpts = {},
-): Promise<void> {
+export async function performAdd(cwd: string, args: AddArgs, opts: DispatchOpts = {}): Promise<void> {
   if (!opts.suppressBanners) printBanner();
   // First-time setup is only required when we're going to persist the entry.
   // `--no-save` is an explicit one-off vendor operation.
@@ -97,6 +91,7 @@ export async function performAdd(
   let globalKeep: string[] = [];
   let pkgExclude: string[] | undefined;
   let pkgKeep: string[] | undefined;
+  let pkgRepositoryDirectory: string | undefined;
   let hasConfigEntry = false;
   const configByName = new Map<string, InrepoPackage>();
   const { modules } = await readLockfile(cwd);
@@ -109,6 +104,7 @@ export async function performAdd(
     hasConfigEntry = entry != null;
     pkgExclude = entry?.exclude;
     pkgKeep = entry?.keep;
+    pkgRepositoryDirectory = args.repositoryDirectory ?? entry?.repositoryDirectory;
   } catch (e) {
     if (!isLoadConfigNotFoundError(e)) throw e;
     globalExclude = await loadGlobalExclude(cwd);
@@ -133,6 +129,7 @@ export async function performAdd(
       root: {
         name: args.name,
         git: pin.git,
+        repositoryDirectory: pkgRepositoryDirectory,
         ref: pin.ref,
         commit: pin.commit,
         dev: args.dev,
@@ -142,10 +139,13 @@ export async function performAdd(
       globalExclude,
       globalKeep,
     });
-    ui.note(
-      renderDependencyTree(plan.graph),
-      `Dependency graph — ${plan.graph.nodes.length} package(s)`,
-    );
+    ui.note(renderDependencyTree(plan.graph), `Dependency graph — ${plan.graph.nodes.length} package(s)`);
+    await preflightWithDeps(cwd, plan, {
+      dev: args.dev,
+      globalExclude,
+      globalKeep,
+      configByName,
+    });
   }
 
   const rootEntry: InrepoJsonEntry | null = args.save ? { name: args.name, dev: args.dev } : null;
@@ -156,6 +156,9 @@ export async function performAdd(
     if (args.ref !== undefined && args.ref !== '') {
       rootEntry.ref = args.ref;
     }
+    const plannedRoot = plan?.graph.nodes.find((node) => node.root);
+    const repositoryDirectory = args.repositoryDirectory ?? plannedRoot?.repositoryDirectory ?? pkgRepositoryDirectory;
+    if (repositoryDirectory != null) rootEntry.repositoryDirectory = repositoryDirectory;
   }
 
   const vendorRoot = (): Promise<void> =>
@@ -164,6 +167,10 @@ export async function performAdd(
       {
         name: args.name,
         git: pin.git,
+        repositoryDirectory:
+          args.repositoryDirectory ??
+          plan?.graph.nodes.find((node) => node.root)?.repositoryDirectory ??
+          pkgRepositoryDirectory,
         ref: pin.ref,
         commit: pin.commit,
         dev: args.dev,
@@ -174,11 +181,9 @@ export async function performAdd(
       globalKeep,
       {
         mode: 'add',
-        force:
-          !hasConfigEntry &&
-          !modules[args.name] &&
-          existsSync(moduleDestPath(cwd, args.name)),
+        force: !hasConfigEntry && !modules[args.name] && existsSync(moduleDestPath(cwd, args.name)),
         lockEntry: modules[args.name],
+        resolvedCommit: plan?.graph.nodes.find((node) => node.root)?.commit,
       },
     );
 
@@ -196,7 +201,13 @@ export async function performAdd(
     await vendorRoot();
   } else {
     await vendorRoot();
-    if (rootEntry) await saveConfigEntry(cwd, rootEntry);
+    if (rootEntry) {
+      const lockEntry = (await readLockfile(cwd)).modules[args.name];
+      if (lockEntry?.repositoryDirectory != null) {
+        rootEntry.repositoryDirectory = lockEntry.repositoryDirectory;
+      }
+      await saveConfigEntry(cwd, rootEntry);
+    }
   }
 
   if (!opts.suppressBanners) {
@@ -208,11 +219,7 @@ export async function performAdd(
       );
       return;
     }
-    outro(
-      args.save
-        ? `Recorded "${args.name}" in inrepo config.`
-        : `Vendored "${args.name}" (not saved to config).`,
-    );
+    outro(args.save ? `Recorded "${args.name}" in inrepo config.` : `Vendored "${args.name}" (not saved to config).`);
   }
 }
 
@@ -235,8 +242,7 @@ export async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | 
   const name = await text({
     message: 'Package name',
     placeholder: 'e.g. lodash or @scope/pkg',
-    validate: (value) =>
-      value == null || value.trim() === '' ? 'Package name is required' : undefined,
+    validate: (value) => (value == null || value.trim() === '' ? 'Package name is required' : undefined),
   });
   if (isCancel(name)) return onCancel();
 
