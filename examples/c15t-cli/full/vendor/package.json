@@ -1,0 +1,11 @@
+{
+  "name": "c15t-full-parity-fixture",
+  "private": true,
+  "version": "9.8.7",
+  "type": "module",
+  "packageManager": "npm@11.6.2",
+  "dependencies": {
+    "@c15t/react": "2.2.0",
+    "@c15t/cli": "file:inrepo_modules/@c15t/cli"
+  }
+}

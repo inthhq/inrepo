@@ -1,4 +1,14 @@
-# `@c15t/cli` selected-source help benchmark
+# `@c15t/cli` benchmarks
+
+This directory now contains two deliberately separate results:
+
+- [`full/`](full/) executes the real `@c15t/cli@2.2.0` source entry with its
+  complete inrepo dependency closure and checks published-CLI parity.
+- The remainder of this README describes the older selected help-renderer
+  scriptc benchmark. It remains useful as a compiler microbenchmark, but it is
+  not presented as full CLI performance.
+
+## Selected-source help benchmark
 
 This example measures one honest, narrow question: can scriptc statically
 compile the help renderer selected from `@c15t/cli@2.2.0` source, and does that
@@ -118,7 +128,7 @@ This is a graph and source-materialization result, not an executable full-CLI
 result: the probe deliberately stops before running the vendored
 `@c15t/cli` entrypoint.
 
-## Why this is not full CLI parity
+## Historical boundary of the selected benchmark
 
 The complete published `@c15t/cli` runtime graph now resolves and materializes,
 including incompatible versions, npm repository shorthand, missing monorepo
@@ -135,6 +145,8 @@ registry-hosted provenance. Full CLI execution remains beyond this case study:
 - the real CLI entrypoint eagerly imports setup, codemod, backend, telemetry,
   filesystem, process, and browser-opening paths even for `--help`.
 
-A full claim requires resolving those graph and source-entry issues, executing
-the vendored CLI without `node_modules`, and proving real `@c15t/cli --help`
-stdout, stderr, and exit-code parity before any timing comparison.
+The separate [`full/`](full/) fixture now crosses the executable parity
+boundary by using integrity-pinned published files only where repository
+checkouts omit runtime output. Full static scriptc compilation remains blocked,
+and its diagnostics are recorded there rather than hidden behind this renderer
+extraction.

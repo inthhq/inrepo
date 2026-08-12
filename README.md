@@ -378,7 +378,7 @@ node dist/cli.mjs --help
 ## Examples
 
 - [`examples/scriptc`](examples/scriptc) is the controlled performance benchmark: identical CLI behavior with registry-backed npm dependencies in dynamic scriptc versus patched upstream source in static scriptc.
-- [`examples/c15t-cli`](examples/c15t-cli) keeps the selected help-renderer benchmark narrow while a separate `--with-deps` probe resolves, materializes, syncs, and verifies the real 188-instance runtime graph. It does not claim full CLI execution.
+- [`examples/c15t-cli`](examples/c15t-cli) contains both the narrow selected-renderer scriptc microbenchmark and a separate full-entry case study. The latter executes the real `@c15t/cli@2.2.0` source with its 188-module inrepo closure, proves four published-CLI parity paths without `node_modules`, and reports the full source/cache size cost. It records scriptc's failed full compile instead of publishing a misleading static timing.
 
 ## Documentation
 

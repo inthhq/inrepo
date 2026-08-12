@@ -12,7 +12,11 @@
     "build:static": "scriptc build cli-static.ts -o demo-static",
     "check": "bun check.ts",
     "bench": "bun check.ts && bun bench.ts",
-    "probe:with-deps": "bun with-deps-probe.ts"
+    "probe:with-deps": "bun with-deps-probe.ts",
+    "full:prepare": "bun full/prepare.ts",
+    "full:check": "bun full/check.ts",
+    "full:bench": "bun full/bench.ts",
+    "full:stats": "bun full/stats.ts"
   },
   "dependencies": {
     "@c15t/cli": "2.2.0",

@@ -86,6 +86,22 @@ describe('resolveVendoredEntry', () => {
     expect(await resolve('', 'import')).toBe('esm.js');
   });
 
+  test('prefers the Node export over a browser export for CLI source', async () => {
+    await writeFiles(
+      {
+        name: 'dep',
+        exports: {
+          '.': {
+            browser: { import: './dist/browser.mjs' },
+            node: { import: './dist/node.mjs' },
+          },
+        },
+      },
+      { 'dist/browser.mjs': '', 'dist/node.mjs': '' },
+    );
+    expect(await resolve('', 'import')).toBe('dist/node.mjs');
+  });
+
   test('honors an exported subpath before the literal path', async () => {
     await writeFiles(
       { name: 'dep', exports: { '.': './index.js', './sub': './src/sub-impl.js' } },

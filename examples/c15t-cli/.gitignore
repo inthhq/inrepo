@@ -6,3 +6,4 @@ demo-npm
 demo-static
 *.ll
 *.o
+full/.runtime-path

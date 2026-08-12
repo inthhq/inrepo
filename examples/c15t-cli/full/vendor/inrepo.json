@@ -1,0 +1,1157 @@
+{
+  "rewireImports": true,
+  "packages": [
+    {
+      "name": "@c15t/cli",
+      "ref": "@c15t/cli@2.2.0",
+      "repositoryDirectory": "packages/cli"
+    },
+    {
+      "name": "@c15t/backend",
+      "module": "@c15t/backend@2.2.0",
+      "git": "https://github.com/c15t/c15t.git",
+      "ref": "017433b2ca27e29177c320f51b973e4a78b6851e",
+      "repositoryDirectory": "packages/backend"
+    },
+    {
+      "name": "@c15t/logger",
+      "module": "@c15t/logger@2.1.0",
+      "git": "https://github.com/c15t/c15t.git",
+      "ref": "fa153160e8b90c5f75075c6d9977b67d3e8f0520",
+      "repositoryDirectory": "packages/logger"
+    },
+    {
+      "name": "@c15t/schema",
+      "module": "@c15t/schema@2.2.0",
+      "git": "https://github.com/c15t/c15t.git",
+      "ref": "017433b2ca27e29177c320f51b973e4a78b6851e",
+      "repositoryDirectory": "packages/schema"
+    },
+    {
+      "name": "@c15t/scripts",
+      "module": "@c15t/scripts@2.2.0",
+      "git": "https://github.com/c15t/c15t.git",
+      "ref": "017433b2ca27e29177c320f51b973e4a78b6851e",
+      "repositoryDirectory": "packages/scripts"
+    },
+    {
+      "name": "@c15t/translations",
+      "module": "@c15t/translations@2.2.0",
+      "git": "https://github.com/c15t/c15t.git",
+      "ref": "017433b2ca27e29177c320f51b973e4a78b6851e",
+      "repositoryDirectory": "packages/translations"
+    },
+    {
+      "name": "@clack/core",
+      "module": "@clack/core@1.4.3",
+      "git": "https://github.com/bombshell-dev/clack.git",
+      "ref": "@clack/core@1.4.3",
+      "repositoryDirectory": "packages/core"
+    },
+    {
+      "name": "@clack/prompts",
+      "module": "@clack/prompts@1.7.0",
+      "git": "https://github.com/bombshell-dev/clack.git",
+      "ref": "@clack/prompts@1.7.0",
+      "repositoryDirectory": "packages/prompts"
+    },
+    {
+      "name": "@hono/node-server",
+      "module": "@hono/node-server@2.1.0",
+      "git": "https://github.com/honojs/node-server.git",
+      "ref": "v2.1.0"
+    },
+    {
+      "name": "@hono/standard-validator",
+      "module": "@hono/standard-validator@0.2.3",
+      "git": "https://github.com/honojs/middleware.git",
+      "ref": "b9168e85aeb7d4fa42941b6def923d16f4852138",
+      "repositoryDirectory": "packages/standard-validator"
+    },
+    {
+      "name": "@hono/valibot-validator",
+      "module": "@hono/valibot-validator@0.6.1",
+      "git": "https://github.com/honojs/middleware.git",
+      "ref": "b2d823c5a88102e0afa7f58d1fdbd4ab55504f69",
+      "repositoryDirectory": "packages/valibot-validator"
+    },
+    {
+      "name": "@modelcontextprotocol/sdk",
+      "module": "@modelcontextprotocol/sdk@1.30.0",
+      "git": "https://github.com/modelcontextprotocol/typescript-sdk.git",
+      "ref": "2d889f2b329e46680ec9bdd565de4616c497825a"
+    },
+    {
+      "name": "@noble/hashes",
+      "module": "@noble/hashes@2.3.0",
+      "git": "https://github.com/paulmillr/noble-hashes.git",
+      "ref": "8060cc83bbab6681d23c9eed071db3f3a6b442da"
+    },
+    {
+      "name": "@opentelemetry/api",
+      "module": "@opentelemetry/api@1.9.1",
+      "git": "https://github.com/open-telemetry/opentelemetry-js.git",
+      "ref": "7e74509a4d848e94b2970bb5262dd3e8efeed0a2",
+      "repositoryDirectory": "api"
+    },
+    {
+      "name": "@paralleldrive/cuid2",
+      "module": "@paralleldrive/cuid2@3.3.0",
+      "git": "https://github.com/ericelliott/cuid2.git",
+      "ref": "3af6f1b172cf956780ed2ae252e8285e6f356b41"
+    },
+    {
+      "name": "@scalar/client-side-rendering",
+      "module": "@scalar/client-side-rendering@0.3.1",
+      "git": "https://github.com/scalar/scalar.git",
+      "ref": "ba6e2ca69e200f1d5a194ff5a77150846c3baad8",
+      "repositoryDirectory": "packages/client-side-rendering"
+    },
+    {
+      "name": "@scalar/helpers",
+      "module": "@scalar/helpers@0.9.0",
+      "git": "https://github.com/scalar/scalar.git",
+      "ref": "aa3696f5477643843918941b2029942de807b274",
+      "repositoryDirectory": "packages/helpers"
+    },
+    {
+      "name": "@scalar/hono-api-reference",
+      "module": "@scalar/hono-api-reference@0.11.8",
+      "git": "https://github.com/scalar/scalar.git",
+      "ref": "ba6e2ca69e200f1d5a194ff5a77150846c3baad8",
+      "repositoryDirectory": "integrations/hono"
+    },
+    {
+      "name": "@scalar/schemas",
+      "module": "@scalar/schemas@0.7.1",
+      "git": "https://github.com/scalar/scalar.git",
+      "ref": "ba6e2ca69e200f1d5a194ff5a77150846c3baad8",
+      "repositoryDirectory": "packages/schemas"
+    },
+    {
+      "name": "@scalar/types",
+      "module": "@scalar/types@0.16.1",
+      "git": "https://github.com/scalar/scalar.git",
+      "ref": "ba6e2ca69e200f1d5a194ff5a77150846c3baad8",
+      "repositoryDirectory": "packages/types"
+    },
+    {
+      "name": "@scalar/validation",
+      "module": "@scalar/validation@0.6.0",
+      "git": "https://github.com/scalar/scalar.git",
+      "ref": "35f2d5e5e58d2e24ac3ec6767b5af9f5c2d43cdc",
+      "repositoryDirectory": "packages/validation"
+    },
+    {
+      "name": "@ts-morph/common",
+      "module": "@ts-morph/common@0.28.1",
+      "git": "https://github.com/dsherret/ts-morph.git",
+      "ref": "0dd1adc87da3a423f8796f77c2c41c2598170a48",
+      "repositoryDirectory": "packages/common"
+    },
+    {
+      "name": "@valibot/to-json-schema",
+      "module": "@valibot/to-json-schema@1.7.1",
+      "git": "https://github.com/open-circle/valibot.git",
+      "ref": "c05bf954ada47d5ff953cdfad905cc701b25719c",
+      "repositoryDirectory": "packages/to-json-schema"
+    },
+    {
+      "name": "accepts",
+      "module": "accepts@2.0.0",
+      "git": "https://github.com/jshttp/accepts.git",
+      "ref": "e1c347ee7fa91a74f21484daefd805c0cdc4f949"
+    },
+    {
+      "name": "ajv-formats",
+      "module": "ajv-formats@3.0.1",
+      "git": "https://github.com/ajv-validator/ajv-formats.git",
+      "ref": "1fb3fa7d967f919ff924bb34aef73a2f39ab0de3"
+    },
+    {
+      "name": "ajv",
+      "module": "ajv@8.20.0",
+      "git": "https://github.com/ajv-validator/ajv.git",
+      "ref": "0fba0b8e649909613cfce0999b149cd08f4a4987"
+    },
+    {
+      "name": "async-function",
+      "module": "async-function@1.0.0",
+      "git": "https://github.com/ljharb/async-function.git",
+      "ref": "5c1bc2bea58ac86760f4c2b41b7e1547cf8a8ea4"
+    },
+    {
+      "name": "async-generator-function",
+      "module": "async-generator-function@1.0.0",
+      "git": "https://github.com/ljharb/async-generator-function.git",
+      "ref": "1a9f102c6794a234a6f9546c30704603e9fed2ea"
+    },
+    {
+      "name": "balanced-match",
+      "module": "balanced-match@4.0.4",
+      "git": "https://github.com/juliangruber/balanced-match.git",
+      "ref": "adf286f7c6142102f932c8d7c7066463741a0036"
+    },
+    {
+      "name": "base-x",
+      "module": "base-x@5.0.1",
+      "git": "https://github.com/cryptocoinjs/base-x.git",
+      "ref": "b7b0cec52bf60d993957902e8e7c96906ac39c7c"
+    },
+    {
+      "name": "bignumber.js",
+      "module": "bignumber.js@9.3.1",
+      "git": "https://github.com/MikeMcl/bignumber.js.git",
+      "ref": "a7bc1f175c1e40db1abe8cebd52b60fc5381f487"
+    },
+    {
+      "name": "body-parser",
+      "module": "body-parser@2.3.0",
+      "git": "https://github.com/expressjs/body-parser.git",
+      "ref": "d0f2ace6c74769da7d19b8661b9a01c01bdb0bf7"
+    },
+    {
+      "name": "brace-expansion",
+      "module": "brace-expansion@5.0.9",
+      "git": "https://github.com/juliangruber/brace-expansion.git",
+      "ref": "fbcf8ec75b88c79374b4aac06559b1a5288a1223"
+    },
+    {
+      "name": "bundle-name",
+      "module": "bundle-name@4.1.0",
+      "git": "https://github.com/sindresorhus/bundle-name.git",
+      "ref": "c5f80b27d357a2a260819e8d22c416172b4a263c"
+    },
+    {
+      "name": "bytes",
+      "module": "bytes@3.1.2",
+      "git": "https://github.com/visionmedia/bytes.js.git",
+      "ref": "9ddc13b6c66e0cb293616fba246e05db4b6cef4d"
+    },
+    {
+      "name": "c12",
+      "module": "c12@3.3.3",
+      "git": "https://github.com/unjs/c12.git",
+      "ref": "49106debbabcd2dc3e98e638c4dc851c4f46e595"
+    },
+    {
+      "name": "call-bind-apply-helpers",
+      "module": "call-bind-apply-helpers@1.0.2",
+      "git": "https://github.com/ljharb/call-bind-apply-helpers.git",
+      "ref": "7068296a67b98424d5299606599d2f8117ded880"
+    },
+    {
+      "name": "call-bound",
+      "module": "call-bound@1.0.4",
+      "git": "https://github.com/ljharb/call-bound.git",
+      "ref": "75d922c1f92a3de1ff9ab94453f45b5f64b50041"
+    },
+    {
+      "name": "chalk",
+      "module": "chalk@5.6.2",
+      "git": "https://github.com/chalk/chalk.git",
+      "ref": "51557784b829c87ff8d138206598764f2eb957b1"
+    },
+    {
+      "name": "chokidar",
+      "module": "chokidar@5.0.0",
+      "git": "https://github.com/paulmillr/chokidar.git",
+      "ref": "c0c8d20e49d337491891078d1081bf91bd178de6"
+    },
+    {
+      "name": "citty",
+      "module": "citty@0.1.6",
+      "git": "https://github.com/unjs/citty.git",
+      "ref": "57b6c5cd4b190011674d18a52a2fe0ed9ff3b2a3"
+    },
+    {
+      "name": "citty",
+      "module": "citty@0.2.2",
+      "git": "https://github.com/unjs/citty.git",
+      "ref": "9cb0edcc55c133ea04d3cbb350284a9a3548946e"
+    },
+    {
+      "name": "code-block-writer",
+      "module": "code-block-writer@13.0.3",
+      "git": "https://github.com/dsherret/code-block-writer.git",
+      "ref": "96de18325769606589307281ce355f18eca830b2"
+    },
+    {
+      "name": "commander",
+      "module": "commander@14.0.3",
+      "git": "https://github.com/tj/commander.js.git",
+      "ref": "8247364da749736570161e95682b07fc2d72497b"
+    },
+    {
+      "name": "confbox",
+      "module": "confbox@0.2.4",
+      "git": "https://github.com/unjs/confbox.git",
+      "ref": "e9b08c0f0a5eb7993245e450f0be1c89bb7f8a70"
+    },
+    {
+      "name": "consola",
+      "module": "consola@3.4.2",
+      "git": "https://github.com/unjs/consola.git",
+      "ref": "2cfcfc08275d7d2777c11310c9c2deab2a872c41"
+    },
+    {
+      "name": "content-disposition",
+      "module": "content-disposition@1.1.0",
+      "git": "https://github.com/jshttp/content-disposition.git",
+      "ref": "9c42e50a0de8f7afc17c788e3ede99fee1b213cc"
+    },
+    {
+      "name": "content-type",
+      "module": "content-type@1.0.5",
+      "git": "https://github.com/jshttp/content-type.git",
+      "ref": "6115a4064e4dfd9845241c3f89c233ee2423deeb"
+    },
+    {
+      "name": "content-type",
+      "module": "content-type@2.0.0",
+      "git": "https://github.com/jshttp/content-type.git",
+      "ref": "7e7a40b5a8725118c04289541d5ecb074c0c51ea"
+    },
+    {
+      "name": "cookie-signature",
+      "module": "cookie-signature@1.2.2",
+      "git": "https://github.com/visionmedia/node-cookie-signature.git",
+      "ref": "b7bd4cb9500bfa5e696143f51d61e5f24f7a625d"
+    },
+    {
+      "name": "cookie",
+      "module": "cookie@0.7.2",
+      "git": "https://github.com/jshttp/cookie.git",
+      "ref": "d19eaa1a2bb9ca43ac0951edd852ba4e88e410e0"
+    },
+    {
+      "name": "cors",
+      "module": "cors@2.8.6",
+      "git": "https://github.com/expressjs/cors.git",
+      "ref": "f00a8c1f0af727ffe5ed35f3b2d0b1a7eb4b65bb"
+    },
+    {
+      "name": "cross-spawn",
+      "module": "cross-spawn@7.0.6",
+      "git": "https://github.com/moxystudio/node-cross-spawn.git",
+      "ref": "77cd97f3ca7b62c904a63a698fc4a79bf41977d0"
+    },
+    {
+      "name": "debug",
+      "module": "debug@4.4.3",
+      "git": "https://github.com/debug-js/debug.git",
+      "ref": "6b2c5fbdb7d414483d9e306ef234acb4cd7ea67c"
+    },
+    {
+      "name": "default-browser-id",
+      "module": "default-browser-id@5.0.1",
+      "git": "https://github.com/sindresorhus/default-browser-id.git",
+      "ref": "6af71db4ee729cc95832a832d462c1628feafb51"
+    },
+    {
+      "name": "default-browser",
+      "module": "default-browser@5.5.0",
+      "git": "https://github.com/sindresorhus/default-browser.git",
+      "ref": "80bd63d7068cb075a96c7c9deef33e093a0f4692"
+    },
+    {
+      "name": "define-lazy-prop",
+      "module": "define-lazy-prop@3.0.0",
+      "git": "https://github.com/sindresorhus/define-lazy-prop.git",
+      "ref": "038c2e8088b23e81100e34e7f38d1690c631157c"
+    },
+    {
+      "name": "defu",
+      "module": "defu@6.1.7",
+      "git": "https://github.com/unjs/defu.git",
+      "ref": "v6.1.7"
+    },
+    {
+      "name": "depd",
+      "module": "depd@2.0.0",
+      "git": "https://github.com/dougwilson/nodejs-depd.git",
+      "ref": "6d59c85d093092e65ec77033576417d743079fa0"
+    },
+    {
+      "name": "destr",
+      "module": "destr@2.0.5",
+      "git": "https://github.com/unjs/destr.git",
+      "ref": "7bb3c39ef5f8c84219be08ebc11b3c4f4a4c828f"
+    },
+    {
+      "name": "dotenv",
+      "module": "dotenv@17.4.2",
+      "git": "https://github.com/motdotla/dotenv.git",
+      "ref": "a61f616a3160bb6e6f22ff55f08b7eba3a3fab68"
+    },
+    {
+      "name": "dunder-proto",
+      "module": "dunder-proto@1.0.1",
+      "git": "https://github.com/es-shims/dunder-proto.git",
+      "ref": "c6f4b69ab80c495777870f6a5f6a22db16ecaecb"
+    },
+    {
+      "name": "ee-first",
+      "module": "ee-first@1.1.1",
+      "git": "https://github.com/jonathanong/ee-first.git",
+      "ref": "512e0ce4cc3643f603708f965a97b61b1a9c0441"
+    },
+    {
+      "name": "encodeurl",
+      "module": "encodeurl@2.0.0",
+      "git": "https://github.com/pillarjs/encodeurl.git",
+      "ref": "5f2205efe622fc7972c4e45ed7cbe7f8d652c299"
+    },
+    {
+      "name": "error-causes",
+      "module": "error-causes@3.0.2",
+      "git": "https://github.com/paralleldrive/error-causes.git",
+      "ref": "83ece39413be623833db259b5fe0379bdcd16843"
+    },
+    {
+      "name": "es-define-property",
+      "module": "es-define-property@1.0.1",
+      "git": "https://github.com/ljharb/es-define-property.git",
+      "ref": "50ef129225ae17336a774f0eefc4e6bc88c79b8e"
+    },
+    {
+      "name": "es-errors",
+      "module": "es-errors@1.3.0",
+      "git": "https://github.com/ljharb/es-errors.git",
+      "ref": "5599cf0ebe75cc3685445f83ca80207a357fdb12"
+    },
+    {
+      "name": "es-object-atoms",
+      "module": "es-object-atoms@1.1.2",
+      "git": "https://github.com/ljharb/es-object-atoms.git",
+      "ref": "9e62644a85743af8a51d3e276bc40c3cd4cafcd1"
+    },
+    {
+      "name": "escape-html",
+      "module": "escape-html@1.0.3",
+      "git": "https://github.com/component/escape-html.git",
+      "ref": "7ac2ea3977fcac3d4c5be8d2a037812820c65f28"
+    },
+    {
+      "name": "etag",
+      "module": "etag@1.8.1",
+      "git": "https://github.com/jshttp/etag.git",
+      "ref": "9b1e3e41df31cda4080833c187120b91a7ce8327"
+    },
+    {
+      "name": "eventsource-parser",
+      "module": "eventsource-parser@3.1.1",
+      "git": "https://github.com/rexxars/eventsource-parser.git",
+      "ref": "346987da04f9b97514be1bbc6be433d081cac2ab"
+    },
+    {
+      "name": "eventsource",
+      "module": "eventsource@3.0.7",
+      "git": "https://github.com/EventSource/eventsource.git",
+      "ref": "270e7f22c191ac1d167cc07e3ee494f1adb052eb"
+    },
+    {
+      "name": "evlog",
+      "module": "evlog@2.26.0",
+      "git": "https://github.com/HugoRCD/evlog.git",
+      "ref": "evlog@2.26.0",
+      "repositoryDirectory": "packages/evlog"
+    },
+    {
+      "name": "express-rate-limit",
+      "module": "express-rate-limit@8.6.2",
+      "git": "https://github.com/express-rate-limit/express-rate-limit.git",
+      "ref": "c416f780b7944d1e0c67ae636a1c01a2134faba2"
+    },
+    {
+      "name": "express",
+      "module": "express@5.2.1",
+      "git": "https://github.com/expressjs/express.git",
+      "ref": "dbac741a49a5a64336b70c06e85c2e2706e36336"
+    },
+    {
+      "name": "exsolve",
+      "module": "exsolve@1.1.1",
+      "git": "https://github.com/unjs/exsolve.git",
+      "ref": "v1.1.1"
+    },
+    {
+      "name": "fast-deep-equal",
+      "module": "fast-deep-equal@3.1.3",
+      "git": "https://github.com/epoberezkin/fast-deep-equal.git",
+      "ref": "d807ffc5013e710deb1c63d463a03f729bcd144d"
+    },
+    {
+      "name": "fast-string-truncated-width",
+      "module": "fast-string-truncated-width@3.0.3",
+      "git": "https://github.com/fabiospampinato/fast-string-truncated-width.git",
+      "ref": "e9196041e6f9d05ac5ba49a0611b5eb60e8288f0"
+    },
+    {
+      "name": "fast-string-width",
+      "module": "fast-string-width@3.0.2",
+      "git": "https://github.com/fabiospampinato/fast-string-width.git",
+      "ref": "f49e7b7662906e0028a68a16b5358500b2f3152d"
+    },
+    {
+      "name": "fast-uri",
+      "module": "fast-uri@3.1.5",
+      "git": "https://github.com/fastify/fast-uri.git",
+      "ref": "5e179cbb4636d5f773ed21126e5bd3068e87e94e"
+    },
+    {
+      "name": "fast-wrap-ansi",
+      "module": "fast-wrap-ansi@0.2.2",
+      "git": "https://github.com/43081j/fast-wrap-ansi.git",
+      "ref": "450c19f7be340ce6d4213cc17882e5b82da6ce1d"
+    },
+    {
+      "name": "fdir",
+      "module": "fdir@6.5.0",
+      "git": "https://github.com/thecodrr/fdir.git",
+      "ref": "14c678e70e714f32e511cdf24c8d2392ac25ba0f"
+    },
+    {
+      "name": "figlet",
+      "module": "figlet@1.11.0",
+      "git": "https://github.com/patorjk/figlet.js.git",
+      "ref": "3c703d4745e28509ee6c0558e76cec9136b604b1"
+    },
+    {
+      "name": "finalhandler",
+      "module": "finalhandler@2.1.1",
+      "git": "https://github.com/pillarjs/finalhandler.git",
+      "ref": "aa2851f6b6cf48238a307299be691721530e9172"
+    },
+    {
+      "name": "forwarded",
+      "module": "forwarded@0.2.0",
+      "git": "https://github.com/jshttp/forwarded.git",
+      "ref": "93d2f4c185edd14cb023632c0b216a9f08646ff1"
+    },
+    {
+      "name": "fresh",
+      "module": "fresh@2.0.0",
+      "git": "https://github.com/jshttp/fresh.git",
+      "ref": "f185ef1376c0337d366f9e35bda92b053983fd81"
+    },
+    {
+      "name": "fs-extra",
+      "module": "fs-extra@11.3.6",
+      "git": "https://github.com/jprichardson/node-fs-extra.git",
+      "ref": "62a4e720804aaa45d377d06788e258375cc544fa"
+    },
+    {
+      "name": "fumadb",
+      "module": "fumadb@0.3.0",
+      "git": "https://github.com/fuma-nama/fumadb.git",
+      "ref": "fumadb@0.3.0",
+      "repositoryDirectory": "packages/fumadb"
+    },
+    {
+      "name": "function-bind",
+      "module": "function-bind@1.1.2",
+      "git": "https://github.com/Raynos/function-bind.git",
+      "ref": "40197beb5f4cf89dd005f0b268256c1e4716ea81"
+    },
+    {
+      "name": "generator-function",
+      "module": "generator-function@2.0.1",
+      "git": "https://github.com/TimothyGu/generator-function.git",
+      "ref": "e44c753dc1205a5a1cd45176acbcd139c8d68a7b"
+    },
+    {
+      "name": "get-intrinsic",
+      "module": "get-intrinsic@1.3.1",
+      "git": "https://github.com/ljharb/get-intrinsic.git",
+      "ref": "75b38548845e37d3792e6580c882c166e8b769cc"
+    },
+    {
+      "name": "get-proto",
+      "module": "get-proto@1.0.1",
+      "git": "https://github.com/ljharb/get-proto.git",
+      "ref": "1b92a72e80c026d391589a807272c50469d37c43"
+    },
+    {
+      "name": "giget",
+      "module": "giget@2.0.0",
+      "git": "https://github.com/unjs/giget.git",
+      "ref": "f0eb4ed11b62e8cb644037a0f3b17eaff2b9d54c"
+    },
+    {
+      "name": "gopd",
+      "module": "gopd@1.2.0",
+      "git": "https://github.com/ljharb/gopd.git",
+      "ref": "7f867f97d7c895a982a3b631287fd2c36d39c2ff"
+    },
+    {
+      "name": "graceful-fs",
+      "module": "graceful-fs@4.2.11",
+      "git": "https://github.com/isaacs/node-graceful-fs.git",
+      "ref": "514861c372899df14beb7aaecca4cdbb498d7d11"
+    },
+    {
+      "name": "has-symbols",
+      "module": "has-symbols@1.1.0",
+      "git": "https://github.com/inspect-js/has-symbols.git",
+      "ref": "270f0a67b5f4cb12715e0a84e672aaee64d1b4f1"
+    },
+    {
+      "name": "hasown",
+      "module": "hasown@2.0.4",
+      "git": "https://github.com/inspect-js/hasOwn.git",
+      "ref": "97f3a857d30d06e4081626ea6e5e3c00023627ff"
+    },
+    {
+      "name": "hono-openapi",
+      "module": "hono-openapi@1.3.0",
+      "git": "https://github.com/rhinobase/hono-openapi.git",
+      "ref": "10f45a66ede3764b5e6065805fb60fd5df090466"
+    },
+    {
+      "name": "hono",
+      "module": "hono@4.12.27",
+      "git": "https://github.com/honojs/hono.git",
+      "ref": "97c6fe1f12298c715eb7b2da65b4b6e0d81682bb"
+    },
+    {
+      "name": "hono",
+      "module": "hono@4.13.1",
+      "git": "https://github.com/honojs/hono.git",
+      "ref": "cf785287b5ab41496a333c9c4b53b0f98ac731b9"
+    },
+    {
+      "name": "http-errors",
+      "module": "http-errors@2.0.1",
+      "git": "https://github.com/jshttp/http-errors.git",
+      "ref": "61aee5769e92678ff25a2da8e3a2dd1504762432"
+    },
+    {
+      "name": "iconv-lite",
+      "module": "iconv-lite@0.7.3",
+      "git": "https://github.com/pillarjs/iconv-lite.git",
+      "ref": "43694e28291d3b0cb3a452c77be40c4fd3a4bd85"
+    },
+    {
+      "name": "inherits",
+      "module": "inherits@2.0.4",
+      "git": "https://github.com/isaacs/inherits.git",
+      "ref": "9a2c29400c6d491e0b7beefe0c32efa3b462545d"
+    },
+    {
+      "name": "ip-address",
+      "module": "ip-address@10.5.0",
+      "git": "https://github.com/beaugunderson/ip-address.git",
+      "ref": "ef98e0a0e77fbef1fdf8bc3bd33288b00b3103c9"
+    },
+    {
+      "name": "ipaddr.js",
+      "module": "ipaddr.js@1.9.1",
+      "git": "https://github.com/whitequark/ipaddr.js.git",
+      "ref": "760416b27a4b348e7a39fdacfccd6cb047026c98"
+    },
+    {
+      "name": "is-docker",
+      "module": "is-docker@3.0.0",
+      "git": "https://github.com/sindresorhus/is-docker.git",
+      "ref": "8686c66ce485dfe45593dd77c5e9aadbc1491d38"
+    },
+    {
+      "name": "is-in-ssh",
+      "module": "is-in-ssh@1.0.0",
+      "git": "https://github.com/sindresorhus/is-in-ssh.git",
+      "ref": "ebe53386fd603a651aff1203f101111a6467aa3f"
+    },
+    {
+      "name": "is-inside-container",
+      "module": "is-inside-container@1.0.0",
+      "git": "https://github.com/sindresorhus/is-inside-container.git",
+      "ref": "fddf5c228e8591f5584fc772e5514e425777bc0c"
+    },
+    {
+      "name": "is-promise",
+      "module": "is-promise@4.0.0",
+      "git": "https://github.com/then/is-promise.git",
+      "ref": "5a240f639ff89f9cb938bbaf3aef59f15ddd0117"
+    },
+    {
+      "name": "is-wsl",
+      "module": "is-wsl@3.1.1",
+      "git": "https://github.com/sindresorhus/is-wsl.git",
+      "ref": "d2ffb4a9844a590a53e14fb0c5e4762b3fdffaf3"
+    },
+    {
+      "name": "isexe",
+      "module": "isexe@2.0.0",
+      "git": "https://github.com/isaacs/isexe.git",
+      "ref": "10f8be491aab2e158c7e20df64a7f90ab5b5475c"
+    },
+    {
+      "name": "jiti",
+      "module": "jiti@2.7.0",
+      "git": "https://github.com/unjs/jiti.git",
+      "ref": "fd3bb289b75ed207edfb686d671ed50144f7e90f"
+    },
+    {
+      "name": "jose",
+      "module": "jose@6.2.3",
+      "git": "https://github.com/panva/jose.git",
+      "ref": "41ad7e9a76d270ca7e24b7421a88e507f756f2db"
+    },
+    {
+      "name": "jose",
+      "module": "jose@6.2.8",
+      "git": "https://github.com/panva/jose.git",
+      "ref": "8b768eb8d2df7b4e25e1a32441ea770663f6d09f"
+    },
+    {
+      "name": "json-schema-traverse",
+      "module": "json-schema-traverse@1.0.0",
+      "git": "https://github.com/epoberezkin/json-schema-traverse.git",
+      "ref": "6b45983cd76270042cc79527da5c8972f13599ec"
+    },
+    {
+      "name": "json-schema-typed",
+      "module": "json-schema-typed@8.0.2",
+      "git": "https://github.com/RemyRylan/json-schema-typed.git",
+      "ref": "613f3ab84c8e1b14de492534bfcb81d1499610a3",
+      "repositoryDirectory": "dist/node"
+    },
+    {
+      "name": "jsonfile",
+      "module": "jsonfile@6.2.1",
+      "git": "https://github.com/jprichardson/node-jsonfile.git",
+      "ref": "97478af83f115359c331119330b418dfb7c5a6e7"
+    },
+    {
+      "name": "kysely-typeorm",
+      "module": "kysely-typeorm@0.3.0",
+      "git": "https://github.com/kysely-org/kysely-typeorm.git",
+      "ref": "v0.3.0"
+    },
+    {
+      "name": "kysely",
+      "module": "kysely@0.28.17",
+      "git": "https://github.com/kysely-org/kysely.git",
+      "ref": "v0.28.17"
+    },
+    {
+      "name": "math-intrinsics",
+      "module": "math-intrinsics@1.1.0",
+      "git": "https://github.com/es-shims/math-intrinsics.git",
+      "ref": "84ffc824e044a91da1b847bde30c0286519eabf1"
+    },
+    {
+      "name": "media-typer",
+      "module": "media-typer@1.1.1",
+      "git": "https://github.com/jshttp/media-typer.git",
+      "ref": "3aa86fae28a1a8ccca1940db9c8d36927956e5fa"
+    },
+    {
+      "name": "merge-descriptors",
+      "module": "merge-descriptors@2.0.0",
+      "git": "https://github.com/sindresorhus/merge-descriptors.git",
+      "ref": "b497f611ec85031e00c2f3cdbb327a550028a7bf"
+    },
+    {
+      "name": "mime-db",
+      "module": "mime-db@1.54.0",
+      "git": "https://github.com/jshttp/mime-db.git",
+      "ref": "5207a32f76e77ed2f63421641449f8addeacb0a5"
+    },
+    {
+      "name": "mime-types",
+      "module": "mime-types@3.0.2",
+      "git": "https://github.com/jshttp/mime-types.git",
+      "ref": "29a0302d799933a45384892df0722f3c5bb1b033"
+    },
+    {
+      "name": "minimatch",
+      "module": "minimatch@10.2.6",
+      "git": "https://github.com/isaacs/minimatch.git",
+      "ref": "ded1bbd01beca62a5978bc1650ed0a1ccf9039d5"
+    },
+    {
+      "name": "ms",
+      "module": "ms@2.1.3",
+      "git": "https://github.com/vercel/ms.git",
+      "ref": "1c6264b795492e8fdecbc82cb8802fcfbfc08d26"
+    },
+    {
+      "name": "nanoid",
+      "module": "nanoid@5.1.16",
+      "git": "https://github.com/ai/nanoid.git",
+      "ref": "6ccc67bbaba71d3d77a21d9b636f4171a268ce49"
+    },
+    {
+      "name": "negotiator",
+      "module": "negotiator@1.0.0",
+      "git": "https://github.com/jshttp/negotiator.git",
+      "ref": "f808e27873670e11022220cbcb61a3eb2810dc01"
+    },
+    {
+      "name": "neverthrow",
+      "module": "neverthrow@8.2.0",
+      "git": "https://github.com/supermacro/neverthrow.git",
+      "ref": "1d4cc19ed2e6ba882e296385fe0175d642ec8c5d"
+    },
+    {
+      "name": "node-fetch-native",
+      "module": "node-fetch-native@1.6.7",
+      "git": "https://github.com/unjs/node-fetch-native.git",
+      "ref": "c27b7f9ca6df11c523376b295b61e5b644c76209"
+    },
+    {
+      "name": "nypm",
+      "module": "nypm@0.6.9",
+      "git": "https://github.com/unjs/nypm.git",
+      "ref": "v0.6.9"
+    },
+    {
+      "name": "object-assign",
+      "module": "object-assign@4.1.1",
+      "git": "https://github.com/sindresorhus/object-assign.git",
+      "ref": "a89774b252c91612203876984bbd6addbe3b5a0e"
+    },
+    {
+      "name": "object-inspect",
+      "module": "object-inspect@1.13.4",
+      "git": "https://github.com/inspect-js/object-inspect.git",
+      "ref": "21bdaa07377a2d605ba78c774f4aa0381daf0425"
+    },
+    {
+      "name": "ohash",
+      "module": "ohash@2.0.11",
+      "git": "https://github.com/unjs/ohash.git",
+      "ref": "v2.0.11"
+    },
+    {
+      "name": "on-finished",
+      "module": "on-finished@2.4.1",
+      "git": "https://github.com/jshttp/on-finished.git",
+      "ref": "1111fe8e913debaf3da9bd4f6bda216ef36097fa"
+    },
+    {
+      "name": "once",
+      "module": "once@1.4.0",
+      "git": "https://github.com/isaacs/once.git",
+      "ref": "0e614d9f5a7e6f0305c625f6b581f6d80b33b8a6"
+    },
+    {
+      "name": "open",
+      "module": "open@11.0.0",
+      "git": "https://github.com/sindresorhus/open.git",
+      "ref": "88153308461c32974b146f29446837ee290f605b"
+    },
+    {
+      "name": "package-manager-detector",
+      "module": "package-manager-detector@1.7.0",
+      "git": "https://github.com/antfu-collective/package-manager-detector.git",
+      "ref": "v1.7.0"
+    },
+    {
+      "name": "parseurl",
+      "module": "parseurl@1.3.3",
+      "git": "https://github.com/pillarjs/parseurl.git",
+      "ref": "0a5323370b02f4eff4069472d1e96a0094aef621"
+    },
+    {
+      "name": "path-browserify",
+      "module": "path-browserify@1.0.1",
+      "git": "https://github.com/browserify/path-browserify.git",
+      "ref": "872fec31a8bac7b9b43be0e54ef3037e0202c5fb"
+    },
+    {
+      "name": "path-key",
+      "module": "path-key@3.1.1",
+      "git": "https://github.com/sindresorhus/path-key.git",
+      "ref": "caea269db3a5eb0c09c793f4be5435312971d2fa"
+    },
+    {
+      "name": "path-to-regexp",
+      "module": "path-to-regexp@8.4.2",
+      "git": "https://github.com/pillarjs/path-to-regexp.git",
+      "ref": "cbf30259e6d34d6135f9e7dbaa3371e7188f9936"
+    },
+    {
+      "name": "pathe",
+      "module": "pathe@2.0.3",
+      "git": "https://github.com/unjs/pathe.git",
+      "ref": "v2.0.3"
+    },
+    {
+      "name": "perfect-debounce",
+      "module": "perfect-debounce@2.1.0",
+      "git": "https://github.com/unjs/perfect-debounce.git",
+      "ref": "d3f83001dad6faa2090bd1aadab7312843fe6b79"
+    },
+    {
+      "name": "picocolors",
+      "module": "picocolors@1.1.1",
+      "git": "https://github.com/alexeyraspopov/picocolors.git",
+      "ref": "6f0a4638348ed20633d623ee973f9c9a96f65104"
+    },
+    {
+      "name": "picomatch",
+      "module": "picomatch@4.0.5",
+      "git": "https://github.com/micromatch/picomatch.git",
+      "ref": "4f41a8edade7a5ab19832f7b40ecce46b288767f"
+    },
+    {
+      "name": "pkce-challenge",
+      "module": "pkce-challenge@5.0.1",
+      "git": "https://github.com/crouchcd/pkce-challenge.git",
+      "ref": "8fd25041ba12d914e6758cb635915951aee7cac0"
+    },
+    {
+      "name": "pkg-types",
+      "module": "pkg-types@2.3.1",
+      "git": "https://github.com/unjs/pkg-types.git",
+      "ref": "v2.3.1"
+    },
+    {
+      "name": "powershell-utils",
+      "module": "powershell-utils@0.1.0",
+      "git": "https://github.com/sindresorhus/powershell-utils.git",
+      "ref": "66187bc2c4a73cf1d85d92836ae6ab70e5c5eb9c"
+    },
+    {
+      "name": "proxy-addr",
+      "module": "proxy-addr@2.0.7",
+      "git": "https://github.com/jshttp/proxy-addr.git",
+      "ref": "1cdd2f78e0fcc23ceae4723e6b837345c2499772"
+    },
+    {
+      "name": "qs",
+      "module": "qs@6.15.3",
+      "git": "https://github.com/ljharb/qs.git",
+      "ref": "18d085e919dae70c8f1b200ab99323058edab2c2"
+    },
+    {
+      "name": "range-parser",
+      "module": "range-parser@1.3.0",
+      "git": "https://github.com/jshttp/range-parser.git",
+      "ref": "v1.3.0"
+    },
+    {
+      "name": "raw-body",
+      "module": "raw-body@3.0.2",
+      "git": "https://github.com/stream-utils/raw-body.git",
+      "ref": "4cf8e0a2591802e01f05f93e39a6a5b3610a183c"
+    },
+    {
+      "name": "rc9",
+      "module": "rc9@2.1.2",
+      "git": "https://github.com/unjs/rc9.git",
+      "ref": "a29bbbc5777e9d86985bc7f58bc0921c9805040d"
+    },
+    {
+      "name": "readdirp",
+      "module": "readdirp@5.1.1",
+      "git": "https://github.com/paulmillr/readdirp.git",
+      "ref": "5dba3694a1de891ea6edb0301240326f8f8c81f1"
+    },
+    {
+      "name": "require-from-string",
+      "module": "require-from-string@2.0.2",
+      "git": "https://github.com/floatdrop/require-from-string.git",
+      "ref": "d1575a49065eb7a49b86b4de963f04f1a14dfd60"
+    },
+    {
+      "name": "router",
+      "module": "router@2.2.0",
+      "git": "https://github.com/pillarjs/router.git",
+      "ref": "e6d6b609fc355e558174ccd5b1db646f739fe88c"
+    },
+    {
+      "name": "run-applescript",
+      "module": "run-applescript@7.1.0",
+      "git": "https://github.com/sindresorhus/run-applescript.git",
+      "ref": "c060aaac7cdcded91760567eba0a533017c09fab"
+    },
+    {
+      "name": "safer-buffer",
+      "module": "safer-buffer@2.1.2",
+      "git": "https://github.com/ChALkeR/safer-buffer.git",
+      "ref": "e8ac214944eda30e1e6c6b7d7e7f6a21cf7dce7c"
+    },
+    {
+      "name": "semver",
+      "module": "semver@7.8.5",
+      "git": "https://github.com/npm/node-semver.git",
+      "ref": "6e05b7637396ac66522cff8731f07cfe0ef49a29"
+    },
+    {
+      "name": "send",
+      "module": "send@1.2.1",
+      "git": "https://github.com/pillarjs/send.git",
+      "ref": "096a6148bea0b82ca974fe0016e6eac280869249"
+    },
+    {
+      "name": "serve-static",
+      "module": "serve-static@2.2.1",
+      "git": "https://github.com/expressjs/serve-static.git",
+      "ref": "76312e12c2754c226a685201ff43d785455d0590"
+    },
+    {
+      "name": "setprototypeof",
+      "module": "setprototypeof@1.2.0",
+      "git": "https://github.com/wesleytodd/setprototypeof.git",
+      "ref": "52d00b3a6dbd92fbf36c8019a1e36179b4a0f308"
+    },
+    {
+      "name": "shebang-command",
+      "module": "shebang-command@2.0.0",
+      "git": "https://github.com/kevva/shebang-command.git",
+      "ref": "003c4c7d6882d029aa8b3e5777716d726894d734"
+    },
+    {
+      "name": "shebang-regex",
+      "module": "shebang-regex@3.0.0",
+      "git": "https://github.com/sindresorhus/shebang-regex.git",
+      "ref": "27a9a6f0f85c04b9c37a43cf7503fdb58f5ae8d6"
+    },
+    {
+      "name": "side-channel-list",
+      "module": "side-channel-list@1.0.1",
+      "git": "https://github.com/ljharb/side-channel-list.git",
+      "ref": "0d8f74e4b2ee518b682cbf859b3ec7b8a6ec48f0"
+    },
+    {
+      "name": "side-channel-map",
+      "module": "side-channel-map@1.0.1",
+      "git": "https://github.com/ljharb/side-channel-map.git",
+      "ref": "c14f8ee78a05007b6604d88c6219fe4303e693a3"
+    },
+    {
+      "name": "side-channel-weakmap",
+      "module": "side-channel-weakmap@1.0.2",
+      "git": "https://github.com/ljharb/side-channel-weakmap.git",
+      "ref": "ca1790715cf6f3cb35a4acd4fd0731790f9814b3"
+    },
+    {
+      "name": "side-channel",
+      "module": "side-channel@1.1.1",
+      "git": "https://github.com/ljharb/side-channel.git",
+      "ref": "3d260956bc92a85f140352bd814dc5c9d31fc65a"
+    },
+    {
+      "name": "sisteransi",
+      "module": "sisteransi@1.0.5",
+      "git": "https://github.com/terkelg/sisteransi.git",
+      "ref": "58a3aff12121a7e876c1b47612571bf2757c916a"
+    },
+    {
+      "name": "statuses",
+      "module": "statuses@2.0.2",
+      "git": "https://github.com/jshttp/statuses.git",
+      "ref": "33ec007ae094c35edb35d9edd293b9524b3adcb9"
+    },
+    {
+      "name": "tagged-tag",
+      "module": "tagged-tag@1.0.0",
+      "git": "https://github.com/sindresorhus/tagged-tag.git",
+      "ref": "875d08652b60554c7a2e23ead77663b21a6f4001"
+    },
+    {
+      "name": "tinyexec",
+      "module": "tinyexec@1.3.0",
+      "git": "https://github.com/tinylibs/tinyexec.git",
+      "ref": "7d3756495643c2c0c9a9ab0010ae3371ad13819b"
+    },
+    {
+      "name": "tinyglobby",
+      "module": "tinyglobby@0.2.17",
+      "git": "https://github.com/SuperchupuDev/tinyglobby.git",
+      "ref": "0.2.17"
+    },
+    {
+      "name": "toidentifier",
+      "module": "toidentifier@1.0.1",
+      "git": "https://github.com/component/toidentifier.git",
+      "ref": "a885785de8dc9eb3f5dba0c38de034ffdb68223f"
+    },
+    {
+      "name": "ts-morph",
+      "module": "ts-morph@27.0.2",
+      "git": "https://github.com/dsherret/ts-morph.git",
+      "ref": "0dd1adc87da3a423f8796f77c2c41c2598170a48",
+      "repositoryDirectory": "packages/ts-morph"
+    },
+    {
+      "name": "type-fest",
+      "module": "type-fest@5.8.0",
+      "git": "https://github.com/sindresorhus/type-fest.git",
+      "ref": "822944713885ec0c2849ced0a2d86af35877e270"
+    },
+    {
+      "name": "type-is",
+      "module": "type-is@2.1.0",
+      "git": "https://github.com/jshttp/type-is.git",
+      "ref": "62a423ff2144dcc0c047111be1c860a3027bf148"
+    },
+    {
+      "name": "universalify",
+      "module": "universalify@2.0.1",
+      "git": "https://github.com/RyanZim/universalify.git",
+      "ref": "dc17e0e00fb39c8d52e97ce77e494cdadfa8d19c"
+    },
+    {
+      "name": "unpipe",
+      "module": "unpipe@1.0.0",
+      "git": "https://github.com/stream-utils/unpipe.git",
+      "ref": "d2df901c06487430e78dca62b6edb8bb2fc5e99d"
+    },
+    {
+      "name": "valibot",
+      "module": "valibot@1.4.2",
+      "git": "https://github.com/open-circle/valibot.git",
+      "ref": "0dc26ea88cf07a414653375f0da43f97e0eed607"
+    },
+    {
+      "name": "vary",
+      "module": "vary@1.1.2",
+      "git": "https://github.com/jshttp/vary.git",
+      "ref": "4067e646233fbc8ec9e7a9cd78d6f063c6fdc17e"
+    },
+    {
+      "name": "which",
+      "module": "which@2.0.2",
+      "git": "https://github.com/isaacs/node-which.git",
+      "ref": "6a822d836de79f92fb3170f685a6e283fbfeff87"
+    },
+    {
+      "name": "wrappy",
+      "module": "wrappy@1.0.2",
+      "git": "https://github.com/npm/wrappy.git",
+      "ref": "71d91b6dc5bdeac37e218c2cf03f9ab55b60d214"
+    },
+    {
+      "name": "wsl-utils",
+      "module": "wsl-utils@0.3.1",
+      "git": "https://github.com/sindresorhus/wsl-utils.git",
+      "ref": "5320748a16e6b149741cd0399a482f77159935c2"
+    },
+    {
+      "name": "xstate",
+      "module": "xstate@5.32.5",
+      "git": "https://github.com/statelyai/xstate.git",
+      "ref": "xstate@5.32.5",
+      "repositoryDirectory": "packages/core"
+    },
+    {
+      "name": "zod-to-json-schema",
+      "module": "zod-to-json-schema@3.25.2",
+      "git": "https://github.com/StefanTerdell/zod-to-json-schema.git",
+      "ref": "a001370dee3fae444371d41355a7bdc5477c519d"
+    },
+    {
+      "name": "zod",
+      "module": "zod@4.4.3",
+      "git": "https://github.com/colinhacks/zod.git",
+      "ref": "f3c9ec03ba7a28ae72d25cc295f38674bee0f559",
+      "repositoryDirectory": "packages/zod"
+    }
+  ],
+  "$schema": "https://raw.githubusercontent.com/inthhq/inrepo/main/inrepo.schema.json"
+}
