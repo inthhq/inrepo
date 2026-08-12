@@ -9,11 +9,21 @@ const VENDOR_MARKER = '.inrepo-vendor.json';
  */
 export async function finalizeVendorCheckout(
   dest: string,
-  meta: { commit: string; gitUrl: string },
+  meta: { commit: string; gitUrl: string; repositoryDirectory?: string | null },
 ): Promise<void> {
   await writeFile(
     join(dest, VENDOR_MARKER),
-    `${JSON.stringify({ commit: meta.commit, gitUrl: meta.gitUrl }, null, 2)}\n`,
+    `${JSON.stringify(
+      {
+        commit: meta.commit,
+        gitUrl: meta.gitUrl,
+        ...(meta.repositoryDirectory == null
+          ? {}
+          : { repositoryDirectory: meta.repositoryDirectory }),
+      },
+      null,
+      2,
+    )}\n`,
     'utf8',
   );
   const gitMeta = join(dest, '.git');

@@ -12,7 +12,7 @@ import { ensurePristine } from '../overlay/cache.js';
 import { readPackageManifest } from '../package-json/read-package-manifest.js';
 import { moduleDestPath } from '../paths/module-dest-path.js';
 import { loadRegistryPackage } from '../registry/load-registry-package.js';
-import { resolveGitUrlFromNpm } from '../registry/resolve-git-url-from-npm.js';
+import { resolvePackageSourceFromNpm } from '../registry/resolve-git-url-from-npm.js';
 import type { InrepoPackage } from '../types/inrepo-package.js';
 import type { LockModule } from '../types/lock-module.js';
 import { mergedVendorExcludes, mergedVendorKeeps } from './vendor.js';
@@ -107,13 +107,18 @@ export async function planWithDeps(
       ? undefined
       : { gitUrl: lockEntry.gitUrl, ref: lockEntry.ref, commit: lockEntry.commit },
   );
-  const gitUrl = pin.git || (await resolveGitUrlFromNpm(root.name));
+  const source = pin.git
+    ? { gitUrl: pin.git, repositoryDirectory: root.repositoryDirectory ?? null }
+    : await resolvePackageSourceFromNpm(root.name);
+  const repositoryDirectory = root.repositoryDirectory ?? source.repositoryDirectory;
+  const gitUrl = source.gitUrl;
   const ref = pin.ref ?? null;
 
   const pristine = await ensurePristine({
     cwd,
     name: root.name,
     gitUrl,
+    repositoryDirectory,
     ref,
     commit: pin.commit,
     keep: mergedVendorKeeps(globalKeep, root),
@@ -158,7 +163,7 @@ export async function planWithDeps(
       name: root.name,
       version: manifest.version,
       gitUrl: pristine.gitUrl,
-      repositoryDirectory: root.repositoryDirectory ?? null,
+      repositoryDirectory,
       ref,
       commit: pristine.commit,
       dependencies,

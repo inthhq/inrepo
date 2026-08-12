@@ -71,6 +71,7 @@ export async function cmdMigrate(
       cwd,
       name: args.name,
       gitUrl: lockEntry.gitUrl,
+      repositoryDirectory: pkg.repositoryDirectory ?? lockEntry.repositoryDirectory,
       ref: lockEntry.ref,
       commit: lockEntry.commit,
       keep: mergedVendorKeeps(globalKeep, pkg),

@@ -68,6 +68,7 @@ export async function cmdDiff(cwd: string, argv: string[]): Promise<void> {
       cwd,
       name: pkg.name,
       gitUrl: lockEntry.gitUrl,
+      repositoryDirectory: pkg.repositoryDirectory ?? lockEntry.repositoryDirectory,
       ref: lockEntry.ref,
       commit: lockEntry.commit,
       keep: mergedVendorKeeps(globalKeep, pkg),

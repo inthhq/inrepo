@@ -22,7 +22,11 @@ function remotesEquivalent(a: string, b: string): boolean {
   return na === nb;
 }
 
-function parseVendorMarker(raw: string): { commit: string; gitUrl: string } | null {
+function parseVendorMarker(raw: string): {
+  commit: string;
+  gitUrl: string;
+  repositoryDirectory: string | null;
+} | null {
   let data: unknown;
   try {
     data = JSON.parse(raw) as unknown;
@@ -34,7 +38,12 @@ function parseVendorMarker(raw: string): { commit: string; gitUrl: string } | nu
   const commit = rec.commit;
   const gitUrl = rec.gitUrl;
   if (typeof commit !== 'string' || typeof gitUrl !== 'string') return null;
-  return { commit: commit.toLowerCase(), gitUrl };
+  return {
+    commit: commit.toLowerCase(),
+    gitUrl,
+    repositoryDirectory:
+      typeof rec.repositoryDirectory === 'string' ? rec.repositoryDirectory : null,
+  };
 }
 
 function mergedVendorExcludes(globalExclude: string[], pkg: { exclude?: string[] }): string[] {
@@ -145,6 +154,7 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
         cwd,
         name,
         gitUrl: entry.gitUrl,
+        repositoryDirectory: entry.repositoryDirectory,
         ref: entry.ref,
         commit: entry.commit,
         keep: keepList,
@@ -165,6 +175,7 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
         pristineRoot: pristineDir,
         commit: entry.commit,
         gitUrl: entry.gitUrl,
+        repositoryDirectory: entry.repositoryDirectory,
         targetRoot: stage,
       });
     } catch (e) {
@@ -200,7 +211,11 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
         errors.push(`"${name}" remote check: ${err.message}`);
       }
     } else if (existsSync(markerPath)) {
-      let marker: { commit: string; gitUrl: string } | null;
+      let marker: {
+        commit: string;
+        gitUrl: string;
+        repositoryDirectory: string | null;
+      } | null;
       try {
         marker = parseVendorMarker(await readFile(markerPath, 'utf8'));
       } catch (e) {
@@ -222,6 +237,11 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
       if (!remotesEquivalent(marker.gitUrl, entry.gitUrl)) {
         errors.push(
           `"${name}": vendor marker gitUrl does not match lock (marker=${marker.gitUrl}, lock=${entry.gitUrl})`,
+        );
+      }
+      if (marker.repositoryDirectory !== (entry.repositoryDirectory ?? null)) {
+        errors.push(
+          `"${name}": vendor marker repositoryDirectory does not match lock (marker=${marker.repositoryDirectory ?? '(root)'}, lock=${entry.repositoryDirectory ?? '(root)'})`,
         );
       }
     } else {

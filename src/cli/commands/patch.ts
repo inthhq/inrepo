@@ -93,6 +93,7 @@ export async function cmdPatch(
         cwd,
         name: pkg.name,
         gitUrl: lockEntry.gitUrl,
+        repositoryDirectory: pkg.repositoryDirectory ?? lockEntry.repositoryDirectory,
         ref: lockEntry.ref,
         commit: lockEntry.commit,
         keep: keepList,
@@ -123,6 +124,7 @@ export async function cmdPatch(
             pristineRoot: pristine.dir,
             commit: pristine.commit,
             gitUrl: lockEntry.gitUrl,
+            repositoryDirectory: pkg.repositoryDirectory ?? lockEntry.repositoryDirectory,
             targetRoot: stage,
           });
           const drift = await compareTrees(stage, dest);

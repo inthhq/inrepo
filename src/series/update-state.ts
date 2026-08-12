@@ -8,6 +8,7 @@ import {
   updateStatePath,
 } from '../overlay/overlay-paths.js';
 import { copyTree } from '../overlay/tree-utils.js';
+import { normalizeRepositoryDirectory } from '../registry/normalize-repository-directory.js';
 
 /**
  * Everything `inrepo update --continue` / `--abort` needs while an update is
@@ -18,6 +19,8 @@ import { copyTree } from '../overlay/tree-utils.js';
 export type UpdateState = {
   name: string;
   gitUrl: string;
+  /** Package root within the repository; null means the repository root. */
+  repositoryDirectory: string | null;
   /** Commit the package was pinned to when the update started. */
   oldCommit: string;
   /** Commit the series is being rebased onto. */
@@ -51,9 +54,25 @@ function parseUpdateState(raw: string, path: string): UpdateState {
   if (rec.ref !== null && typeof rec.ref !== 'string') {
     throw new Error(`Invalid update state in ${path}: "ref" must be a string or null`);
   }
+  if (
+    rec.repositoryDirectory !== undefined &&
+    rec.repositoryDirectory !== null &&
+    typeof rec.repositoryDirectory !== 'string'
+  ) {
+    throw new Error(
+      `Invalid update state in ${path}: "repositoryDirectory" must be a string or null`,
+    );
+  }
   return {
     name: rec.name as string,
     gitUrl: rec.gitUrl as string,
+    repositoryDirectory:
+      typeof rec.repositoryDirectory === 'string'
+        ? normalizeRepositoryDirectory(
+            rec.repositoryDirectory,
+            `update state in ${path} repositoryDirectory`,
+          )
+        : null,
     oldCommit: rec.oldCommit as string,
     newCommit: rec.newCommit as string,
     ref: rec.ref as string | null,

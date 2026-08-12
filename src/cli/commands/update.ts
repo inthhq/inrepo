@@ -179,6 +179,7 @@ function pristineFor(
     cwd: ctx.cwd,
     name: ctx.pkg.name,
     gitUrl: ctx.lockEntry.gitUrl,
+    repositoryDirectory: ctx.pkg.repositoryDirectory ?? ctx.lockEntry.repositoryDirectory,
     ref: opts.ref,
     commit: opts.commit,
     keep: mergedVendorKeeps(ctx.globalKeep, ctx.pkg),
@@ -223,6 +224,9 @@ async function finalizeUpdate(
     const lockEntry: LockModule = {
       source: name,
       gitUrl: state.gitUrl,
+      ...(state.repositoryDirectory != null
+        ? { repositoryDirectory: state.repositoryDirectory }
+        : {}),
       commit: state.newCommit,
       ref: state.ref,
       updatedAt: new Date().toISOString(),
@@ -231,7 +235,11 @@ async function finalizeUpdate(
 
     await materializePackage(
       cwd,
-      { ...ctx.pkg, ref: state.ref ?? undefined },
+      {
+        ...ctx.pkg,
+        repositoryDirectory: state.repositoryDirectory ?? undefined,
+        ref: state.ref ?? undefined,
+      },
       ctx.globalExclude,
       ctx.globalKeep,
       { mode: 'sync', force: false, lockEntry },
@@ -287,6 +295,7 @@ async function prepareUpdate(
   const base = {
     name,
     gitUrl: lockEntry.gitUrl,
+    repositoryDirectory: ctx.pkg.repositoryDirectory ?? lockEntry.repositoryDirectory ?? null,
     oldCommit: lockEntry.commit,
     ref: targetRef,
     persistRef: args.ref != null,

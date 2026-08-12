@@ -24,6 +24,7 @@ function sampleState(name: string): UpdateState {
   return {
     name,
     gitUrl: 'https://example.test/repo.git',
+    repositoryDirectory: 'packages/pkg',
     oldCommit: 'a'.repeat(40),
     newCommit: 'b'.repeat(40),
     ref: 'main',

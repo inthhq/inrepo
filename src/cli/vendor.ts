@@ -10,8 +10,8 @@ import { hashTree } from '../overlay/tree-hash.js';
 import { copyTree } from '../overlay/tree-utils.js';
 import { upsertRootPackageJsonDependency } from '../package-json/upsert-vendored-package-ref.js';
 import { moduleDestPath } from '../paths/module-dest-path.js';
-import { normalizeGithubHttpsUrl } from '../registry/normalize-github-https-url.js';
-import { resolveGitUrlFromNpm } from '../registry/resolve-git-url-from-npm.js';
+import { normalizeRepositoryUrlIdentity } from '../registry/normalize-repository-url-identity.js';
+import { resolvePackageSourceFromNpm } from '../registry/resolve-git-url-from-npm.js';
 import { upsertLockModule } from '../lockfile/upsert-lock-module.js';
 import { readModuleState, writeModuleState } from '../overlay/module-state.js';
 import type { RewireReport } from '../rewire/rewire-tree.js';
@@ -36,44 +36,31 @@ function normalizedRef(ref?: string | null): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-function normalizeGitUrlForComparison(raw: string | undefined | null): string | null {
-  if (!raw?.trim()) return null;
-
-  const trimmed = raw.trim().replace(/^git\+/i, '');
-  const github = normalizeGithubHttpsUrl(trimmed);
-  if (github) return github;
-
-  const hasUrlScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
-  const scpLike = hasUrlScheme
-    ? null
-    : /^(?<user>[^@]+@)?(?<host>[^:/]+):(?<path>.+)$/.exec(trimmed);
-  if (scpLike?.groups) {
-    const user = scpLike.groups.user ?? '';
-    const host = scpLike.groups.host.toLowerCase();
-    const path = scpLike.groups.path.replace(/\.git$/i, '');
-    return `${user}${host}:${path}`;
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-    parsed.hostname = parsed.hostname.toLowerCase();
-    parsed.pathname = parsed.pathname.replace(/\.git$/i, '');
-    const normalized = parsed.toString();
-    return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
-  } catch {
-    return trimmed.replace(/\.git$/i, '');
-  }
-}
-
-async function resolvePackageGitUrl(
+async function resolvePackageSource(
   pkg: PackageSpec,
-  fallbackGitUrl: string | undefined,
+  fallback: { gitUrl: string; repositoryDirectory?: string } | undefined,
   s: ReturnType<typeof spinner>,
-): Promise<string> {
-  if (pkg.git?.trim()) return pkg.git.trim();
-  if (fallbackGitUrl) return fallbackGitUrl;
+): Promise<{ gitUrl: string; repositoryDirectory: string | null }> {
+  if (pkg.git?.trim()) {
+    const gitUrl = pkg.git.trim();
+    const sameRepository =
+      fallback != null &&
+      normalizeRepositoryUrlIdentity(gitUrl) ===
+        normalizeRepositoryUrlIdentity(fallback.gitUrl);
+    return {
+      gitUrl,
+      repositoryDirectory:
+        pkg.repositoryDirectory ?? (sameRepository ? fallback.repositoryDirectory : undefined) ?? null,
+    };
+  }
+  if (fallback) {
+    return {
+      gitUrl: fallback.gitUrl,
+      repositoryDirectory: pkg.repositoryDirectory ?? fallback.repositoryDirectory ?? null,
+    };
+  }
   s.message(`Resolving "${pkg.name}" from npm registry`);
-  return resolveGitUrlFromNpm(pkg.name);
+  return resolvePackageSourceFromNpm(pkg.name);
 }
 
 export async function makeSiblingStage(dest: string, prefix: string): Promise<string> {
@@ -164,12 +151,23 @@ export async function materializePackage(
   try {
     const keepList = mergedVendorKeeps(globalKeep, pkg);
     const excludeList = mergedVendorExcludes(globalExclude, pkg);
-    let gitUrl = await resolvePackageGitUrl(pkg, opts.lockEntry?.gitUrl, s);
-    const resolvedLockGitUrl = normalizeGitUrlForComparison(opts.lockEntry?.gitUrl);
+    const source = await resolvePackageSource(
+      pkg,
+      opts.lockEntry
+        ? {
+            gitUrl: opts.lockEntry.gitUrl,
+            repositoryDirectory: opts.lockEntry.repositoryDirectory,
+          }
+        : undefined,
+      s,
+    );
+    let gitUrl = source.gitUrl;
+    const repositoryDirectory = source.repositoryDirectory;
+    const resolvedLockGitUrl = normalizeRepositoryUrlIdentity(opts.lockEntry?.gitUrl);
     const usePinnedLock =
       opts.mode === 'sync' &&
       opts.lockEntry != null &&
-      resolvedLockGitUrl === normalizeGitUrlForComparison(gitUrl) &&
+      resolvedLockGitUrl === normalizeRepositoryUrlIdentity(gitUrl) &&
       opts.lockEntry.ref === (ref ?? null);
     const pinnedCommit = pkg.commit?.trim() || (usePinnedLock ? opts.lockEntry?.commit : null) || null;
 
@@ -182,6 +180,7 @@ export async function materializePackage(
       cwd,
       name: pkg.name,
       gitUrl,
+      repositoryDirectory,
       ref: ref ?? null,
       commit: pinnedCommit,
       keep: keepList,
@@ -201,6 +200,7 @@ export async function materializePackage(
         pristineRoot: pristine.dir,
         commit: pristine.commit,
         gitUrl,
+        repositoryDirectory,
         targetRoot: stage,
         onRewire: (report) => {
           rewire = report;
@@ -253,12 +253,14 @@ export async function materializePackage(
       !opts.lockEntry ||
       opts.lockEntry.commit !== pristine.commit ||
       opts.lockEntry.gitUrl !== gitUrl ||
+      (opts.lockEntry.repositoryDirectory ?? null) !== repositoryDirectory ||
       opts.lockEntry.ref !== (ref ?? null)
     ) {
       s.message('Updating lockfile');
       await upsertLockModule(cwd, pkg.name, {
         source: pkg.name,
         gitUrl,
+        ...(repositoryDirectory == null ? {} : { repositoryDirectory }),
         commit: pristine.commit,
         ref: ref ?? null,
         updatedAt: new Date().toISOString(),

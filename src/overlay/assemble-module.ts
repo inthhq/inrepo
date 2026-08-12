@@ -61,6 +61,7 @@ export async function assembleModuleTree(opts: {
   pristineRoot: string;
   commit: string;
   gitUrl: string;
+  repositoryDirectory?: string | null;
   targetRoot: string;
   /** Pass `null` to skip rewiring; omit to resolve the plan from committed state. */
   rewire?: RewirePlan | null;
@@ -81,6 +82,7 @@ export async function assembleModuleTree(opts: {
   await finalizeVendorCheckout(opts.targetRoot, {
     commit: opts.commit,
     gitUrl: opts.gitUrl,
+    repositoryDirectory: opts.repositoryDirectory,
   });
   return opts.targetRoot;
 }

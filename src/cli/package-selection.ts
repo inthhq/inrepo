@@ -5,6 +5,7 @@ import {
   loadGlobalKeep,
 } from '../config/load-config.js';
 import { readLockfile } from '../lockfile/read-lockfile.js';
+import { normalizeRepositoryUrlIdentity } from '../registry/normalize-repository-url-identity.js';
 import type { LockModule } from '../types/lock-module.js';
 import type { PackageSpec } from './types.js';
 
@@ -48,13 +49,29 @@ export async function selectPackages(
   const fromLock = (packageName: string): PackageSpec => ({
     name: packageName,
     git: modules[packageName]?.gitUrl,
+    repositoryDirectory: modules[packageName]?.repositoryDirectory,
     ref: modules[packageName]?.ref ?? undefined,
   });
 
+  const withLockedSource = (pkg: PackageSpec): PackageSpec => {
+    const locked = modules[pkg.name];
+    if (!locked) return pkg;
+    const configGit = pkg.git?.trim();
+    const sameRepository =
+      !configGit ||
+      normalizeRepositoryUrlIdentity(configGit) ===
+        normalizeRepositoryUrlIdentity(locked.gitUrl);
+    return {
+      ...pkg,
+      repositoryDirectory:
+        pkg.repositoryDirectory ?? (sameRepository ? locked.repositoryDirectory : undefined),
+    };
+  };
+
   const packages: PackageSpec[] = name
-    ? [configByName.get(name) ?? fromLock(name)]
+    ? [withLockedSource(configByName.get(name) ?? fromLock(name))]
     : configPackages.length > 0
-      ? configPackages
+      ? configPackages.map(withLockedSource)
       : Object.keys(modules).sort().map(fromLock);
 
   if (packages.length === 0) {

@@ -60,6 +60,15 @@ export function cacheMetaPath(cwd: string, name: string): string {
   return join(cacheDirPath(cwd, name), '.cache-meta.json');
 }
 
+/** Content-addressed, unfiltered repository snapshots shared by package views. */
+export function repositoryCacheRootPath(cwd: string): string {
+  return join(cwd, '.inrepo', 'repositories');
+}
+
+export function repositoryCacheDirPath(cwd: string, key: string): string {
+  return join(repositoryCacheRootPath(cwd), key);
+}
+
 /**
  * Root of an in-progress `inrepo update` for one package. Everything the
  * command needs to resume or discard a conflicted rebase lives under here, and
