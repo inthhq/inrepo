@@ -99,6 +99,8 @@ commander 12.1.0 (a1b2c3d)
 
 Each package in the closure is then vendored exactly like one you added by hand: a config entry pinned to its release tag, its own lockfile entry, a materialized `inrepo_modules/<package>`, and an empty patch surface. A dependency already vendored at a compatible version is reused instead of re-pinned, and re-running `--with-deps` on a package you already vendored just completes the missing part of its graph.
 
+Scoped names retain their npm layout throughout the workflow: `@scope/pkg` is materialized at `inrepo_modules/@scope/pkg`, recorded under that full name in the graph, and replays through `sync` and `verify` like an unscoped package.
+
 The edges are recorded under `graph` in `inrepo.lock.json`, which raises that file to `lockfileVersion: 2`. Every dependency entry pins an exact git URL and tag, so `sync` and `verify` replay and check the whole graph offline with no registry access. Projects with no recorded graph keep writing `lockfileVersion: 1`.
 
 Resolution fails before anything is vendored when two packages need the same dependency at ranges no published version satisfies, when a dependency uses a source that cannot be pinned (`workspace:`, `file:`, `link:`, `catalog:`, `npm:` aliases, git or tarball URLs, dist-tags), or when a dependency has no usable `repository` URL or no tag for the resolved version. Each message names the dependency and the reason; the fix is to vendor that one package by hand with `npx inrepo add <dep> --git <url> --ref <ref>`. Overlapping ranges are not a conflict — `^1.0.0` and `>=1.2.0` unify onto the highest version satisfying both.

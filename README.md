@@ -250,6 +250,8 @@ commander 12.1.0 (a1b2c3d)
 
 Every resolved package is then vendored exactly like a package you added by hand: a config entry pinned to its release tag, its own lockfile entry, a materialized `inrepo_modules/<package>`, and an empty patch surface you can start capturing patches into. A dependency that is already vendored at a compatible version is reused rather than re-pinned, and running `--with-deps` again on a package you already vendored simply completes the missing part of its graph.
 
+Scoped names retain their npm layout throughout the workflow: `@scope/pkg` is materialized at `inrepo_modules/@scope/pkg`, recorded under that full name in the graph, and replays through `sync` and `verify` like an unscoped package.
+
 The edges themselves are recorded under `graph` in `inrepo.lock.json`, which raises the file to `lockfileVersion: 2`:
 
 ```json

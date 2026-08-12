@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { applyVendorExcludes } from '../git/apply-vendor-excludes.js';
 import { applyVendorKeep } from '../git/apply-vendor-keep.js';
 import { clonePackage } from '../git/clone-package.js';
@@ -98,6 +98,7 @@ export async function ensurePristine(opts: {
     await writeFile(stageMetaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
 
     await rm(dir, { recursive: true, force: true });
+    await mkdir(dirname(dir), { recursive: true });
     await rename(stage, dir);
     return { dir, commit, gitUrl: originUrl };
   } catch (error) {

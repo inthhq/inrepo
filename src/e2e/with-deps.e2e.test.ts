@@ -192,6 +192,47 @@ describe('CLI: add --with-deps (e2e)', () => {
     expect('graph' in lock).toBe(false);
   });
 
+  test('vendors and replays a scoped package graph', async () => {
+    const scoped = await makePackageGraphFixture([
+      {
+        name: '@scope/root',
+        versions: { '1.0.0': { dependencies: { '@scope/leaf': '^1.0.0' } } },
+      },
+      { name: '@scope/leaf', versions: { '1.1.0': {} } },
+    ]);
+    try {
+      const scopedEnv = { ...envFor('inrepo.json'), INREPO_REGISTRY: scoped.registryUrl };
+      const add = await runCli(
+        ['add', '--git', scoped.gitUrl('@scope/root'), '--with-deps', '@scope/root'],
+        { cwd, env: scopedEnv },
+      );
+      expect(add.exitCode).toBe(0);
+      for (const name of ['root', 'leaf']) {
+        expect(existsSync(join(cwd, 'inrepo_modules', '@scope', name, 'package.json'))).toBe(
+          true,
+        );
+      }
+
+      const lock = await readJson(join(cwd, 'inrepo.lock.json'));
+      expect(lock.graph).toEqual({
+        '@scope/root': {
+          version: '1.0.0',
+          root: true,
+          dependencies: {
+            '@scope/leaf': { range: '^1.0.0', version: '1.1.0', module: '@scope/leaf' },
+          },
+        },
+        '@scope/leaf': { version: '1.1.0' },
+      });
+
+      const offline = { ...envFor('inrepo.json'), INREPO_REGISTRY: OFFLINE_REGISTRY };
+      expect((await runCli(['sync'], { cwd, env: offline })).exitCode).toBe(0);
+      expect((await runCli(['verify'], { cwd, env: offline })).exitCode).toBe(0);
+    } finally {
+      await scoped.cleanup();
+    }
+  });
+
   test('--with-deps cannot be combined with --no-save', async () => {
     const r = await runCli(['add', '--with-deps', '--no-save', 'alpha'], { cwd, env });
     expect(r.exitCode).toBe(1);

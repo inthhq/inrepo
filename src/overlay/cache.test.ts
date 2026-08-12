@@ -46,6 +46,23 @@ describe('ensurePristine', () => {
     expect(existsSync(join(pristine.dir, 'README.md'))).toBe(false);
   });
 
+  test('creates the cache parent for a scoped package', async () => {
+    const pristine = await ensurePristine({
+      cwd,
+      name: '@scope/upstream',
+      gitUrl: fx!.url,
+      commit: fx!.c1,
+      ref: null,
+      keep: [],
+      exclude: [],
+    });
+
+    expect(pristine.dir).toBe(join(cwd, '.inrepo', 'cache', '@scope', 'upstream'));
+    expect(await readFile(join(pristine.dir, 'src', 'index.ts'), 'utf8')).toBe(
+      'export const v = 1;\n',
+    );
+  });
+
   test('rebuilds when the pinned commit or filters change', async () => {
     const first = await ensurePristine({
       cwd,
