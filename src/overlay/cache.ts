@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { lstat, mkdir, mkdtemp, readFile, rename, rm, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, posix } from 'node:path';
 import { applyVendorExcludes } from '../git/apply-vendor-excludes.js';
 import { applyVendorKeep } from '../git/apply-vendor-keep.js';
 import { clonePackage } from '../git/clone-package.js';
@@ -14,7 +14,7 @@ import {
   repositoryCacheDirPath,
   repositoryCacheRootPath,
 } from './overlay-paths.js';
-import { copyTree, defaultSkipTreePath, relPosixToAbs } from './tree-utils.js';
+import { copyTree, defaultSkipTreePath, relPosixToAbs, walkTree } from './tree-utils.js';
 
 type PristineMeta = {
   commit: string;
@@ -170,6 +170,70 @@ async function ensureRepositorySnapshot(opts: {
     await rm(stage, { recursive: true, force: true });
     throw error;
   }
+}
+
+async function manifestIdentity(
+  root: string,
+  relativePath: string,
+): Promise<{ name: string | null; version: string | null } | null> {
+  try {
+    const raw = await readFile(relPosixToAbs(root, relativePath), 'utf8');
+    const parsed = JSON.parse(raw) as unknown;
+    if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    const record = parsed as Record<string, unknown>;
+    return {
+      name: typeof record.name === 'string' ? record.name : null,
+      version: typeof record.version === 'string' ? record.version : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Locate a registry package inside its immutable repository commit. */
+export async function discoverRepositoryDirectory(opts: {
+  cwd: string;
+  name: string;
+  version: string;
+  gitUrl: string;
+  commit: string;
+}): Promise<string | null> {
+  const repository = await ensureRepositorySnapshot({
+    cwd: opts.cwd,
+    gitUrl: opts.gitUrl,
+    commit: opts.commit,
+  });
+  const root = await manifestIdentity(repository.dir, 'package.json');
+  if (root?.name === opts.name) return null;
+
+  const entries = await walkTree(repository.dir, { skip: defaultSkipTreePath });
+  const matches: string[] = [];
+  const nameMatches: string[] = [];
+  let manifestCount = 0;
+  for (const [relativePath, entry] of entries) {
+    if (entry.kind !== 'file' || posix.basename(relativePath) !== 'package.json') continue;
+    manifestCount++;
+    const identity = await manifestIdentity(repository.dir, relativePath);
+    if (identity?.name === opts.name) {
+      const directory = posix.dirname(relativePath);
+      nameMatches.push(directory);
+      if (identity.version === opts.version) matches.push(directory);
+    }
+  }
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0 && nameMatches.length === 1) return nameMatches[0];
+  // Some source-only repositories generate package.json only while publishing.
+  // With no competing workspace manifests, npm's root repository locator is
+  // still unambiguous and the exact publish pin remains usable.
+  if (matches.length === 0 && nameMatches.length === 0 && manifestCount === 0) return null;
+  if (matches.length === 0 && nameMatches.length === 0) {
+    throw new Error(
+      `Cannot locate "${opts.name}@${opts.version}" in ${opts.gitUrl} at ${opts.commit}`,
+    );
+  }
+  throw new Error(
+    `Cannot locate "${opts.name}@${opts.version}" uniquely in ${opts.gitUrl} at ${opts.commit}: ${[...new Set([...matches, ...nameMatches])].join(', ')}`,
+  );
 }
 
 export async function ensurePristine(opts: {

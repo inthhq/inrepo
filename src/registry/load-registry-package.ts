@@ -11,6 +11,12 @@ export type RegistryManifest = {
   gitUrl: string | null;
   /** Package root within the repository; null means the repository root. */
   repositoryDirectory: string | null;
+  /** Exact source commit recorded by npm at publish time, when present. */
+  gitHead: string | null;
+  /** Integrity of the published tarball bound by npm provenance. */
+  distIntegrity: string | null;
+  /** Registry endpoint returning signed attestations for this version. */
+  attestationsUrl: string | null;
 };
 
 export type RegistryPackage = {
@@ -37,11 +43,28 @@ export function toRegistryPackage(name: string, packument: Packument): RegistryP
     for (const [version, manifest] of Object.entries(versions)) {
       if (manifest == null || typeof manifest !== 'object') continue;
       const repo = repositoryToSource(manifest.repository) ?? fallbackRepo;
+      const dist =
+        manifest.dist != null && typeof manifest.dist === 'object' && !Array.isArray(manifest.dist)
+          ? (manifest.dist as Record<string, unknown>)
+          : null;
+      const attestations =
+        dist?.attestations != null &&
+        typeof dist.attestations === 'object' &&
+        !Array.isArray(dist.attestations)
+          ? (dist.attestations as Record<string, unknown>)
+          : null;
+      const gitHead =
+        typeof manifest.gitHead === 'string' && /^[0-9a-f]{40}$/i.test(manifest.gitHead)
+          ? manifest.gitHead.toLowerCase()
+          : null;
       manifests.push({
         version,
         dependencies: runtimeDependencies(manifest),
         gitUrl: repo ? normalizeRepositoryUrl(repo.gitUrl) : null,
         repositoryDirectory: repo?.repositoryDirectory ?? null,
+        gitHead,
+        distIntegrity: typeof dist?.integrity === 'string' ? dist.integrity : null,
+        attestationsUrl: typeof attestations?.url === 'string' ? attestations.url : null,
       });
     }
   }

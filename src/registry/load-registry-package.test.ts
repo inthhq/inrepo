@@ -45,6 +45,9 @@ describe('toRegistryPackage', () => {
         dependencies: { gamma: '^2.0.0' },
         gitUrl: 'https://github.com/test/beta.git',
         repositoryDirectory: null,
+        gitHead: null,
+        distIntegrity: null,
+        attestationsUrl: null,
       },
     ]);
   });
@@ -118,5 +121,25 @@ describe('toRegistryPackage', () => {
       versions: { '1.0.0': { dependencies: { gamma: 1 } as Record<string, unknown> } },
     });
     expect(pkg.manifests[0].dependencies).toEqual({});
+  });
+
+  test('retains immutable publish provenance for pin fallbacks', () => {
+    const pkg = toRegistryPackage('beta', {
+      versions: {
+        '1.0.0': {
+          repository: 'https://github.com/test/beta',
+          gitHead: 'A'.repeat(40),
+          dist: {
+            integrity: 'sha512-YWJj',
+            attestations: { url: 'https://registry.example/attestations/beta@1.0.0' },
+          },
+        },
+      },
+    });
+    expect(pkg.manifests[0]).toMatchObject({
+      gitHead: 'a'.repeat(40),
+      distIntegrity: 'sha512-YWJj',
+      attestationsUrl: 'https://registry.example/attestations/beta@1.0.0',
+    });
   });
 });

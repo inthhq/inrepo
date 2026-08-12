@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import { existsSync } from 'node:fs';
 import { readFile, rename, symlink } from 'node:fs/promises';
 import { join } from 'node:path';
-import { ensurePristine } from './cache.js';
+import { discoverRepositoryDirectory, ensurePristine } from './cache.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
 import {
   makeLocalGitFixture,
@@ -153,6 +153,40 @@ describe('ensurePristine', () => {
         exclude: [],
       });
       expect(await readFile(join(retargeted.dir, 'src', 'index.ts'), 'utf8')).toContain('"b"');
+    } finally {
+      await mono.cleanup();
+    }
+  });
+
+  test('discovers one exact package directory at an immutable commit', async () => {
+    const mono = await makeLocalGitFixture('inrepo-cache-discovery-');
+    try {
+      const commit = await mono.commitUpstream(
+        {
+          'package.json': '{"name":"workspace-root","version":"1.0.0"}\n',
+          'packages/schema/package.json': '{"name":"@scope/schema","version":"2.2.0"}\n',
+          'packages/other/package.json': '{"name":"@scope/other","version":"2.2.0"}\n',
+        },
+        'add discoverable package',
+      );
+      expect(
+        await discoverRepositoryDirectory({
+          cwd,
+          name: '@scope/schema',
+          version: '2.2.0',
+          gitUrl: mono.url,
+          commit,
+        }),
+      ).toBe('packages/schema');
+      expect(
+        await discoverRepositoryDirectory({
+          cwd,
+          name: 'workspace-root',
+          version: '1.0.0',
+          gitUrl: mono.url,
+          commit,
+        }),
+      ).toBeNull();
     } finally {
       await mono.cleanup();
     }

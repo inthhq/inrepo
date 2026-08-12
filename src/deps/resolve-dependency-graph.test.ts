@@ -40,13 +40,22 @@ function makeIo(registry: FakeRegistry): GraphResolverIo & { fetched: string[] }
               ? `https://github.com/test/${name.replace('@', '').replace('/', '-')}.git`
               : manifest.gitUrl,
           repositoryDirectory: manifest.repositoryDirectory ?? null,
+          gitHead: null,
+          distIntegrity: null,
+          attestationsUrl: null,
         })),
       });
     },
-    resolveVersionTag(_gitUrl: string, name: string, version: string) {
-      const tagged = registry[name]?.[version]?.tagged;
-      if (tagged === false) return Promise.resolve(null);
-      return Promise.resolve({ ref: `v${version}`, commit: commitFor(name, version) });
+    resolveVersionPins(manifest, name: string) {
+      const tagged = registry[name]?.[manifest.version]?.tagged;
+      if (tagged === false) return Promise.resolve([]);
+      return Promise.resolve([{
+        ref: `v${manifest.version}`,
+        commit: commitFor(name, manifest.version),
+      }]);
+    },
+    resolveRepositoryDirectory(candidate) {
+      return Promise.resolve(candidate.repositoryDirectory);
     },
   };
 }

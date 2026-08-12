@@ -2,6 +2,8 @@ export type PackumentVersion = {
   version?: unknown;
   repository?: unknown;
   dependencies?: unknown;
+  gitHead?: unknown;
+  dist?: unknown;
 };
 
 export type Packument = {

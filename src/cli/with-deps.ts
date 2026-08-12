@@ -6,9 +6,9 @@ import {
   type ResolvedNode,
   type VendoredPackage,
 } from '../deps/resolve-dependency-graph.js';
-import { resolveVersionTag } from '../deps/resolve-version-tag.js';
+import { resolveVersionPins } from '../deps/resolve-version-pin.js';
 import { readLockfile } from '../lockfile/read-lockfile.js';
-import { ensurePristine } from '../overlay/cache.js';
+import { discoverRepositoryDirectory, ensurePristine } from '../overlay/cache.js';
 import { readPackageManifest } from '../package-json/read-package-manifest.js';
 import { moduleDestPath } from '../paths/module-dest-path.js';
 import { loadRegistryPackage } from '../registry/load-registry-package.js';
@@ -196,7 +196,10 @@ export async function planWithDeps(
     vendored,
     io: {
       loadRegistryPackage,
-      resolveVersionTag: (url, name, version) => resolveVersionTag(url, name, version),
+      resolveVersionPins: (manifest, name) => resolveVersionPins(name, manifest),
+      resolveRepositoryDirectory: async (candidate) =>
+        candidate.repositoryDirectory ??
+        (await discoverRepositoryDirectory({ cwd, ...candidate })),
     },
   });
 
@@ -235,6 +238,7 @@ export async function preflightWithDeps(
     });
     const manifest = await readPackageManifest(pristine.dir);
     if (manifest == null) {
+      if (node.repositoryDirectory == null) continue;
       throw new DependencyResolutionError(
         `Cannot vendor "${node.name}": its selected repository directory has no package.json.`,
       );
@@ -244,11 +248,6 @@ export async function preflightWithDeps(
         manifest.name == null
           ? `Cannot vendor "${node.name}": its selected repository directory package.json has no name.`
           : `Cannot vendor "${node.name}": its selected repository directory declares package "${manifest.name}".`,
-      );
-    }
-    if (manifest.version != null && node.version != null && manifest.version !== node.version) {
-      throw new DependencyResolutionError(
-        `Cannot vendor "${node.name}@${node.version}": its selected repository directory declares version "${manifest.version}".`,
       );
     }
   }

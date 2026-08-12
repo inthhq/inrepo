@@ -25,7 +25,19 @@ describe('normalizeRepositoryUrl', () => {
     );
   });
 
-  test.each(['', '   ', 'gist:abc123', 'foo/bar'])('rejects %p', (raw) => {
+  test('normalizes strict npm owner/repo shorthand as GitHub', () => {
+    expect(normalizeRepositoryUrl('unjs/nypm')).toBe('https://github.com/unjs/nypm.git');
+    expect(normalizeRepositoryUrl('unjs/nypm.git')).toBe('https://github.com/unjs/nypm.git');
+  });
+
+  test.each(['../nypm', 'unjs/nypm/v1', 'unjs/nypm#v1'])(
+    'rejects ambiguous or unsafe shorthand %p',
+    (raw) => {
+      expect(normalizeRepositoryUrl(raw)).toBeNull();
+    },
+  );
+
+  test.each(['', '   ', 'gist:abc123'])('rejects %p', (raw) => {
     expect(normalizeRepositoryUrl(raw)).toBeNull();
   });
 });

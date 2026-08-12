@@ -63,7 +63,17 @@ export type DependencyOrigin = {
 
 export type GraphResolverIo = {
   loadRegistryPackage(name: string): Promise<RegistryPackage>;
-  resolveVersionTag(gitUrl: string, name: string, version: string): Promise<VersionTag | null>;
+  resolveVersionPins(
+    manifest: RegistryPackage['manifests'][number],
+    name: string,
+  ): Promise<VersionTag[]>;
+  resolveRepositoryDirectory(input: {
+    name: string;
+    version: string;
+    gitUrl: string;
+    commit: string;
+    repositoryDirectory: string | null;
+  }): Promise<string | null>;
 };
 
 export type ResolveDependencyGraphInput = {
@@ -209,13 +219,37 @@ export async function resolveDependencyGraph(
       );
     }
 
-    const tag = await io.resolveVersionTag(manifest.gitUrl, name, picked);
-    if (!tag) {
+    const pins = await io.resolveVersionPins(manifest, name);
+    if (pins.length === 0) {
       throw new DependencyResolutionError(
         `Unsupported dependency source: no tag for "${name}@${picked}" in ${manifest.gitUrl} ` +
           `(required by ${origins.map((origin) => origin.from).join(', ')}). ` +
           `Vendor it by hand with "inrepo add ${name} --git ${manifest.gitUrl} --ref <ref>".`,
       );
+    }
+    let selected:
+      | { pin: VersionTag; repositoryDirectory: string | null }
+      | undefined;
+    let lastSelectionError: unknown;
+    for (const pin of pins) {
+      try {
+        const repositoryDirectory = await io.resolveRepositoryDirectory({
+          name,
+          version: picked,
+          gitUrl: manifest.gitUrl,
+          commit: pin.commit,
+          repositoryDirectory: manifest.repositoryDirectory,
+        });
+        selected = { pin, repositoryDirectory };
+        break;
+      } catch (error) {
+        lastSelectionError = error;
+      }
+    }
+    if (!selected) {
+      throw lastSelectionError instanceof Error
+        ? lastSelectionError
+        : new DependencyResolutionError(`Cannot select source for "${name}@${picked}"`);
     }
 
     // Validate this package's own specifiers now so an unsupported source in a
@@ -226,9 +260,9 @@ export async function resolveDependencyGraph(
       name,
       version: picked,
       gitUrl: manifest.gitUrl,
-      repositoryDirectory: manifest.repositoryDirectory,
-      ref: tag.ref,
-      commit: tag.commit,
+      repositoryDirectory: selected.repositoryDirectory,
+      ref: selected.pin.ref,
+      commit: selected.pin.commit,
       dependencies: manifest.dependencies,
       root: false,
       reused: false,
