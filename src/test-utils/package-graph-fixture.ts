@@ -10,6 +10,8 @@ export type FixtureVersion = {
 
 export type FixturePackageSpec = {
   name: string;
+  /** Different name at the git checkout root, to model a monorepo workspace. */
+  checkoutName?: string;
   /** Versions in ascending order; each becomes a commit plus a `v<version>` tag. */
   versions: Record<string, FixtureVersion>;
   /** Serve a packument with no `repository` field. */
@@ -42,7 +44,7 @@ async function buildPackageRepo(root: string, spec: FixturePackageSpec): Promise
       join(work, 'package.json'),
       `${JSON.stringify(
         {
-          name: spec.name,
+          name: spec.checkoutName ?? spec.name,
           version,
           main: 'index.js',
           ...(manifest.dependencies ? { dependencies: manifest.dependencies } : {}),

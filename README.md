@@ -279,6 +279,7 @@ Resolution fails — before a single package is vendored — when:
 
 - two packages need the same dependency at ranges no published version satisfies. The message names both dependents and their ranges. Resolving version conflicts is out of scope; vendor the conflicting packages separately.
 - a dependency uses a source `inrepo` cannot pin: `workspace:`, `file:`, `link:`, `catalog:`, `npm:` aliases, git URLs, tarball URLs, or a dist-tag.
+- a package's `package.json` lives in a monorepo subdirectory rather than at the repository root.
 - a dependency has no usable `repository` URL on the registry, or its repository has no tag for the resolved version.
 
 In every case the message names the dependency and the reason, and the fix is to vendor that one package by hand with `npx inrepo add <dep> --git <url> --ref <ref>`.

@@ -306,6 +306,30 @@ describe('CLI: add --with-deps failure modes (e2e)', () => {
     }
   });
 
+  test('a monorepo package fails instead of reading the workspace root as the package', async () => {
+    const fx = await makePackageGraphFixture([
+      {
+        name: '@scope/cli',
+        checkoutName: 'workspace-root',
+        versions: { '1.0.0': { dependencies: { leaf: '^1.0.0' } } },
+      },
+      { name: 'leaf', versions: { '1.0.0': {} } },
+    ]);
+    try {
+      const r = await runCli(
+        ['add', '--git', fx.gitUrl('@scope/cli'), '--with-deps', '@scope/cli'],
+        { cwd, env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl } },
+      );
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toContain(
+        'the repository root declares package "workspace-root". Monorepo package subdirectories are not supported yet.',
+      );
+      await expectNothingVendored();
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
   test('a dependency with no published tag fails with the package named', async () => {
     const fx = await makePackageGraphFixture([
       { name: 'root-pkg', versions: { '1.0.0': { dependencies: { loose: '^1.0.0' } } } },

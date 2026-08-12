@@ -1,5 +1,6 @@
 import { existsSync } from 'node:fs';
 import {
+  DependencyResolutionError,
   resolveDependencyGraph,
   type DependencyGraph,
   type ResolvedNode,
@@ -84,6 +85,18 @@ export async function planWithDeps(
     exclude: mergedVendorExcludes(globalExclude, root),
   });
   const manifest = await readPackageManifest(pristine.dir);
+  if (manifest == null) {
+    throw new DependencyResolutionError(
+      `Cannot resolve dependencies for "${root.name}": its pinned checkout has no package.json at the repository root. ` +
+        'Monorepo package subdirectories are not supported yet.',
+    );
+  }
+  if (manifest.name != null && manifest.name !== root.name) {
+    throw new DependencyResolutionError(
+      `Cannot resolve dependencies for "${root.name}": the repository root declares package "${manifest.name}". ` +
+        'Monorepo package subdirectories are not supported yet.',
+    );
+  }
 
   const { modules } = await readLockfile(cwd);
   const vendored = new Map<string, VendoredPackage>();
@@ -95,11 +108,11 @@ export async function planWithDeps(
   const graph = await resolveDependencyGraph({
     root: {
       name: root.name,
-      version: manifest?.version ?? null,
+      version: manifest.version,
       gitUrl: pristine.gitUrl,
       ref: root.ref?.trim() || null,
       commit: pristine.commit,
-      dependencies: manifest?.dependencies ?? {},
+      dependencies: manifest.dependencies,
     },
     vendored,
     io: {
