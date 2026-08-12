@@ -1,0 +1,24 @@
+{
+  "name": "inrepo-example-c15t-help",
+  "private": true,
+  "version": "2.2.0",
+  "type": "module",
+  "description": "Narrow @c15t/cli help-renderer parity benchmark for npm/dynamic versus selected-source/static scriptc",
+  "scripts": {
+    "sync": "cd vendor && bun ../../../src/cli.ts sync",
+    "prepare:source": "bun prepare.ts",
+    "build": "npm run sync && npm run prepare:source && npm run build:npm && npm run build:static",
+    "build:npm": "scriptc build cli-npm.ts --dynamic -o demo-npm",
+    "build:static": "scriptc build cli-static.ts -o demo-static",
+    "check": "bun check.ts",
+    "bench": "bun check.ts && bun bench.ts"
+  },
+  "dependencies": {
+    "@c15t/cli": "2.2.0",
+    "picocolors": "1.1.1"
+  },
+  "devDependencies": {
+    "mitata": "1.0.34",
+    "scriptc": "0.0.26"
+  }
+}

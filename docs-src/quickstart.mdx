@@ -86,7 +86,7 @@ npx inrepo verify
 npx inrepo add <package> --with-deps
 ```
 
-`--with-deps` reads `dependencies` from the pinned checkout, resolves each range to an exact published version, maps that version to its repository and release tag, and recurses. Only runtime `dependencies` are followed: `devDependencies` and `peerDependencies` are out of scope, because neither is needed to run the vendored source.
+For registry packages, `--with-deps` reads the exact published `dependencies`, including npm's rewritten workspace ranges. A manual `--git` root uses its checkout manifest. It resolves each range to an exact published version, maps that version to its repository and release tag, and recurses. Only runtime `dependencies` are followed: `devDependencies` and `peerDependencies` are out of scope, because neither is needed to run the vendored source.
 
 The resolved tree is printed before anything is written:
 
@@ -101,9 +101,11 @@ Each package in the closure is then vendored exactly like one you added by hand:
 
 Scoped names retain their npm layout throughout the workflow: `@scope/pkg` is materialized at `inrepo_modules/@scope/pkg`, recorded under that full name in the graph, and replays through `sync` and `verify` like an unscoped package.
 
-The edges are recorded under `graph` in `inrepo.lock.json`, which raises that file to `lockfileVersion: 2`. Every dependency entry pins an exact git URL and tag, so `sync` and `verify` replay and check the whole graph offline with no registry access. Projects with no recorded graph keep writing `lockfileVersion: 1`.
+npm `repository.directory` metadata is preserved automatically. The package subtree becomes the module root, so keep/exclude filters and patch paths remain package-relative. Packages sharing one repository commit reuse the same raw snapshot, while their module trees stay separate. Manual monorepo sources can use `--repository-directory <path>`.
 
-Resolution fails before anything is vendored when two packages need the same dependency at ranges no published version satisfies, when a dependency uses a source that cannot be pinned (`workspace:`, `file:`, `link:`, `catalog:`, `npm:` aliases, git or tarball URLs, dist-tags), when a package's `package.json` lives in a monorepo subdirectory, or when a dependency has no usable `repository` URL or no tag for the resolved version. Each message names the dependency and the reason; the fix is to vendor that one package by hand with `npx inrepo add <dep> --git <url> --ref <ref>`. Overlapping ranges are not a conflict — `^1.0.0` and `>=1.2.0` unify onto the highest version satisfying both.
+The edges are recorded under `graph` in `inrepo.lock.json`, which raises that file to `lockfileVersion: 2`. A selected repository directory raises it to version 3 so an older CLI cannot silently use the wrong repository root. Every dependency entry pins an exact git URL and tag, so `sync` and `verify` replay and check the whole graph offline with no registry access.
+
+Resolution fails before anything is vendored when two packages need the same dependency at ranges no published version satisfies, when a dependency uses a source that cannot be pinned (`workspace:`, `file:`, `link:`, `catalog:`, `npm:` aliases, git or tarball URLs, dist-tags), when a selected package directory is invalid, or when a dependency has no usable `repository` URL or no tag for the resolved version. Each message names the dependency and the reason. Private monorepo packages can be added with `--git <url> --repository-directory <path> --ref <ref>`. Overlapping ranges are not a conflict — `^1.0.0` and `>=1.2.0` unify onto the highest version satisfying both.
 
 Bare specifiers in the vendored source are left exactly as upstream wrote them: `--with-deps` vendors the graph, it does not rewrite imports. It also cannot be combined with `--no-save`, because a graph is only replayable from committed files.
 

@@ -14,6 +14,7 @@ Prefer `inrepo.json` at the project root:
     {
       "name": "example-package",
       "git": "https://github.com/owner/repo",
+      "repositoryDirectory": "packages/example-package",
       "ref": "main",
       "dev": false,
       "keep": ["src", "package.json"],
@@ -50,6 +51,7 @@ Package fields:
 | --- | --- |
 | `name` | Package name and destination under `inrepo_modules/`. |
 | `git` | Optional git clone URL. Required when npm registry lookup cannot resolve a GitHub repository. |
+| `repositoryDirectory` | Optional package root inside the repository. Discovered from npm `repository.directory`, or set explicitly for a manual git source. |
 | `ref` | Optional branch, tag, or commit to pin before resolving the lockfile commit. |
 | `dev` | When `true`, sync wires the root `package.json#devDependencies`; otherwise it uses `dependencies`. |
 | `keep` | Optional allowlist of relative path prefixes to retain before exclusions run. |
@@ -66,6 +68,8 @@ Filtering always runs in this order:
 2. `exclude` removes paths from what remains.
 
 If `keep` is set, list every root file you still need, such as `package.json` or `LICENSE`. Nothing is kept implicitly.
+
+For a monorepo package, filtering and patches are relative to `repositoryDirectory`, not the repository root. The selected directory is recorded in lockfile version 3 and replayed offline by `sync`, `verify`, `diff`, `patch`, and `update`. Use `inrepo add <name> --git <url> --repository-directory <path>` when npm metadata cannot provide it.
 
 `inrepo add <package>` updates config by default after a successful checkout. Use `--no-save` for a one-off vendoring operation that should not upsert config.
 

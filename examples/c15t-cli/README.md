@@ -1,82 +1,121 @@
-# `@c15t/cli` as a real-world `--with-deps` case study
+# `@c15t/cli` selected-source help benchmark
 
-This case study asks whether inrepo can vendor the complete runtime dependency
-graph of [`@c15t/cli`](https://www.npmjs.com/package/@c15t/cli) and then give
-scriptc enough visible source to compile a narrow command such as `--help`
-statically.
+This example measures one honest, narrow question: can scriptc statically
+compile the help renderer selected from `@c15t/cli@2.2.0` source, and does that
+renderer behave exactly like the same source using an npm dependency through
+scriptc's dynamic runtime?
 
-It is intentionally separate from the
-[`examples/scriptc`](../scriptc) microbenchmark. The small example answers a
-controlled performance question; this one measures how a production CLI
-stresses dependency discovery, monorepo provenance, source materialization,
-import rewiring, and static-compiler compatibility.
+The answer for this selected source path is yes. This is deliberately **not** a
+claim that inrepo can vendor or scriptc can statically compile the complete
+c15t CLI dependency graph.
 
-## Pinned subject
+## Pinned source
 
-The probe fixes every identity involved in the result:
+The committed [`vendor/inrepo.json`](vendor/inrepo.json) and
+[`vendor/inrepo.lock.json`](vendor/inrepo.lock.json) select:
 
-- npm package: `@c15t/cli@2.2.0`
-- git repository: `https://github.com/c15t/c15t.git`
+- npm identity: `@c15t/cli@2.2.0`
+- repository: `https://github.com/c15t/c15t.git`
+- repository directory: `packages/cli`
 - release tag: `@c15t/cli@2.2.0`
-- commit: `017433b2ca27e29177c320f51b973e4a78b6851e`
-- npm `repository.directory`: `packages/cli`
+- peeled commit: `017433b2ca27e29177c320f51b973e4a78b6851e`
+- retained source: `src/actions/show-help-menu.ts` plus `package.json`
 
-The published package declares 16 direct runtime dependencies. A lock-only npm
-12 resolution on 2026-08-12 contained 276 package entries; that count is a
-scale observation rather than a stable assertion because transitive ranges can
-move.
+`inrepo sync` runs in the isolated `vendor/` project and writes the selected
+package under `vendor/inrepo_modules/@c15t/cli/`. [`prepare.ts`](prepare.ts) reads that generated
+source, verifies its pinned SHA-256 from [`provenance.json`](provenance.json),
+and creates ignored dynamic and static variants. There is no standalone source
+copy pretending to be inrepo output.
 
-## Current result
+The command and flag descriptors are copied from the same commit's
+`packages/cli/src/index.ts` and `packages/cli/src/context/parser.ts`. The
+renderer-only harness omits command actions and the rest of `CliContext`, since
+the selected function does not execute them.
 
-The stack progressively teaches the command to select `packages/cli` from the
-c15t monorepo:
+## Compared variants
+
+- `demo-npm`: selected c15t help source with its upstream bare `picocolors`
+  import, built using `scriptc --dynamic`.
+- `demo-static`: the same selected source built statically. Its only
+  dependency import is redirected to a no-color identity shim, matching the
+  fixed `NO_COLOR=1` benchmark contract.
+- Bun and Node executing the npm-import entrypoint are interpreter baselines.
+
+Both scriptc variants receive the same two small compatibility restatements.
+They are documented in [`PATCHES.md`](PATCHES.md): a narrow type-only context
+import and an equivalent form of two `Math.max` calls that scriptc 0.0.26 can
+lower.
+
+## Parity gate
+
+[`check.ts`](check.ts) runs the renderer both with no arguments and with
+`--help`. It requires byte-identical stdout and stderr plus the same exit status
+across Bun, Node, scriptc dynamic, and scriptc static before timing is allowed.
+All runs fix `NO_COLOR=1`, `FORCE_COLOR=0`, and `CI=1`.
+
+On Apple M5 Pro / macOS arm64 with Bun 1.3.11, Node 24.18.0, and scriptc 0.0.26:
+
+- all 2 scenarios matched across all 4 variants;
+- `demo-npm` was 1.1 MB;
+- `demo-static` was 392 KB.
+
+## Observed benchmark
+
+Mitata measures cold process spawn plus rendering on each iteration. One clean
+run on the machine above produced:
+
+| variant | average | observed range |
+| --- | ---: | ---: |
+| scriptc dynamic, npm `picocolors` | 8.89 ms | 8.62–9.33 ms |
+| scriptc static, selected c15t source | **1.74 ms** | 1.42–2.20 ms |
+| Bun npm entrypoint | 10.23 ms | 9.57–11.08 ms |
+| Node npm entrypoint | 42.09 ms | 40.57–43.68 ms |
+
+For this renderer-only target, the static binary was about 5.1× faster than
+the dynamic scriptc binary. This is not a full-CLI performance result.
+
+## Reproduce
+
+Requires Node 22.18+ (for direct TypeScript execution), Bun, clang, and macOS
+arm64 for the native numbers shown above.
 
 ```sh
-inrepo add @c15t/cli --ref @c15t/cli@2.2.0 --with-deps
+cd examples/c15t-cli
+npm ci --ignore-scripts
+npm run build
+npm run check
+npm run bench
 ```
 
-The metadata layer first records the directory while retaining the previous
-workspace-root diagnostic. The materialization layer then reaches
-`packages/cli` but still reads `workspace:*` from the git checkout. The graph
-layer pairs that checkout with the published manifest and progresses until a
-selected transitive dependency has no recognizable release tag. At every
-layer, `--with-deps` stops before writing config, lockfile, or generated
-modules.
+`npm run build` first runs the repository's current inrepo CLI to reproduce the
+selected source from the committed lock, then verifies the source hash and
+builds both binaries. `npm run bench` always reruns the parity gate first.
 
-```text
-# Metadata layer:
-Cannot resolve dependencies for "@c15t/cli": the repository root declares package "c15t-workspace".
-
-# Materialization layer:
-Unsupported dependency source: "@c15t/cli" depends on "@c15t/backend" as "workspace:*".
-
-# Later in the stack:
-Unsupported dependency source: no tag for "@scalar/hono-api-reference@0.11.8" could be found.
-```
-
-These explicit failures replace the previous misleading result, which treated
-the workspace root as `@c15t/cli` and printed an empty one-package graph.
-
-Run the executable probe from the repository root with:
+From the repository root, this platform-neutral probe independently performs a
+clean temporary `sync` and `verify`, checks npm provenance, and hashes the
+materialized source:
 
 ```sh
 bun run test:c15t-cli-case
 ```
 
-It checks the exact npm name/version, repository and subdirectory metadata,
-the 16 direct runtime dependencies, a known dependency-provenance diagnostic,
-and the guarantee that the failed plan leaves project files untouched. CI runs
-the same probe.
+## Why this is not full CLI parity
 
-## What must land before a benchmark
+The complete published `@c15t/cli` runtime graph remains beyond the current
+case study:
 
-1. Resolve package versions that have no recognized release tag using reliable
-   registry provenance or an explicit override.
-2. Support multiple incompatible versions of the same package in one vendored
-   dependency graph.
-3. Resolve the full runtime graph and apply generated import rewiring between
-   its vendored package roots.
-4. Compile a narrow `@c15t/cli --help` path with scriptc and prove its stdout,
-   stderr, and exit status match the npm-backed command.
-5. Only after behavioral parity passes, compare dynamic npm and static vendored
-   timings. Until then this case study publishes no performance claim.
+- the runtime closure needs multiple incompatible versions of `citty` and
+  `content-type`, while current graph vendoring supports one module per name;
+- `nypm@0.6.9` exposes repository shorthand not currently normalized;
+- `@c15t/schema` shares the c15t workspace but omits `repository.directory`,
+  so it still needs an explicit source-directory override;
+- several selected releases have no tag matching inrepo's current tag
+  candidates;
+- package exports point at untracked build output under `dist/`, while source
+  uses workspace aliases and extensionless imports;
+- the real CLI entrypoint eagerly imports setup, codemod, backend, telemetry,
+  filesystem, process, and browser-opening paths even for `--help`.
+
+A full claim requires resolving those graph and source-entry issues, executing
+the vendored CLI without `node_modules`, and proving real `@c15t/cli --help`
+stdout, stderr, and exit-code parity before any timing comparison.

@@ -1,0 +1,16 @@
+{
+  "package": "@c15t/cli@2.2.0",
+  "repository": "https://github.com/c15t/c15t.git",
+  "directory": "packages/cli",
+  "commit": "017433b2ca27e29177c320f51b973e4a78b6851e",
+  "sources": {
+    "vendor/inrepo_modules/@c15t/cli/src/actions/show-help-menu.ts": {
+      "url": "https://raw.githubusercontent.com/c15t/c15t/017433b2ca27e29177c320f51b973e4a78b6851e/packages/cli/src/actions/show-help-menu.ts",
+      "sha256": "c2c631683cb50913e8afa2102dd030d1dfa5aee67559904a7ddac98e26d6c1e1"
+    }
+  },
+  "metadataSources": {
+    "packages/cli/src/index.ts": "7aaf3a5ec4802dbb5ae30b59a02bf83f86556e856a5f94133766315acc61f2fc",
+    "packages/cli/src/context/parser.ts": "f32423ae60d9f040e1b81e10e81edbf054323c4cbd2509a71227b8e08eab1e1c"
+  }
+}
