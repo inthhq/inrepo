@@ -29,11 +29,18 @@ export async function cmdMigrate(
   const args = parseMigrateArgs(argv);
   if (!opts.suppressBanners) printBanner();
 
-  const { packages, modules, globalExclude, globalKeep } = await selectPackages(
-    cwd,
-    args.name,
-    'migrate',
-  );
+  let selection: Awaited<ReturnType<typeof selectPackages>>;
+  try {
+    selection = await selectPackages(cwd, args.name, 'migrate');
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('No configured or locked package')) {
+      throw new Error(
+        `Cannot migrate "${args.name}" without a lockfile entry. Run "inrepo add ${args.name}" or "inrepo sync" first.`,
+      );
+    }
+    throw error;
+  }
+  const { packages, modules, globalExclude, globalKeep } = selection;
   const pkg = packages[0];
   const module = pkg.module ?? pkg.name;
   const lockEntry = modules[module];
