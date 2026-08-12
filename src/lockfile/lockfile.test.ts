@@ -83,10 +83,10 @@ describe('lockfile read/write/upsert', () => {
   test('rejects unsupported lockfileVersion', async () => {
     await writeFile(
       lockfilePath(cwd),
-      JSON.stringify({ lockfileVersion: 5, modules: {} }),
+      JSON.stringify({ lockfileVersion: 6, modules: {} }),
       'utf8',
     );
-    await expect(readLockfile(cwd)).rejects.toThrow(/Unsupported lockfileVersion: 5/);
+    await expect(readLockfile(cwd)).rejects.toThrow(/Unsupported lockfileVersion: 6/);
   });
 
   test('a project without a graph keeps writing lockfileVersion 1', async () => {
@@ -102,6 +102,40 @@ describe('lockfile read/write/upsert', () => {
     const onDisk = JSON.parse(await readFile(lockfilePath(cwd), 'utf8')) as Record<string, unknown>;
     expect(onDisk.lockfileVersion).toBe(1);
     expect('graph' in onDisk).toBe(false);
+  });
+
+  test('round-trips a published artifact and raises the lockfile to version 5', async () => {
+    const artifact = {
+      tarballUrl: 'https://registry.npmjs.org/example/-/example-1.0.0.tgz',
+      integrity: `sha512-${Buffer.alloc(64, 1).toString('base64')}`,
+    };
+    await writeLockfile(cwd, {
+      example: {
+        source: 'example',
+        gitUrl: 'https://github.com/example/example.git',
+        commit: 'a'.repeat(40),
+        ref: 'v1.0.0',
+        artifact,
+        updatedAt: '2026-01-01T00:00:00.000Z',
+      },
+    });
+    expect((JSON.parse(await readFile(lockfilePath(cwd), 'utf8')) as { lockfileVersion: number }).lockfileVersion).toBe(5);
+    expect((await readLockfile(cwd)).modules.example.artifact).toEqual(artifact);
+  });
+
+  test('rejects malformed published artifact metadata', async () => {
+    const module = {
+      source: 'example',
+      gitUrl: 'https://github.com/example/example.git',
+      commit: 'a'.repeat(40),
+      ref: null,
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    await writeFile(
+      lockfilePath(cwd),
+      JSON.stringify({ lockfileVersion: 5, modules: { example: { ...module, artifact: { tarballUrl: 'file:///tmp/x', integrity: 'nope' } } } }),
+    );
+    await expect(readLockfile(cwd)).rejects.toThrow(/artifact\.tarballUrl/);
   });
 
   test('round-trips a dependency graph and raises the lockfile version', async () => {

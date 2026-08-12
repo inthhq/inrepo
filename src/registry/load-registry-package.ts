@@ -1,6 +1,7 @@
 import { fetchPackument, type Packument, type PackumentVersion } from './fetch-packument.js';
 import { normalizeRepositoryUrl } from './normalize-repository-url.js';
 import { repositoryToSource } from './resolve-git-url-from-npm.js';
+import type { PublishedArtifact } from '../types/published-artifact.js';
 
 /** One published version, reduced to what dependency resolution needs. */
 export type RegistryManifest = {
@@ -17,6 +18,8 @@ export type RegistryManifest = {
   distIntegrity: string | null;
   /** Registry endpoint returning signed attestations for this version. */
   attestationsUrl: string | null;
+  /** Immutable published package payload, when npm supplies URL and integrity together. */
+  artifact?: PublishedArtifact | null;
 };
 
 export type RegistryPackage = {
@@ -65,6 +68,10 @@ export function toRegistryPackage(name: string, packument: Packument): RegistryP
         gitHead,
         distIntegrity: typeof dist?.integrity === 'string' ? dist.integrity : null,
         attestationsUrl: typeof attestations?.url === 'string' ? attestations.url : null,
+        artifact:
+          typeof dist?.tarball === 'string' && typeof dist?.integrity === 'string'
+            ? { tarballUrl: dist.tarball, integrity: dist.integrity }
+            : null,
       });
     }
   }

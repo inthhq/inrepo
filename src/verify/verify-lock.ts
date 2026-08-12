@@ -168,6 +168,7 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
         commit: entry.commit,
         keep: keepList,
         exclude: excludeList,
+        artifact: entry.artifact,
       });
       pristineDir = pristine.dir;
     } catch (e) {

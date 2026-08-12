@@ -253,21 +253,27 @@ commander 12.1.0 (a1b2c3d)
 
 Every resolved package is then vendored like a package you added by hand, but graph-managed dependencies have a versioned module identity. For example, `citty@0.1.6` and `citty@0.2.2` are separate config and lock entries, materialized at `inrepo_modules/citty@0.1.6` and `inrepo_modules/citty@0.2.2`. Each graph edge still uses the bare dependency name and points it at the exact module instance selected for that dependent. The root keeps its normal package name. A compatible instance is reused rather than re-pinned, and running `--with-deps` again on a package you already vendored completes the missing part of its graph.
 
+Registry dependencies also retain the selected version's npm tarball URL and integrity. During materialization, inrepo verifies and caches that payload, then fills only files absent from the git checkout. This restores publish-only runtime output such as `dist/` without replacing repository source or `package.json`; git files always win. The payload is a generated, integrity-pinned base input, so unchanged published files do not appear in `inrepo diff` or captured patches. Manual `--git` roots never acquire registry artifacts implicitly.
+
 Scoped instances retain their npm layout: `@scope/pkg@1.2.3` is materialized at `inrepo_modules/@scope/pkg@1.2.3`. The generated config entry keeps `name: "@scope/pkg"` as the import identity and records `module: "@scope/pkg@1.2.3"` as its storage identity. `sync`, `verify`, `diff`, `patch`, import rewiring, and patch paths use that module identity consistently.
 
 When npm metadata declares `repository.directory`, the selected subtree becomes the module root: filters, patches, diffs, updates, and import rewiring all use package-relative paths. When that metadata is missing, registry dependency resolution scans the immutable checkout for a unique `package.json` matching the published package name and version (or a unique name match) and records the discovered directory. Packages at the same repository commit share one unfiltered repository snapshot while retaining separate filtered module trees. A strict npm `owner/repo` repository shorthand is normalized as GitHub metadata too.
 
-The edges themselves are recorded under `graph` in `inrepo.lock.json`. A graph containing versioned module instances uses `lockfileVersion: 4`:
+The edges themselves are recorded under `graph` in `inrepo.lock.json`. Published artifact inputs raise the lock to `lockfileVersion: 5`:
 
 ```json
 {
-  "lockfileVersion": 4,
+  "lockfileVersion": 5,
   "modules": {
     "picocolors@1.1.1": {
       "source": "picocolors",
       "gitUrl": "https://github.com/alexeyraspopov/picocolors.git",
       "commit": "9f3e21c…",
       "ref": "9f3e21c…",
+      "artifact": {
+        "tarballUrl": "https://registry.npmjs.org/picocolors/-/picocolors-1.1.1.tgz",
+        "integrity": "sha512-…"
+      },
       "updatedAt": "…"
     }
   },
@@ -284,7 +290,7 @@ The edges themselves are recorded under `graph` in `inrepo.lock.json`. A graph c
 }
 ```
 
-Because every dependency entry pins an exact git URL and immutable commit, `inrepo sync` and `inrepo verify` replay and check the whole graph from committed files with no registry access. Lockfile versions 1–3 remain readable: version 1 is the original module map, version 2 adds a graph, and version 3 records repository subdirectories. Version 4 identifies module instances separately from their npm source names, and therefore also safely carries directory metadata.
+Because every dependency entry pins an exact git URL, immutable commit, and—when used—published integrity, `inrepo sync` and `inrepo verify` replay and check the whole graph from committed files with no registry access after the caches have been populated. Lockfile versions 1–4 remain readable: version 1 is the original module map, version 2 adds a graph, version 3 records repository subdirectories, and version 4 identifies module instances separately from their npm source names. Version 5 records published runtime artifacts so older clients fail safely instead of silently producing incomplete trees.
 
 `inrepo update <package>` keeps a graph root in step with the pin it moves: the root's recorded `version` and the resolved `version` on every edge pointing at it are re-read from the rebuilt checkout, so `inrepo verify` stays clean. A versioned, graph-managed module instance cannot be updated directly; rerun `add --with-deps` for the graph root so its ranges are resolved together.
 

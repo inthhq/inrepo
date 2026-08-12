@@ -99,6 +99,7 @@ export async function cmdPatch(
         commit: lockEntry.commit,
         keep: keepList,
         exclude: excludeList,
+        artifact: lockEntry.artifact,
       });
 
       const state = await readModuleState(cwd, module);

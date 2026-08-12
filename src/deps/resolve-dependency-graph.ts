@@ -2,6 +2,7 @@ import type { RegistryPackage } from '../registry/load-registry-package.js';
 import { maxSatisfyingAll, satisfies } from '../semver/range.js';
 import { classifyDependencySpecifier } from './dependency-specifier.js';
 import type { VersionTag } from './resolve-version-tag.js';
+import type { PublishedArtifact } from '../types/published-artifact.js';
 
 /** Thrown for every resolution failure, so callers can report it without a stack. */
 export class DependencyResolutionError extends Error {
@@ -21,6 +22,7 @@ export type VendoredPackage = {
   commit: string;
   /** Runtime dependency specifiers declared by the vendored checkout. */
   dependencies: Record<string, string>;
+  artifact?: PublishedArtifact | null;
 };
 
 /** The package the user named, already resolved to a pinned upstream checkout. */
@@ -32,6 +34,7 @@ export type GraphRoot = {
   ref: string | null;
   commit: string;
   dependencies: Record<string, string>;
+  artifact?: PublishedArtifact | null;
 };
 
 export type ResolvedNode = {
@@ -46,6 +49,7 @@ export type ResolvedNode = {
   commit: string;
   /** Runtime dependency specifiers exactly as the package declares them. */
   dependencies: Record<string, string>;
+  artifact?: PublishedArtifact | null;
   root: boolean;
   /** True when an existing vendored pin already satisfied every requirement. */
   reused: boolean;
@@ -144,6 +148,9 @@ export async function resolveDependencyGraph(
     );
     const existing = existingCandidates.find((candidate) => candidate.version === existingVersion);
     if (existing?.version != null) {
+      const manifest = (await loadRegistry(name)).manifests.find(
+        (entry) => entry.version === existing.version,
+      );
       return {
         name,
         module: existing.module ?? existing.name,
@@ -153,6 +160,7 @@ export async function resolveDependencyGraph(
         ref: existing.ref,
         commit: existing.commit,
         dependencies: existing.dependencies,
+        artifact: manifest?.artifact ?? existing.artifact,
         root: false,
         reused: true,
         resolvedDependencies: {},
@@ -229,6 +237,7 @@ export async function resolveDependencyGraph(
       ref: selected.pin.ref,
       commit: selected.pin.commit,
       dependencies: manifest.dependencies,
+      artifact: manifest.artifact,
       root: false,
       reused: false,
       resolvedDependencies: {},
@@ -244,6 +253,7 @@ export async function resolveDependencyGraph(
     ref: root.ref,
     commit: root.commit,
     dependencies: root.dependencies,
+    artifact: root.artifact ?? null,
     root: true,
     reused: false,
     resolvedDependencies: {},

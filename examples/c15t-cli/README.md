@@ -101,9 +101,10 @@ bun run test:c15t-cli-case
 
 The current `--with-deps` implementation also has a separate executable probe.
 It runs the real registry resolver and materializer for `@c15t/cli@2.2.0`,
-asserts lockfile version 4 and distinct `citty`, `content-type`, and `hono`
-module instances, removes the generated module tree, and proves that `sync` and
-`verify` can rebuild and check it with registry access disabled:
+asserts lockfile version 5, integrity-pinned published artifacts, and distinct
+`citty`, `content-type`, and `hono` module instances, removes the generated
+module tree, and proves that `sync` and `verify` can rebuild and check it with
+registry access disabled:
 
 ```sh
 cd examples/c15t-cli

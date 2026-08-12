@@ -54,6 +54,7 @@ export async function selectPackages(
     git: modules[module]?.gitUrl,
     repositoryDirectory: modules[module]?.repositoryDirectory,
     ref: modules[module]?.ref ?? undefined,
+    artifact: modules[module]?.artifact,
   });
 
   const withLockedSource = (pkg: PackageSpec): PackageSpec => {
@@ -68,6 +69,7 @@ export async function selectPackages(
       ...pkg,
       repositoryDirectory:
         pkg.repositoryDirectory ?? (sameRepository ? locked.repositoryDirectory : undefined),
+      artifact: locked.artifact,
     };
   };
 

@@ -74,6 +74,7 @@ export async function cmdDiff(cwd: string, argv: string[]): Promise<void> {
       commit: lockEntry.commit,
       keep: mergedVendorKeeps(globalKeep, pkg),
       exclude: mergedVendorExcludes(globalExclude, pkg),
+      artifact: lockEntry.artifact,
     });
 
     const headers = await readSeriesHeaders(seriesDirPath(cwd, module));

@@ -191,6 +191,7 @@ export async function materializePackage(
       commit: pinnedCommit,
       keep: keepList,
       exclude: excludeList,
+      artifact: pkg.artifact ?? opts.lockEntry?.artifact,
     });
     gitUrl = pristine.gitUrl;
     if (opts.mode === 'add' && repositoryDirectory != null) {
@@ -282,6 +283,9 @@ export async function materializePackage(
         ...(repositoryDirectory == null ? {} : { repositoryDirectory }),
         commit: pristine.commit,
         ref: ref ?? null,
+        ...((pkg.artifact ?? opts.lockEntry?.artifact) == null
+          ? {}
+          : { artifact: pkg.artifact ?? opts.lockEntry?.artifact }),
         updatedAt: new Date().toISOString(),
       });
     }

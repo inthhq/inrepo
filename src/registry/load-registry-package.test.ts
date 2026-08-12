@@ -48,6 +48,7 @@ describe('toRegistryPackage', () => {
         gitHead: null,
         distIntegrity: null,
         attestationsUrl: null,
+        artifact: null,
       },
     ]);
   });
@@ -140,6 +141,24 @@ describe('toRegistryPackage', () => {
       gitHead: 'a'.repeat(40),
       distIntegrity: 'sha512-YWJj',
       attestationsUrl: 'https://registry.example/attestations/beta@1.0.0',
+      artifact: null,
+    });
+  });
+
+  test('retains the integrity-pinned npm tarball as a published artifact', () => {
+    const pkg = toRegistryPackage('beta', {
+      versions: {
+        '1.0.0': {
+          dist: {
+            tarball: 'https://registry.npmjs.org/beta/-/beta-1.0.0.tgz',
+            integrity: 'sha512-YWJj',
+          },
+        },
+      },
+    });
+    expect(pkg.manifests[0].artifact).toEqual({
+      tarballUrl: 'https://registry.npmjs.org/beta/-/beta-1.0.0.tgz',
+      integrity: 'sha512-YWJj',
     });
   });
 });

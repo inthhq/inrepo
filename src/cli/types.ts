@@ -1,4 +1,5 @@
 import type { LockModule } from '../types/lock-module.js';
+import type { PublishedArtifact } from '../types/published-artifact.js';
 
 export type AddArgs = {
   name: string;
@@ -55,6 +56,8 @@ export type PackageSpec = {
   dev?: boolean;
   exclude?: string[];
   keep?: string[];
+  /** Registry payload used only to fill files absent from the git checkout. */
+  artifact?: PublishedArtifact;
 };
 
 export type MaterializeOptions = {

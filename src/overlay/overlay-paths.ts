@@ -69,6 +69,15 @@ export function repositoryCacheDirPath(cwd: string, key: string): string {
   return join(repositoryCacheRootPath(cwd), key);
 }
 
+/** Content-addressed npm package payloads used to restore publish-only files. */
+export function artifactCacheRootPath(cwd: string): string {
+  return join(cwd, '.inrepo', 'artifacts');
+}
+
+export function artifactCacheDirPath(cwd: string, key: string): string {
+  return join(artifactCacheRootPath(cwd), key);
+}
+
 /**
  * Root of an in-progress `inrepo update` for one package. Everything the
  * command needs to resume or discard a conflicted rebase lives under here, and

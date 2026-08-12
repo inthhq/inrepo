@@ -128,6 +128,7 @@ async function describeVendored(
     ref: entry.ref,
     commit: entry.commit,
     dependencies,
+    artifact: entry.artifact ?? null,
   };
 }
 
@@ -265,6 +266,7 @@ export async function preflightWithDeps(
       commit: node.commit,
       keep: mergedVendorKeeps(input.globalKeep, spec),
       exclude: mergedVendorExcludes(input.globalExclude, spec),
+      artifact: node.artifact,
     });
     const manifest = await readPackageManifest(pristine.dir);
     if (manifest == null) {
@@ -300,5 +302,6 @@ export function dependencySpec(
     dev,
     ...(config?.exclude === undefined ? {} : { exclude: config.exclude }),
     ...(config?.keep === undefined ? {} : { keep: config.keep }),
+    ...(node.artifact == null ? {} : { artifact: node.artifact }),
   };
 }

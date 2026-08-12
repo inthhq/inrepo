@@ -68,6 +68,7 @@ export async function cmdMigrate(
       commit: lockEntry.commit,
       keep: mergedVendorKeeps(globalKeep, pkg),
       exclude: mergedVendorExcludes(globalExclude, pkg),
+      artifact: lockEntry.artifact,
     });
 
     s.message('Generating patch series');

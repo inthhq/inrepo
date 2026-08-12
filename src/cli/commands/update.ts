@@ -190,6 +190,7 @@ function pristineFor(
     commit: opts.commit,
     keep: mergedVendorKeeps(ctx.globalKeep, ctx.pkg),
     exclude: mergedVendorExcludes(ctx.globalExclude, ctx.pkg),
+    artifact: ctx.lockEntry.artifact,
   });
 }
 
@@ -235,6 +236,7 @@ async function finalizeUpdate(
         : {}),
       commit: state.newCommit,
       ref: state.ref,
+      ...(ctx.lockEntry.artifact == null ? {} : { artifact: ctx.lockEntry.artifact }),
       updatedAt: new Date().toISOString(),
     };
     await upsertLockModule(cwd, name, lockEntry);

@@ -15,12 +15,15 @@ import {
   repositoryCacheRootPath,
 } from './overlay-paths.js';
 import { copyTree, defaultSkipTreePath, relPosixToAbs, walkTree } from './tree-utils.js';
+import type { PublishedArtifact } from '../types/published-artifact.js';
+import { ensurePublishedArtifact, fillMissingPublishedFiles } from './published-artifact.js';
 
 type PristineMeta = {
   commit: string;
   filtersHash: string;
   gitUrl: string;
   repositoryDirectory: string | null;
+  artifactIntegrity: string | null;
 };
 
 type RepositoryMeta = {
@@ -66,6 +69,7 @@ function parsePristineMeta(raw: string, path: string): PristineMeta {
       typeof rec.repositoryDirectory === 'string'
         ? normalizeRepositoryDirectory(rec.repositoryDirectory, `${path} repositoryDirectory`)
         : null,
+    artifactIntegrity: typeof rec.artifactIntegrity === 'string' ? rec.artifactIntegrity : null,
   };
 }
 
@@ -245,6 +249,7 @@ export async function ensurePristine(opts: {
   commit?: string | null;
   keep: string[];
   exclude: string[];
+  artifact?: PublishedArtifact | null;
 }): Promise<{ dir: string; commit: string; gitUrl: string }> {
   const dir = cacheDirPath(opts.cwd, opts.name);
   const metaPath = cacheMetaPath(opts.cwd, opts.name);
@@ -265,6 +270,7 @@ export async function ensurePristine(opts: {
     normalizeGitUrlIdentity(cachedMeta.gitUrl) === normalizeGitUrlIdentity(opts.gitUrl) &&
     cachedMeta.filtersHash === expectedFiltersHash &&
     cachedMeta.repositoryDirectory === repositoryDirectory &&
+    cachedMeta.artifactIntegrity === (opts.artifact?.integrity ?? null) &&
     existsSync(dir)
   ) {
     return { dir, commit: cachedMeta.commit, gitUrl: cachedMeta.gitUrl };
@@ -297,6 +303,11 @@ export async function ensurePristine(opts: {
       validateSymlinkWithinRoot: true,
     });
 
+    if (opts.artifact != null) {
+      const artifactRoot = await ensurePublishedArtifact(opts.cwd, opts.artifact);
+      await fillMissingPublishedFiles(artifactRoot, stage);
+    }
+
     if (opts.keep.length > 0) {
       await applyVendorKeep(stage, opts.keep);
     }
@@ -309,6 +320,7 @@ export async function ensurePristine(opts: {
       filtersHash: expectedFiltersHash,
       gitUrl: repository.gitUrl,
       repositoryDirectory,
+      artifactIntegrity: opts.artifact?.integrity ?? null,
     };
     await writeFile(stageMetaPath, `${JSON.stringify(meta, null, 2)}\n`, 'utf8');
 

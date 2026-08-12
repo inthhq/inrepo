@@ -17,7 +17,7 @@ type LockfileShape = {
  * package rooted below its git repository. Older files remain valid and treat
  * every module as repository-rooted.
  */
-export const SUPPORTED_LOCKFILE_VERSIONS = [1, 2, 3, 4] as const;
+export const SUPPORTED_LOCKFILE_VERSIONS = [1, 2, 3, 4, 5] as const;
 
 function assertLockModule(module: unknown, label: string): LockModule {
   if (module == null || typeof module !== 'object' || Array.isArray(module)) {
@@ -44,12 +44,30 @@ function assertLockModule(module: unknown, label: string): LockModule {
           `inrepo.lock.json ${label}.repositoryDirectory`,
         )
       : null;
+  let artifact: LockModule['artifact'];
+  if (rec.artifact != null) {
+    if (typeof rec.artifact !== 'object' || Array.isArray(rec.artifact)) {
+      throw new Error(`inrepo.lock.json ${label}.artifact must be an object when set`);
+    }
+    const value = rec.artifact as Record<string, unknown>;
+    if (typeof value.tarballUrl !== 'string' || !/^https?:\/\//.test(value.tarballUrl)) {
+      throw new Error(`inrepo.lock.json ${label}.artifact.tarballUrl must be an HTTP URL`);
+    }
+    if (
+      typeof value.integrity !== 'string' ||
+      !/^[a-z0-9]+-[A-Za-z0-9+/]+={0,2}(?:\s+[a-z0-9]+-[A-Za-z0-9+/]+={0,2})*$/i.test(value.integrity)
+    ) {
+      throw new Error(`inrepo.lock.json ${label}.artifact.integrity must be npm SRI`);
+    }
+    artifact = { tarballUrl: value.tarballUrl, integrity: value.integrity };
+  }
   return {
     source: rec.source as string,
     gitUrl: rec.gitUrl as string,
     ...(repositoryDirectory == null ? {} : { repositoryDirectory }),
     commit: rec.commit as string,
     ref: rec.ref as string | null,
+    ...(artifact == null ? {} : { artifact }),
     updatedAt: rec.updatedAt as string,
   };
 }
@@ -147,7 +165,7 @@ export async function readLockfile(cwd: string): Promise<{
   const lockfileVersion = rec.lockfileVersion;
   if (
     typeof lockfileVersion !== 'number' ||
-    !SUPPORTED_LOCKFILE_VERSIONS.includes(lockfileVersion as 1 | 2 | 3 | 4)
+    !SUPPORTED_LOCKFILE_VERSIONS.includes(lockfileVersion as 1 | 2 | 3 | 4 | 5)
   ) {
     throw new Error(`Unsupported lockfileVersion: ${String(lockfileVersion)}`);
   }

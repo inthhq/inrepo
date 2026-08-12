@@ -76,7 +76,7 @@ For a monorepo package, filtering and patches are relative to `repositoryDirecto
 
 `inrepo add <package> --with-deps` adds one entry per resolved runtime dependency instance. A generated entry such as `{ "name": "citty", "module": "citty@0.2.2", … }` separates the npm import name from its storage identity, allowing incompatible versions to coexist. Each entry is pinned to an exact `git` URL and immutable commit so `sync` stays offline. Graph-managed instances cannot be updated directly; rerun `add --with-deps` for the graph root. The command cannot be combined with `--no-save`.
 
-Lockfile versions 1–3 remain readable. Version 4 is written when a module identity differs from its package source name; graph edges point to that exact module instance, and the module's lock entry retains its `source` name.
+Lockfile versions 1–4 remain readable. Version 4 is written when a module identity differs from its package source name. Version 5 records an integrity-pinned npm artifact used to fill publish-only files absent from the repository checkout; git source and `package.json` take precedence. Artifact caches make later `sync` and `verify` independent of the registry.
 
 ## Import rewiring
 

@@ -1,3 +1,5 @@
+import type { PublishedArtifact } from './published-artifact.js';
+
 export type LockModule = {
   source: string;
   gitUrl: string;
@@ -5,5 +7,7 @@ export type LockModule = {
   repositoryDirectory?: string;
   commit: string;
   ref: string | null;
+  /** Published npm payload paired with this git pin, when registry metadata supplied one. */
+  artifact?: PublishedArtifact;
   updatedAt: string;
 };

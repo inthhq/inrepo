@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { RegistryPackage } from '../registry/load-registry-package.js';
+import type { PublishedArtifact } from '../types/published-artifact.js';
 import {
   resolveDependencyGraph,
   type GraphResolverIo,
@@ -14,6 +15,7 @@ type FakeVersion = {
   repositoryDirectory?: string | null;
   /** false models a repository that never tagged the version. */
   tagged?: boolean;
+  artifact?: PublishedArtifact;
 };
 
 type FakeRegistry = Record<string, Record<string, FakeVersion>>;
@@ -43,6 +45,7 @@ function makeIo(registry: FakeRegistry): GraphResolverIo & { fetched: string[] }
           gitHead: null,
           distIntegrity: null,
           attestationsUrl: null,
+          artifact: manifest.artifact ?? null,
         })),
       });
     },
@@ -100,6 +103,19 @@ describe('resolveDependencyGraph', () => {
     expect(graph.nodes[1].ref).toBe('v1.4.0');
     expect(graph.nodes[1].root).toBe(false);
     expect(graph.nodes[0].root).toBe(true);
+  });
+
+  test('retains the exact published artifact on each selected instance', async () => {
+    const artifact = {
+      tarballUrl: 'https://registry.npmjs.org/beta/-/beta-1.0.0.tgz',
+      integrity: 'sha512-YWJj',
+    };
+    const graph = await resolve(
+      { beta: { '1.0.0': { artifact } } },
+      makeRoot({ beta: '1.0.0' }),
+    );
+    expect(graph.nodes.find((node) => node.name === 'beta')?.artifact).toEqual(artifact);
+    expect(graph.nodes.find((node) => node.root)?.artifact).toBeNull();
   });
 
   test('ignores devDependencies and peerDependencies of the root', async () => {

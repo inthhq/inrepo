@@ -9,7 +9,10 @@ const OFFLINE_REGISTRY = "http://127.0.0.1:9";
 
 type Lock = {
   lockfileVersion: number;
-  modules: Record<string, { source: string }>;
+  modules: Record<
+    string,
+    { source: string; artifact?: { tarballUrl: string; integrity: string } }
+  >;
   graph: Record<
     string,
     { dependencies?: Record<string, { module: string; range: string; version?: string }> }
@@ -71,13 +74,19 @@ try {
 
   await run(cwd, ["add", PACKAGE, "--ref", `${PACKAGE}@${VERSION}`, "--with-deps"]);
   const lock = JSON.parse(await readFile(join(cwd, "inrepo.lock.json"), "utf8")) as Lock;
-  if (lock.lockfileVersion !== 4) {
-    throw new Error(`Expected lockfileVersion 4, received ${lock.lockfileVersion}`);
+  if (lock.lockfileVersion !== 5) {
+    throw new Error(`Expected lockfileVersion 5, received ${lock.lockfileVersion}`);
   }
   if (Object.keys(lock.modules).length < 180 || lock.modules[PACKAGE]?.source !== PACKAGE) {
     throw new Error(`Unexpected ${PACKAGE} closure: ${Object.keys(lock.modules).length} modules`);
   }
   assertIncompatibleInstances(lock);
+  const artifactModules = Object.values(lock.modules).filter((entry) => entry.artifact != null);
+  if (artifactModules.length < Object.keys(lock.modules).length - 1) {
+    throw new Error(
+      `Expected every registry dependency to retain its published artifact; received ${artifactModules.length}`,
+    );
+  }
 
   // Rebuild entirely from committed config/lock plus the immutable repository
   // cache. A dead registry proves sync and verify do not re-resolve npm ranges.
