@@ -5,11 +5,15 @@
   "type": "module",
   "description": "Benchmark: scriptc with npm deps vs deps vendored into the repo with inrepo",
   "scripts": {
-    "bench": "bun bench.ts"
+    "build": "npm run build:npm && npm run build:vendored",
+    "build:npm": "scriptc build cli.ts --dynamic -o demo-npm",
+    "build:vendored": "scriptc build cli-vendored.ts -o demo-vendored",
+    "check": "bun check.ts",
+    "bench": "bun check.ts && bun bench.ts"
   },
   "dependencies": {
-    "commander": "file:inrepo_modules/commander",
-    "picocolors": "file:inrepo_modules/picocolors"
+    "commander": "15.0.0",
+    "picocolors": "1.1.1"
   },
   "devDependencies": {
     "mitata": "^1.0.34",

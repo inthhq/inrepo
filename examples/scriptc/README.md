@@ -16,25 +16,25 @@ Answer: yes, and by a lot.
 A tiny terminal app (`demo greet <name> --upper --repeat <n>`) built with
 commander + picocolors, compiled two ways from the same app logic:
 
-| variant | deps come from | scriptc mode | binary | avg run (spawn) |
-| --- | --- | --- | --- | --- |
-| `demo-vendored` | `inrepo_modules/` (this repo) | **static** | 750 KB | **2.05 ms** |
-| `demo-npm` | `node_modules/` (npm) | `--dynamic` (QuickJS) | 1.2 MB | 15.66 ms |
-| baseline | `node_modules/` | `bun cli.ts` | — | 22.72 ms |
-| baseline | `node_modules/` | `node cli.ts` | — | 62.39 ms |
+| variant         | deps come from                | scriptc mode          | binary | avg run (spawn) |
+| --------------- | ----------------------------- | --------------------- | ------ | --------------- |
+| `demo-vendored` | `inrepo_modules/` (this repo) | **static**            | 750 KB | **2.65 ms**     |
+| `demo-npm`      | `node_modules/` (npm)         | `--dynamic` (QuickJS) | 1.2 MB | 17.81 ms        |
+| baseline        | `node_modules/`               | `bun cli.ts`          | —      | 33.13 ms        |
+| baseline        | `node_modules/`               | `node cli.ts`         | —      | 73.89 ms        |
 
 (mitata spawn-per-iteration benchmark, Apple M5 Pro, scriptc 0.0.25 —
 rerun with `bun bench.ts`.)
 
-The statically compiled vendored build is ~7.6× faster than the same app with
-npm deps in dynamic mode, and ~30× faster than node. Both binaries produce
+The statically compiled vendored build is ~6.7× faster than the same app with
+npm deps in dynamic mode, and ~28× faster than node. Both binaries produce
 byte-identical output and exit codes across greet/help/version/error paths.
 
 ## Why inrepo is the enabler
 
 scriptc can only compile what it can see and type-check. npm packages ship
 build artifacts, so scriptc falls back to embedding a JS engine. Vendoring the
-*upstream source* with inrepo puts the dependency inside the compiler's reach —
+_upstream source_ with inrepo puts the dependency inside the compiler's reach —
 but upstream source is rarely static-compiler-clean, and that's where inrepo's
 patch workflow does the real work:
 
@@ -49,7 +49,7 @@ git commit
 
 Each `inrepo patch` call appends one numbered `git format-patch` file to
 `inrepo_patches/<package>/series/`, and the `-m` message becomes the patch
-subject — the permanent record of *why* that change exists. The pinned commit
+subject — the permanent record of _why_ that change exists. The pinned commit
 plus the committed series make the compiled tree reproducible: `inrepo sync`
 replays the patches with `git am --3way` and `inrepo verify` catches drift in
 CI. (scriptc itself is exploring the same idea with its experimental
@@ -98,7 +98,7 @@ commander @ ba6d13d — patch series (5 patches)
 
 The recurring categories behind those patches:
 
-- **JSDoc type tightening** — scriptc *trusts and enforces* JSDoc at runtime.
+- **JSDoc type tightening** — scriptc _trusts and enforces_ JSDoc at runtime.
   Bare `Promise`/`Array` generics, untyped params, and untyped fields
   (`this._aliases = []`) all had to be annotated. Two were genuine upstream
   type bugs: `_findOption` declares `@return {Option}` but can return
@@ -134,19 +134,26 @@ from the benchmark).
 - `inrepo_patches/<package>/series/` — the committed, ordered git patch series
   that makes each dep compile; one numbered `git format-patch` file per
   rationale, replayed by `inrepo sync` with `git am --3way`
-- `bench.ts` — mitata spawn benchmark
+- `check.ts` — behavior parity check that must pass before timing
+- `bench.ts` — mitata spawn benchmark; preflights every timed command
 
 ## Reproduce
 
-Requires macOS arm64, clang, cmake (for the `--dynamic` build), Node 20+, bun.
+Requires macOS arm64, clang, cmake (for the `--dynamic` build), Node 22.12+,
+and bun.
 
 ```sh
-npm install                      # commander, picocolors, scriptc, mitata
+npm ci                           # clean, registry-backed npm baseline
 npx inrepo sync                  # rebuild inrepo_modules from lock + patch series
-npx scriptc build cli.ts --dynamic -o demo-npm
-npx scriptc build cli-vendored.ts -o demo-vendored
-bun bench.ts
+npm run build                    # build npm/dynamic and vendored/static binaries
+npm run check                    # prove output and exit-code parity first
+npm run bench
 ```
+
+The npm baseline and vendored tree are deliberately separate: `package.json`
+pins registry releases for `node_modules`, while `inrepo.lock.json` pins the
+matching upstream source commits for `inrepo_modules`. This prevents an npm
+install from silently linking the baseline back to the patched vendored tree.
 
 The repository CI also runs a platform-neutral reproduction check from the
 repository root:
@@ -155,8 +162,9 @@ repository root:
 bun run test:scriptc-example
 ```
 
-It copies the committed example into a temporary directory, runs the current
-inrepo CLI's `sync` and `verify` commands, and checks canonical hashes for the
-generated commander and picocolors trees. The native scriptc compilation and
-benchmark remain manual because they require macOS arm64 and benchmark timing
-is not a stable CI assertion.
+It first checks that the example can be installed from its committed npm
+lockfile, then copies the committed example into a temporary directory, runs
+the current inrepo CLI's `sync` and `verify` commands, and checks canonical
+hashes for the generated commander and picocolors trees. The native scriptc
+compilation and benchmark remain manual because they require macOS arm64 and
+benchmark timing is not a stable CI assertion.
