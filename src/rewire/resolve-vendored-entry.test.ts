@@ -88,6 +88,39 @@ describe('resolveVendoredEntry', () => {
     expect(await resolve('util.js')).toBe('util.js');
   });
 
+  test('resolves TypeScript source when publish-only dist output is absent', async () => {
+    await writeFiles(
+      { name: 'dep', exports: './dist/index.mjs' },
+      { 'src/index.ts': '' },
+    );
+    expect(await resolve('')).toBe('src/index.ts');
+
+    await writeFiles(
+      {
+        name: 'dep',
+        exports: { './registry': { import: './dist/registry.js' } },
+      },
+      { 'src/registry.ts': '' },
+    );
+    expect(await resolve('registry')).toBe('src/registry.ts');
+  });
+
+  test('uses a conventional source field before source-directory fallbacks', async () => {
+    await writeFiles(
+      { name: 'dep', main: './dist/index.js', source: './code/entry.ts' },
+      { 'code/entry.ts': '', 'src/index.ts': '' },
+    );
+    expect(await resolve('')).toBe('code/entry.ts');
+  });
+
+  test('resolves wildcard exports into a TypeScript source subpath', async () => {
+    await writeFiles(
+      { name: 'dep', exports: { './*': './dist/*.js' } },
+      { 'src/deep/tool.ts': '' },
+    );
+    expect(await resolve('deep/tool')).toBe('src/deep/tool.ts');
+  });
+
   test('falls back to index.js when no manifest field resolves', async () => {
     await writeFiles({ name: 'dep', main: 'missing.js' }, { 'index.js': '' });
     expect(await resolve('')).toBe('index.js');

@@ -6,6 +6,8 @@ import { join, posix } from 'node:path';
 export type EntryManifest = {
   main: string | null;
   module: string | null;
+  /** Conventional source entry used by several package build tools. */
+  source?: string | null;
   exports: unknown;
 };
 
@@ -17,8 +19,9 @@ const CONDITION_ORDER: Record<EntryCondition, string[]> = {
   require: ['require', 'node', 'default'],
 };
 
-const FILE_EXTENSIONS = ['.js', '.mjs', '.cjs', '.json'];
-const INDEX_FILES = ['index.js', 'index.mjs', 'index.cjs', 'index.json'];
+const FILE_EXTENSIONS = ['.js', '.mjs', '.cjs', '.ts', '.mts', '.cts', '.json'];
+const INDEX_FILES = FILE_EXTENSIONS.map((extension) => `index${extension}`);
+const OUTPUT_DIRECTORIES = new Set(['dist', 'build', 'out', 'lib']);
 
 /** Read `<dir>/package.json` for entry resolution. Null when it is absent or unreadable. */
 export async function loadEntryManifest(dir: string): Promise<EntryManifest | null> {
@@ -35,6 +38,7 @@ export async function loadEntryManifest(dir: string): Promise<EntryManifest | nu
   return {
     main: typeof rec.main === 'string' ? rec.main : null,
     module: typeof rec.module === 'string' ? rec.module : null,
+    source: typeof rec.source === 'string' ? rec.source : null,
     exports: rec.exports,
   };
 }
@@ -101,8 +105,15 @@ async function resolveCandidate(depRoot: string, candidate: string): Promise<str
   const abs = join(depRoot, ...normalized.split('/'));
 
   if (await isFile(abs)) return normalized;
-  for (const extension of FILE_EXTENSIONS) {
-    if (await isFile(`${abs}${extension}`)) return `${normalized}${extension}`;
+  const extension = posix.extname(normalized);
+  const withoutExtension = FILE_EXTENSIONS.includes(extension)
+    ? normalized.slice(0, -extension.length)
+    : normalized;
+  const extensionBase = join(depRoot, ...withoutExtension.split('/'));
+  for (const candidateExtension of FILE_EXTENSIONS) {
+    if (await isFile(`${extensionBase}${candidateExtension}`)) {
+      return `${withoutExtension}${candidateExtension}`;
+    }
   }
   if (await isDirectory(abs)) {
     for (const index of INDEX_FILES) {
@@ -112,6 +123,28 @@ async function resolveCandidate(depRoot: string, candidate: string): Promise<str
   return null;
 }
 
+/**
+ * Source-tree alternatives for an entry that names publish-only build output.
+ * These are only accepted when a concrete file exists, and explicit package
+ * metadata always wins before these fallbacks are tried.
+ */
+function sourceAlternatives(candidate: string): string[] {
+  const normalized = normalizeCandidate(candidate);
+  if (normalized == null) return [];
+  const segments = normalized.split('/');
+  if (!OUTPUT_DIRECTORIES.has(segments[0])) return [];
+  const rest = segments.slice(1).join('/');
+  return [`src/${rest}`, `source/${rest}`];
+}
+
+function withSourceAlternatives(candidates: string[]): string[] {
+  const out: string[] = [];
+  for (const candidate of candidates) {
+    out.push(candidate, ...sourceAlternatives(candidate));
+  }
+  return out;
+}
+
 /** Candidate paths for a bare `dep` specifier, best first. */
 function rootCandidates(manifest: EntryManifest | null, condition: EntryCondition): string[] {
   if (manifest == null) return ['index.js'];
@@ -119,7 +152,8 @@ function rootCandidates(manifest: EntryManifest | null, condition: EntryConditio
   const exportsValue = isSubpathExports(manifest.exports)
     ? (manifest.exports as Record<string, unknown>)['.']
     : manifest.exports;
-  candidates.push(...exportsTargets(exportsValue, condition));
+  candidates.push(...withSourceAlternatives(exportsTargets(exportsValue, condition)));
+  if (manifest.source) candidates.push(manifest.source);
   if (condition === 'import') {
     if (manifest.module) candidates.push(manifest.module);
     if (manifest.main) candidates.push(manifest.main);
@@ -127,8 +161,37 @@ function rootCandidates(manifest: EntryManifest | null, condition: EntryConditio
     if (manifest.main) candidates.push(manifest.main);
     if (manifest.module) candidates.push(manifest.module);
   }
-  candidates.push('index.js');
+  candidates.push('index.js', 'src/index', 'source/index');
   return candidates;
+}
+
+function replaceStars(value: unknown, replacement: string): unknown {
+  if (typeof value === 'string') return value.replaceAll('*', replacement);
+  if (Array.isArray(value)) return value.map((entry) => replaceStars(entry, replacement));
+  if (value == null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([key, entry]) => [
+      key,
+      replaceStars(entry, replacement),
+    ]),
+  );
+}
+
+function exportedSubpathValue(exports: Record<string, unknown>, subpath: string): unknown {
+  const exact = exports[`./${subpath}`];
+  if (exact !== undefined) return exact;
+
+  const request = `./${subpath}`;
+  for (const key of Object.keys(exports).sort((a, b) => b.length - a.length)) {
+    const star = key.indexOf('*');
+    if (star === -1) continue;
+    const prefix = key.slice(0, star);
+    const suffix = key.slice(star + 1);
+    if (!request.startsWith(prefix) || !request.endsWith(suffix)) continue;
+    const replacement = request.slice(prefix.length, request.length - suffix.length);
+    return replaceStars(exports[key], replacement);
+  }
+  return undefined;
 }
 
 /** Candidate paths for a `dep/sub/path` specifier, best first. */
@@ -139,10 +202,10 @@ function subpathCandidates(
 ): string[] {
   const candidates: string[] = [];
   if (manifest != null && isSubpathExports(manifest.exports)) {
-    const mapped = (manifest.exports as Record<string, unknown>)[`./${subpath}`];
-    candidates.push(...exportsTargets(mapped, condition));
+    const mapped = exportedSubpathValue(manifest.exports as Record<string, unknown>, subpath);
+    candidates.push(...withSourceAlternatives(exportsTargets(mapped, condition)));
   }
-  candidates.push(subpath);
+  candidates.push(subpath, `src/${subpath}`, `source/${subpath}`);
   return candidates;
 }
 
