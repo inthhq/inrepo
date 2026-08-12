@@ -7,8 +7,11 @@ const PACKAGE_NAME = "@c15t/cli";
 const VERSION = "2.2.0";
 const REF = `${PACKAGE_NAME}@${VERSION}`;
 const COMMIT = "017433b2ca27e29177c320f51b973e4a78b6851e";
-const EXPECTED_DIAGNOSTIC =
-  'the repository root declares package "c15t-workspace". Monorepo package subdirectories are not supported yet.';
+const EXPECTED_DIAGNOSTICS = [
+  'the repository root declares package "c15t-workspace"',
+  'depends on "@c15t/backend" as "workspace:*"',
+  'no tag for "@scalar/hono-api-reference@0.11.8"',
+] as const;
 const CLI_PATH = resolve(import.meta.dir, "..", "..", "src", "cli.ts");
 
 type RegistryVersion = {
@@ -97,9 +100,12 @@ async function runProbe(cwd: string): Promise<void> {
     new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  if (exitCode !== 1 || !stderr.includes(EXPECTED_DIAGNOSTIC)) {
+  if (
+    exitCode !== 1 ||
+    !EXPECTED_DIAGNOSTICS.some((diagnostic) => stderr.includes(diagnostic))
+  ) {
     throw new Error(
-      `Expected the monorepo diagnostic, received exit ${exitCode}\n${stdout}${stderr}`
+      `Expected a known dependency-provenance diagnostic, received exit ${exitCode}\n${stdout}${stderr}`
     );
   }
   if (existsSync(join(cwd, "inrepo.lock.json"))) {
@@ -120,7 +126,7 @@ const cwd = await mkdtemp(join(tmpdir(), "inrepo-c15t-cli-case-"));
 try {
   await runProbe(cwd);
   console.log(
-    `${PACKAGE_NAME}@${VERSION}: scoped resolution reaches the explicit packages/cli monorepo boundary without project writes.`
+    `${PACKAGE_NAME}@${VERSION}: packages/cli is selected and graph planning reaches an explicit dependency-provenance boundary without project writes.`
   );
 } finally {
   await rm(cwd, { recursive: true, force: true });

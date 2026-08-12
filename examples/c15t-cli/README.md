@@ -28,23 +28,33 @@ move.
 
 ## Current result
 
-Scoped-package materialization now works, so the command reaches the c15t
-checkout correctly:
+The stack progressively teaches the command to select `packages/cli` from the
+c15t monorepo:
 
 ```sh
 inrepo add @c15t/cli --ref @c15t/cli@2.2.0 --with-deps
 ```
 
-The package lives inside a monorepo, however. The repository root declares
-`c15t-workspace`; the package being requested lives at `packages/cli`.
-`--with-deps` therefore stops before writing config, lockfile, or generated
-modules:
+The metadata layer first records the directory while retaining the previous
+workspace-root diagnostic. The materialization layer then reaches
+`packages/cli` but still reads `workspace:*` from the git checkout. The graph
+layer pairs that checkout with the published manifest and progresses until a
+selected transitive dependency has no recognizable release tag. At every
+layer, `--with-deps` stops before writing config, lockfile, or generated
+modules.
 
 ```text
-Cannot resolve dependencies for "@c15t/cli": the repository root declares package "c15t-workspace". Monorepo package subdirectories are not supported yet.
+# Metadata layer:
+Cannot resolve dependencies for "@c15t/cli": the repository root declares package "c15t-workspace".
+
+# Materialization layer:
+Unsupported dependency source: "@c15t/cli" depends on "@c15t/backend" as "workspace:*".
+
+# Later in the stack:
+Unsupported dependency source: no tag for "@scalar/hono-api-reference@0.11.8" could be found.
 ```
 
-This explicit failure replaces the previous misleading result, which treated
+These explicit failures replace the previous misleading result, which treated
 the workspace root as `@c15t/cli` and printed an empty one-package graph.
 
 Run the executable probe from the repository root with:
@@ -54,19 +64,19 @@ bun run test:c15t-cli-case
 ```
 
 It checks the exact npm name/version, repository and subdirectory metadata,
-the 16 direct runtime dependencies, the CLI diagnostic, and the guarantee that
-the failed plan leaves project files untouched. CI runs the same probe.
+the 16 direct runtime dependencies, a known dependency-provenance diagnostic,
+and the guarantee that the failed plan leaves project files untouched. CI runs
+the same probe.
 
 ## What must land before a benchmark
 
-1. Preserve npm's `repository.directory` alongside each git URL and commit.
-2. Materialize the package subdirectory as the module root while retaining the
-   repository-level pin and patch provenance.
-3. Reuse one cloned commit for multiple `@c15t/*` packages from the same
-   monorepo instead of cloning the workspace repeatedly.
-4. Resolve the full runtime graph and apply generated import rewiring between
+1. Resolve package versions that have no recognized release tag using reliable
+   registry provenance or an explicit override.
+2. Support multiple incompatible versions of the same package in one vendored
+   dependency graph.
+3. Resolve the full runtime graph and apply generated import rewiring between
    its vendored package roots.
-5. Compile a narrow `@c15t/cli --help` path with scriptc and prove its stdout,
+4. Compile a narrow `@c15t/cli --help` path with scriptc and prove its stdout,
    stderr, and exit status match the npm-backed command.
-6. Only after behavioral parity passes, compare dynamic npm and static vendored
+5. Only after behavioral parity passes, compare dynamic npm and static vendored
    timings. Until then this case study publishes no performance claim.
