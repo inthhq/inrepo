@@ -1,11 +1,16 @@
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { FIXTURE_DIR, RUNTIME_PATH_FILE } from './runtime.ts';
 
 const CLI = resolve(import.meta.dir, '..', '..', '..', 'src', 'cli.ts');
-const FILES = ['package.json', 'inrepo.json', 'inrepo.lock.json'] as const;
+const FILES = [
+  'package.json',
+  'inrepo.json',
+  'inrepo.lock.json',
+  'inrepo_patches/@c15t/cli/series/0001-Lazy-load-command-implementations.patch',
+] as const;
 
 async function run(cwd: string, args: string[]): Promise<void> {
   const proc = Bun.spawn([process.execPath, CLI, ...args], {
@@ -30,7 +35,9 @@ const key = createHash('sha256').update(Buffer.concat(contents)).digest('hex').s
 const runtime = join(tmpdir(), 'inrepo-c15t-full-runtime', key);
 await mkdir(runtime, { recursive: true });
 for (let index = 0; index < FILES.length; index++) {
-  await writeFile(join(runtime, FILES[index]), contents[index]);
+  const target = join(runtime, FILES[index]);
+  await mkdir(dirname(target), { recursive: true });
+  await writeFile(target, contents[index]);
 }
 
 await run(runtime, ['sync']);

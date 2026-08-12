@@ -1,9 +1,16 @@
 # Full `@c15t/cli` source parity
 
 This is the honest full-entry case study. It executes the real
-`@c15t/cli@2.2.0` `src/index.ts`, including its eagerly imported command graph,
-from an inrepo-materialized 188-module closure. It does not extract the help
-renderer or replace the CLI with a benchmark-only entrypoint.
+`@c15t/cli@2.2.0` `src/index.ts` from an inrepo-materialized 188-module closure.
+It does not extract the help renderer or replace the CLI with a benchmark-only
+entrypoint.
+
+The fixture also carries one reviewable inrepo patch: command implementations
+are dynamically imported from their actions instead of being loaded eagerly at
+startup. Command metadata and behavior, context setup, telemetry, the help
+renderer, and the real command implementations are unchanged. This models the
+production refactor we would propose upstream, and the patch is reproduced
+during every `sync`.
 
 ## What is pinned
 
@@ -72,28 +79,39 @@ source-auditability costs, not size wins.
 ## Startup benchmark
 
 `bench.ts` first runs the parity gate, warms each variant, then interleaves 40
-cold process starts per variant with a warm filesystem:
+cold process starts per variant with a warm filesystem. It includes the safe
+`codemods --dry-run` command as a heavy-route check, so the fast startup result
+cannot hide a second-process handoff or a regression in real command routing.
+
+On the same Apple M5 Pro / macOS 26.5 machine used for the size measurements:
 
 | case | variant | mean | p50 | p95 |
 | --- | --- | ---: | ---: | ---: |
-| help | published npm dist | 230.92 ms | 290.00 ms | 298.82 ms |
-| help | vendored source | 236.74 ms | 173.91 ms | 310.42 ms |
-| version | published npm dist | 234.67 ms | 289.99 ms | 307.99 ms |
-| version | vendored source | 242.16 ms | 186.73 ms | 327.04 ms |
+| help | published npm dist | 173.64 ms | 169.73 ms | 197.51 ms |
+| help | vendored lazy source | **43.74 ms** | 43.09 ms | 49.03 ms |
+| version | published npm dist | 168.82 ms | 167.09 ms | 180.58 ms |
+| version | vendored lazy source | **41.66 ms** | 41.21 ms | 45.02 ms |
+| codemods dry run | published npm dist | 240.12 ms | 301.14 ms | 310.48 ms |
+| codemods dry run | vendored lazy source | **214.17 ms** | 164.21 ms | 286.94 ms |
 
-The distributions are bimodal on this machine, so the mean and p95 are more
-useful than comparing the p50 values in isolation. The honest result is that
-full vendored source startup is close but slightly slower on average—about 2.5%
-for help and 3.2% for version. The earlier selected-renderer static benchmark is
-a different, intentionally narrow measurement.
+The dynamic import stays in the same Bun process. A selected command pays a
+single module-import dispatch, but it no longer loads every unrelated command.
+That means setup/generate is not routed through another executable, and heavy
+commands are not expected to regress. We deliberately benchmark codemods rather
+than setup because setup is interactive and mutates a project. In this run the
+real codemods route was about 11% faster on mean, while help and version were
+about 4× faster. The distributions can be bimodal on this machine, so mean and
+p95 are reported alongside p50.
 
 ## Why there is no full scriptc number yet
 
 scriptc 0.0.26 does not compile this full entry. The exact vendored source
-attempt exits 1 with no binary and 256 diagnostics: 232 `SC0001`, 12 `SC1010`,
-11 `SC1012`, and one `SC0002`. Remaining gaps include c15t's `~/*` aliases,
-default Node builtin imports, URL and fetch typings, directory-entry APIs, and
-the eagerly imported ts-morph codemod surface.
+attempt still exits 1 with no binary and 256 diagnostics: 232 `SC0001`, 12
+`SC1010`, 11 `SC1012`, and one `SC0002`. scriptc currently follows dynamic
+imports while compiling, so lazy command loading improves Bun startup but does
+not conceal the remaining static-compiler gaps. Those include c15t's `~/*`
+aliases, default Node builtin imports, URL and fetch typings, directory-entry
+APIs, and the ts-morph codemod surface.
 
 Publishing a static timing for a renderer extraction as if it represented this
 entry would be misleading. Full scriptc size and speed remain gated on a real

@@ -15,6 +15,13 @@ try {
   throw new Error(`Missing ${oracle}; run npm ci --ignore-scripts in examples/c15t-cli`);
 }
 await assertNoNodeModulesFallback(candidate);
+const candidateSource = await readFile(candidate, 'utf8');
+if (!candidateSource.includes("await import('./commands/generate')")) {
+  throw new Error('The committed lazy-command patch was not applied to @c15t/cli');
+}
+if (candidateSource.includes("import { generate } from './commands/generate';")) {
+  throw new Error('@c15t/cli still eagerly imports the setup/generate implementation');
+}
 
 const env = {
   ...process.env,

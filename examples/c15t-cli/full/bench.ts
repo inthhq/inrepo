@@ -1,10 +1,13 @@
 import { performance } from 'node:perf_hooks';
 import { candidate, execute, oracle, scenarios } from './check.ts';
 
-const measured = scenarios.filter((scenario) => scenario.name === 'help' || scenario.name === 'version');
+const measured = scenarios.filter(
+  (scenario) =>
+    scenario.name === 'help' || scenario.name === 'version' || scenario.name === 'codemods dry run',
+);
 const variants = [
   { name: 'published npm dist', entry: oracle },
-  { name: 'vendored source', entry: candidate },
+  { name: 'vendored lazy source', entry: candidate },
 ] as const;
 
 function percentile(values: number[], fraction: number): number {

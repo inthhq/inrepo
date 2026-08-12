@@ -142,8 +142,9 @@ registry-hosted provenance. Full CLI execution remains beyond this case study:
   missing `dist` output;
 - source uses workspace aliases such as `~/*` and extensionless imports, which
   import rewiring does not currently translate;
-- the real CLI entrypoint eagerly imports setup, codemod, backend, telemetry,
-  filesystem, process, and browser-opening paths even for `--help`.
+- the pinned CLI source originally loaded every command implementation eagerly;
+  the full fixture now carries a reviewable inrepo patch that lazy-loads those
+  actions and measures both startup and a real heavy route.
 
 The separate [`full/`](full/) fixture now crosses the executable parity
 boundary by using integrity-pinned published files only where repository

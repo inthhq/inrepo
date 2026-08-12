@@ -1,0 +1,138 @@
+From 942acdf013a4a0eab0e6fcac4100a4c79361eca5 Mon Sep 17 00:00:00 2001
+From: Kaylee <65376239+KayleeWilliams@users.noreply.github.com>
+Date: Wed, 12 Aug 2026 15:35:23 +0100
+Subject: [PATCH] Lazy-load command implementations
+
+---
+ src/index.ts | 54 +++++++++++++++++++++++++++++++++++++---------------
+ 1 file changed, 39 insertions(+), 15 deletions(-)
+
+diff --git a/src/index.ts b/src/index.ts
+index f3b221b2f09129ff486611601985f2a715647286..7407fe35704af2e90f4af7b6be7651cd51b85956 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -12,14 +12,8 @@
+ 
+ import * as p from '@clack/prompts';
+ import 'dotenv/config';
+-import open from 'open';
+ import color from 'picocolors';
+ import { showHelpMenu } from './actions/show-help-menu';
+-import { codemodsCommand } from './commands/codemods';
+-import { generate } from './commands/generate';
+-import { projectsAction } from './commands/instances';
+-import { selfHost } from './commands/self-host';
+-import { installSkills } from './commands/skills';
+ import { displayIntro } from './components/intro';
+ 
+ // Import from new v2 modules
+@@ -32,6 +26,11 @@ import type { CliCommand } from './context/types';
+ import { formatLogMessage } from './utils/logger';
+ import { TelemetryEventName } from './utils/telemetry';
+ 
++async function openUrl(url: string): Promise<void> {
++	const { default: open } = await import('open');
++	await open(url);
++}
++
+ // Define commands (using types from context)
+ const commands: CliCommand[] = [
+ 	{
+@@ -39,16 +38,32 @@ const commands: CliCommand[] = [
+ 		label: 'Setup (Recommended)',
+ 		hint: 'Set up c15t in your project',
+ 		description: 'Set up c15t in your project.',
+-		action: (context) => generate(context),
++		action: async (context) => {
++			const { generate } = await import('./commands/generate');
++			await generate(context);
++		},
++	},
++	{
++		name: 'codemods',
++		label: 'Codemods',
++		hint: 'Run migration codemods',
++		description:
++			'Run project codemods (for example translations -> i18n migration).',
++		action: async (context) => {
++			const { codemodsCommand } = await import('./commands/codemods');
++			await codemodsCommand.action(context);
++		},
+ 	},
+-	codemodsCommand,
+ 	{
+ 		name: 'skills',
+ 		label: 'Skills',
+ 		hint: 'Install c15t agent skills for AI tooling',
+ 		description:
+ 			'Install c15t skills for AI-assisted development (Claude, Cursor, etc.)',
+-		action: (context) => installSkills(context),
++		action: async (context) => {
++			const { installSkills } = await import('./commands/skills');
++			await installSkills(context);
++		},
+ 	},
+ 	{
+ 		name: 'docs',
+@@ -57,7 +72,7 @@ const commands: CliCommand[] = [
+ 		description: 'Open the c15t documentation in your browser.',
+ 		action: async (context) => {
+ 			const { logger } = context;
+-			await open(`${URLS.DOCS}?ref=cli`);
++			await openUrl(`${URLS.DOCS}?ref=cli`);
+ 			logger.success('Documentation opened in your browser.');
+ 		},
+ 	},
+@@ -68,7 +83,7 @@ const commands: CliCommand[] = [
+ 		description: 'Open the c15t changelog in your browser.',
+ 		action: async (context) => {
+ 			const { logger } = context;
+-			await open(URLS.CHANGELOG);
++			await openUrl(URLS.CHANGELOG);
+ 			logger.success('Changelog opened in your browser.');
+ 		},
+ 	},
+@@ -77,7 +92,10 @@ const commands: CliCommand[] = [
+ 		label: 'Self-host',
+ 		hint: 'Self-hosted backend workflow tools',
+ 		description: 'Self-host workflow commands (migrations).',
+-		action: (context) => selfHost(context),
++		action: async (context) => {
++			const { selfHost } = await import('./commands/self-host');
++			await selfHost(context);
++		},
+ 	},
+ 	{
+ 		name: 'github',
+@@ -93,7 +111,7 @@ const commands: CliCommand[] = [
+ 				'Star Us on GitHub'
+ 			);
+ 
+-			await open(URLS.GITHUB);
++			await openUrl(URLS.GITHUB);
+ 			logger.success('Thank you for your support!');
+ 		},
+ 	},
+@@ -102,14 +120,20 @@ const commands: CliCommand[] = [
+ 		label: 'Projects',
+ 		hint: 'Manage your c15t projects',
+ 		description: 'List, select, and create c15t projects.',
+-		action: (context) => projectsAction(context),
++		action: async (context) => {
++			const { projectsAction } = await import('./commands/instances');
++			await projectsAction(context);
++		},
+ 	},
+ 	{
+ 		name: 'instances',
+ 		label: 'Instances',
+ 		hint: 'Alias for `projects`',
+ 		description: 'Alias for `c15t projects`.',
+-		action: (context) => projectsAction(context),
++		action: async (context) => {
++			const { projectsAction } = await import('./commands/instances');
++			await projectsAction(context);
++		},
+ 		hidden: true,
+ 	},
+ ];
