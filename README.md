@@ -356,6 +356,11 @@ bun run build
 node dist/cli.mjs --help
 ```
 
+## Examples
+
+- [`examples/scriptc`](examples/scriptc) is the controlled performance benchmark: identical CLI behavior with registry-backed npm dependencies in dynamic scriptc versus patched upstream source in static scriptc.
+- [`examples/c15t-cli`](examples/c15t-cli) is the real-world `--with-deps` feasibility case study for `@c15t/cli@2.2.0`. Its executable probe records the current monorepo-subdirectory boundary without publishing a misleading benchmark.
+
 ## Documentation
 
 - [Overview](./docs/index.md)

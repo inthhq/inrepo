@@ -34,6 +34,9 @@ jobs:
       - name: Verify scriptc example
         run: bun run test:scriptc-example
 
+      - name: Probe c15t CLI case study
+        run: bun run test:c15t-cli-case
+
       - name: Build
         run: bun run build
 
