@@ -1,5 +1,6 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
+import { cp } from 'node:fs/promises';
 import { join } from 'node:path';
 import { bootstrapHostPackageJson, envFor, readJson } from '../test-utils/e2e-harness.js';
 import {
@@ -169,13 +170,114 @@ describe('CLI: add --with-deps (e2e)', () => {
     ).toBe(0);
     expect(existsSync(join(cwd, 'inrepo_modules', 'beta'))).toBe(false);
 
-    const add = await runCli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha'], {
-      cwd,
-      env,
-    });
+    const before = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+      modules: Record<string, { commit: string; gitUrl: string }>;
+    };
+    const movedTip = await fx.commitUpstream(
+      'alpha',
+      { 'MOVED.txt': 'default branch moved\n' },
+      'move alpha HEAD',
+    );
+    expect(movedTip).not.toBe(before.modules.alpha.commit);
+
+    const add = await runCli(['add', '--with-deps', 'alpha'], { cwd, env });
     expect(add.exitCode).toBe(0);
     expect(existsSync(join(cwd, 'inrepo_modules', 'beta', 'package.json'))).toBe(true);
     expect(existsSync(join(cwd, 'inrepo_modules', 'gamma', 'package.json'))).toBe(true);
+
+    const after = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+      modules: Record<string, { commit: string; gitUrl: string }>;
+    };
+    expect(after.modules.alpha.commit).toBe(before.modules.alpha.commit);
+    expect(after.modules.alpha.gitUrl).toBe(before.modules.alpha.gitUrl);
+    expect(after.modules.alpha.commit).not.toBe(movedTip);
+  });
+
+  test('reuses a custom git URL from the lock when --git is omitted', async () => {
+    const privateDir = await makeTmpDir('inrepo-e2e-private-alpha-');
+    try {
+      const privateUrl = join(privateDir, 'alpha.git');
+      await cp(fx.gitUrl('alpha'), privateUrl, { recursive: true });
+      expect(privateUrl).not.toBe(fx.gitUrl('alpha'));
+
+      expect(
+        (await runCli(['add', '--git', privateUrl, 'alpha'], { cwd, env })).exitCode,
+      ).toBe(0);
+      const before = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+        modules: Record<string, { gitUrl: string; commit: string }>;
+      };
+      expect(before.modules.alpha.gitUrl).toBe(privateUrl);
+
+      const add = await runCli(['add', '--with-deps', 'alpha'], { cwd, env });
+      expect(add.exitCode).toBe(0);
+      expect(existsSync(join(cwd, 'inrepo_modules', 'beta', 'package.json'))).toBe(true);
+
+      const after = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+        modules: Record<string, { gitUrl: string; commit: string }>;
+      };
+      expect(after.modules.alpha.gitUrl).toBe(before.modules.alpha.gitUrl);
+      expect(after.modules.alpha.gitUrl).not.toBe(fx.gitUrl('alpha'));
+      expect(after.modules.alpha.commit).toBe(before.modules.alpha.commit);
+    } finally {
+      await cleanupTmpDir(privateDir);
+    }
+  });
+
+  test('plans an extra dependency from the patched module package.json', async () => {
+    const patched = await makePackageGraphFixture([
+      {
+        name: 'root-pkg',
+        versions: { '1.0.0': { dependencies: { leaf: '^1.0.0' } } },
+      },
+      { name: 'leaf', versions: { '1.0.0': {} } },
+      { name: 'extra', versions: { '1.0.0': {} } },
+    ]);
+    try {
+      const patchedEnv = { ...envFor('inrepo.json'), INREPO_REGISTRY: patched.registryUrl };
+      expect(
+        (
+          await runCli(['add', '--git', patched.gitUrl('root-pkg'), 'root-pkg'], {
+            cwd,
+            env: patchedEnv,
+          })
+        ).exitCode,
+      ).toBe(0);
+
+      const manifestPath = join(cwd, 'inrepo_modules', 'root-pkg', 'package.json');
+      const manifest = await readJson(manifestPath);
+      manifest.dependencies = {
+        ...((manifest.dependencies as Record<string, string> | undefined) ?? {}),
+        extra: '^1.0.0',
+      };
+      await Bun.write(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+      const patch = await runCli(['patch', 'root-pkg', '-m', 'Add extra runtime dependency'], {
+        cwd,
+        env: patchedEnv,
+      });
+      expect(patch.exitCode).toBe(0);
+
+      const add = await runCli(['add', '--with-deps', 'root-pkg'], { cwd, env: patchedEnv });
+      expect(add.exitCode).toBe(0);
+      expect(existsSync(join(cwd, 'inrepo_modules', 'extra', 'package.json'))).toBe(true);
+      expect(add.stdout).toContain('extra ^1.0.0 → 1.0.0');
+
+      const lock = await readJson(join(cwd, 'inrepo.lock.json'));
+      expect(lock.graph).toEqual({
+        'root-pkg': {
+          version: '1.0.0',
+          root: true,
+          dependencies: {
+            leaf: { range: '^1.0.0', version: '1.0.0', module: 'leaf' },
+            extra: { range: '^1.0.0', version: '1.0.0', module: 'extra' },
+          },
+        },
+        leaf: { version: '1.0.0' },
+        extra: { version: '1.0.0' },
+      });
+    } finally {
+      await patched.cleanup();
+    }
   });
 
   test('plain add is unchanged: one package, lockfileVersion 1, no graph', async () => {

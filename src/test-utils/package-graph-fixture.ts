@@ -1,5 +1,5 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { runGit } from './run-git.js';
 import { makeTmpDir } from './tmp-dir.js';
 
@@ -25,6 +25,11 @@ export type PackageGraphFixture = {
   registryUrl: string;
   /** Bare repository path for a package, usable as a git clone URL. */
   gitUrl(name: string): string;
+  /**
+   * Commit on a package's default branch after it has already been vendored.
+   * Used to prove a later `--with-deps` stays on the locked commit.
+   */
+  commitUpstream(name: string, files: Record<string, string>, message: string): Promise<string>;
   cleanup(): Promise<void>;
 };
 
@@ -99,11 +104,13 @@ export async function makePackageGraphFixture(
 ): Promise<PackageGraphFixture> {
   const root = await makeTmpDir(prefix);
   const repos = new Map<string, string>();
+  const workRepos = new Map<string, string>();
   const packuments = new Map<string, Record<string, unknown>>();
 
   for (const spec of specs) {
     const bare = await buildPackageRepo(root, spec);
     repos.set(spec.name, bare);
+    workRepos.set(spec.name, join(root, `${safeDirName(spec.name)}-work`));
     packuments.set(spec.name, packumentFor(spec, bare));
   }
 
@@ -131,6 +138,19 @@ export async function makePackageGraphFixture(
       const url = repos.get(name);
       if (!url) throw new Error(`No fixture repository for "${name}"`);
       return url;
+    },
+    commitUpstream: async (name, files, message) => {
+      const work = workRepos.get(name);
+      if (!work) throw new Error(`No fixture work tree for "${name}"`);
+      for (const [relPath, contents] of Object.entries(files)) {
+        const abs = join(work, relPath);
+        await mkdir(dirname(abs), { recursive: true });
+        await writeFile(abs, contents, 'utf8');
+      }
+      await runGit(['add', '--all', '.'], work);
+      await runGit(['commit', '-m', message], work);
+      await runGit(['push', 'origin', 'HEAD'], work);
+      return runGit(['rev-parse', 'HEAD'], work);
     },
     cleanup: async () => {
       await server.stop(true);

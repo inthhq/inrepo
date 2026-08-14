@@ -44,6 +44,8 @@ export type PackageSpec = {
   name: string;
   git?: string;
   ref?: string;
+  /** Locked commit to reuse. Null/omitted fetches the moving tip of `ref`. */
+  commit?: string | null;
   dev?: boolean;
   exclude?: string[];
   keep?: string[];

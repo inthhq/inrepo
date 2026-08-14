@@ -32,6 +32,31 @@ export type PlanWithDepsInput = {
   globalKeep: string[];
 };
 
+export type ExistingRootPin = {
+  gitUrl?: string;
+  ref?: string | null;
+  commit?: string;
+};
+
+/**
+ * Prefer an explicit CLI git/ref (a moving tip). Otherwise stay on the
+ * recorded lock/config pin, including its commit.
+ */
+export function resolveExistingRootPin(
+  requested: Pick<PackageSpec, 'git' | 'ref' | 'commit'>,
+  existing?: ExistingRootPin,
+): { git?: string; ref?: string; commit: string | null } {
+  const explicitGit = requested.git?.trim() || undefined;
+  const explicitRef = requested.ref?.trim() || undefined;
+  const git = explicitGit ?? existing?.gitUrl?.trim() ?? undefined;
+  // A new --git retargets the repo; do not keep the previous ref pin.
+  const ref =
+    explicitRef ?? (explicitGit != null ? undefined : (existing?.ref?.trim() || undefined));
+  const movingTip = explicitGit != null || explicitRef != null;
+  const commit = requested.commit ?? (movingTip ? null : (existing?.commit ?? null));
+  return { git, ref, commit };
+}
+
 /**
  * Describe an already vendored package well enough to dedupe against it, using
  * only committed state: its lockfile pin plus the checkout's package.json.
@@ -73,14 +98,23 @@ export async function planWithDeps(
   input: PlanWithDepsInput,
 ): Promise<WithDepsPlan> {
   const { root, globalExclude, globalKeep } = input;
-  const gitUrl = root.git?.trim() ? root.git.trim() : await resolveGitUrlFromNpm(root.name);
+  const { modules } = await readLockfile(cwd);
+  const lockEntry = modules[root.name];
+  const pin = resolveExistingRootPin(
+    root,
+    lockEntry == null
+      ? undefined
+      : { gitUrl: lockEntry.gitUrl, ref: lockEntry.ref, commit: lockEntry.commit },
+  );
+  const gitUrl = pin.git || (await resolveGitUrlFromNpm(root.name));
+  const ref = pin.ref ?? null;
 
   const pristine = await ensurePristine({
     cwd,
     name: root.name,
     gitUrl,
-    ref: root.ref?.trim() || null,
-    commit: null,
+    ref,
+    commit: pin.commit,
     keep: mergedVendorKeeps(globalKeep, root),
     exclude: mergedVendorExcludes(globalExclude, root),
   });
@@ -98,7 +132,20 @@ export async function planWithDeps(
     );
   }
 
-  const { modules } = await readLockfile(cwd);
+  // The generated checkout is the patched tree (series already applied). Prefer
+  // its dependencies over the pristine cache so a committed series that edits
+  // package.json#dependencies is visible to graph resolution.
+  const dest = moduleDestPath(cwd, root.name);
+  let dependencies = manifest.dependencies;
+  if (existsSync(dest)) {
+    try {
+      const patched = await readPackageManifest(dest);
+      if (patched != null) dependencies = patched.dependencies;
+    } catch {
+      // Unreadable checkout: fall back to the pristine manifest.
+    }
+  }
+
   const vendored = new Map<string, VendoredPackage>();
   for (const [name, entry] of Object.entries(modules)) {
     if (name === root.name) continue;
@@ -110,9 +157,9 @@ export async function planWithDeps(
       name: root.name,
       version: manifest.version,
       gitUrl: pristine.gitUrl,
-      ref: root.ref?.trim() || null,
+      ref,
       commit: pristine.commit,
-      dependencies: manifest.dependencies,
+      dependencies,
     },
     vendored,
     io: {

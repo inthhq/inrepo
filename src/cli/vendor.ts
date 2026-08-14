@@ -137,10 +137,11 @@ export async function materializePackage(
       opts.lockEntry != null &&
       resolvedLockGitUrl === normalizeGitUrlForComparison(gitUrl) &&
       opts.lockEntry.ref === (ref ?? null);
+    const pinnedCommit = pkg.commit?.trim() || (usePinnedLock ? opts.lockEntry?.commit : null) || null;
 
     s.message(
-      usePinnedLock
-        ? `Preparing upstream cache @ ${opts.lockEntry?.commit.slice(0, 7)}`
+      pinnedCommit
+        ? `Preparing upstream cache @ ${pinnedCommit.slice(0, 7)}`
         : `Preparing upstream cache${ref ? ` @ ${ref}` : ''}`,
     );
     const pristine = await ensurePristine({
@@ -148,7 +149,7 @@ export async function materializePackage(
       name: pkg.name,
       gitUrl,
       ref: ref ?? null,
-      commit: usePinnedLock ? opts.lockEntry?.commit ?? null : null,
+      commit: pinnedCommit,
       keep: keepList,
       exclude: excludeList,
     });

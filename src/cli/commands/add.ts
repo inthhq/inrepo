@@ -20,7 +20,12 @@ import { printBanner } from '../rendering.js';
 import type { AddArgs, DispatchOpts } from '../types.js';
 import { cancel, confirm, intro, isCancel, outro, text, ui } from '../ui.js';
 import { materializePackage } from '../vendor.js';
-import { dependencySpec, planWithDeps, type WithDepsPlan } from '../with-deps.js';
+import {
+  dependencySpec,
+  planWithDeps,
+  resolveExistingRootPin,
+  type WithDepsPlan,
+} from '../with-deps.js';
 
 /** Persist a package entry to whichever config location the project uses. */
 async function saveConfigEntry(cwd: string, entry: InrepoJsonEntry): Promise<void> {
@@ -96,6 +101,14 @@ export async function performAdd(
 
   if (!opts.suppressBanners) intro(`inrepo add — ${args.name}${args.dev ? ' (dev)' : ''}`);
 
+  const lockEntry = modules[args.name];
+  const configEntry = configByName.get(args.name);
+  const pin = resolveExistingRootPin(args, {
+    gitUrl: configEntry?.git ?? lockEntry?.gitUrl,
+    ref: configEntry?.ref ?? lockEntry?.ref,
+    commit: lockEntry?.commit,
+  });
+
   // Resolving the whole closure first means a conflict or an unsupported
   // dependency source fails before any package is vendored.
   let plan: WithDepsPlan | null = null;
@@ -103,8 +116,9 @@ export async function performAdd(
     plan = await planWithDeps(cwd, {
       root: {
         name: args.name,
-        git: args.git,
-        ref: args.ref,
+        git: pin.git,
+        ref: pin.ref,
+        commit: pin.commit,
         dev: args.dev,
         exclude: pkgExclude,
         keep: pkgKeep,
@@ -122,8 +136,9 @@ export async function performAdd(
     cwd,
     {
       name: args.name,
-      git: args.git,
-      ref: args.ref,
+      git: pin.git,
+      ref: pin.ref,
+      commit: pin.commit,
       dev: args.dev,
       exclude: pkgExclude,
       keep: pkgKeep,
