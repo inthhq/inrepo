@@ -1,13 +1,21 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { updateDirPath, updateStatePath } from '../overlay/overlay-paths.js';
+import {
+  seriesDirPath,
+  updateDirPath,
+  updateSeriesSnapshotPath,
+  updateStatePath,
+} from '../overlay/overlay-paths.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
 import {
   clearUpdate,
   isUpdateInProgress,
   readUpdateState,
+  restoreUpdateSeries,
+  snapshotUpdateSeries,
+  updateInProgressError,
   writeUpdateState,
   type UpdateState,
 } from './update-state.js';
@@ -78,5 +86,40 @@ describe('update state', () => {
     await mkdir(updateDirPath(cwd, 'pkg'), { recursive: true });
     await writeFile(updateStatePath(cwd, 'pkg'), '{ broken', 'utf8');
     await expect(readUpdateState(cwd, 'pkg')).rejects.toThrow(/Invalid update state/);
+  });
+
+  test('snapshot and restore replace a rewritten series', async () => {
+    const live = seriesDirPath(cwd, 'pkg');
+    await mkdir(live, { recursive: true });
+    await writeFile(join(live, '0001-old.patch'), 'old\n', 'utf8');
+
+    await snapshotUpdateSeries(cwd, 'pkg');
+    expect(await readFile(join(updateSeriesSnapshotPath(cwd, 'pkg'), '0001-old.patch'), 'utf8')).toBe(
+      'old\n',
+    );
+
+    await rm(join(live, '0001-old.patch'));
+    await writeFile(join(live, '0001-new.patch'), 'new\n', 'utf8');
+
+    await restoreUpdateSeries(cwd, 'pkg');
+    expect((await readdir(live)).sort()).toEqual(['0001-old.patch']);
+    expect(await readFile(join(live, '0001-old.patch'), 'utf8')).toBe('old\n');
+  });
+
+  test('restore is a no-op when no snapshot was taken', async () => {
+    const live = seriesDirPath(cwd, 'pkg');
+    await mkdir(live, { recursive: true });
+    await writeFile(join(live, '0001-live.patch'), 'live\n', 'utf8');
+
+    await restoreUpdateSeries(cwd, 'pkg');
+    expect(await readdir(live)).toEqual(['0001-live.patch']);
+  });
+
+  test('updateInProgressError names --continue and --abort', () => {
+    const err = updateInProgressError(cwd, 'pkg', 'patching');
+    expect(err.message).toContain('already in progress');
+    expect(err.message).toContain('inrepo update pkg --continue');
+    expect(err.message).toContain('inrepo update pkg --abort');
+    expect(err.message).toContain('before patching');
   });
 });

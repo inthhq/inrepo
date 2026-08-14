@@ -78,6 +78,11 @@ export function updateStatePath(cwd: string, name: string): string {
   return join(updateDirPath(cwd, name), 'state.json');
 }
 
+/** Copy of `series/` taken before an update replaces the committed patches. */
+export function updateSeriesSnapshotPath(cwd: string, name: string): string {
+  return join(updateDirPath(cwd, name), 'series');
+}
+
 export function moduleStatePath(cwd: string, name: string): string {
   return packageTreePath(join(cwd, '.inrepo', 'state'), name) + '.json';
 }

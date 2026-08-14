@@ -1,12 +1,19 @@
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname } from 'node:path';
-import { updateDirPath, updateStatePath } from '../overlay/overlay-paths.js';
+import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, relative } from 'node:path';
+import {
+  seriesDirPath,
+  updateDirPath,
+  updateSeriesSnapshotPath,
+  updateStatePath,
+} from '../overlay/overlay-paths.js';
+import { copyTree } from '../overlay/tree-utils.js';
 
 /**
- * Everything `inrepo update --continue` needs to finish an update whose rebase
- * stopped on a conflict. It is written next to the scratch repository under
- * `.inrepo/updates/<package>/` and removed once the update lands.
+ * Everything `inrepo update --continue` / `--abort` needs while an update is
+ * still landing. Written under `.inrepo/updates/<package>/` before any
+ * committed project write, and removed only after lock, config, and
+ * materialize all succeed.
  */
 export type UpdateState = {
   name: string;
@@ -56,9 +63,42 @@ function parseUpdateState(raw: string, path: string): UpdateState {
   };
 }
 
-/** True when a conflicted update is waiting for `--continue` or `--abort`. */
+/** True when an update is waiting for `--continue` or `--abort`. */
 export function isUpdateInProgress(cwd: string, name: string): boolean {
   return existsSync(updateStatePath(cwd, name));
+}
+
+/** Error when another command cannot run because this package's update is paused. */
+export function updateInProgressError(cwd: string, name: string, action?: string): Error {
+  const finish = `Finish it with "inrepo update ${name} --continue" or discard it with "inrepo update ${name} --abort"`;
+  return new Error(
+    [
+      `An update for "${name}" is already in progress in ${relative(cwd, updateDirPath(cwd, name))}.`,
+      action ? `${finish} before ${action}.` : `${finish}.`,
+    ].join('\n'),
+  );
+}
+
+/** Copy the committed series aside so a failed finalize can put it back. */
+export async function snapshotUpdateSeries(cwd: string, name: string): Promise<void> {
+  const live = seriesDirPath(cwd, name);
+  const snap = updateSeriesSnapshotPath(cwd, name);
+  await rm(snap, { recursive: true, force: true });
+  await mkdir(snap, { recursive: true });
+  if (existsSync(live)) await copyTree(live, snap);
+}
+
+/**
+ * Replace the live series with the snapshot taken before it was rewritten.
+ * No-op when no snapshot exists (the series was never replaced).
+ */
+export async function restoreUpdateSeries(cwd: string, name: string): Promise<void> {
+  const snap = updateSeriesSnapshotPath(cwd, name);
+  if (!existsSync(snap)) return;
+  const live = seriesDirPath(cwd, name);
+  await rm(live, { recursive: true, force: true });
+  if ((await readdir(snap)).length === 0) return;
+  await copyTree(snap, live);
 }
 
 export async function readUpdateState(cwd: string, name: string): Promise<UpdateState | null> {

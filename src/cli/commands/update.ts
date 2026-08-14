@@ -10,7 +10,6 @@ import { readModuleState } from '../../overlay/module-state.js';
 import {
   overlayDirPath,
   seriesDirPath,
-  updateDirPath,
   updateRepoPath,
 } from '../../overlay/overlay-paths.js';
 import { hashTree } from '../../overlay/tree-hash.js';
@@ -30,6 +29,9 @@ import {
   clearUpdate,
   isUpdateInProgress,
   readUpdateState,
+  restoreUpdateSeries,
+  snapshotUpdateSeries,
+  updateInProgressError,
   writeUpdateState,
   type UpdateState,
 } from '../../series/update-state.js';
@@ -55,12 +57,7 @@ function plural(count: number, singular: string, pluralForm: string): string {
   return `${count} ${count === 1 ? singular : pluralForm}`;
 }
 
-function inProgressMessage(cwd: string, name: string): string {
-  return [
-    `An update for "${name}" is already in progress in ${relative(cwd, updateDirPath(cwd, name))}.`,
-    `Finish it with "inrepo update ${name} --continue" or discard it with "inrepo update ${name} --abort".`,
-  ].join('\n');
-}
+
 
 /** Conflict report: what stopped, where to fix it, and how to carry on. */
 function conflictMessage(cwd: string, name: string, result: SeriesConflict): string {
@@ -150,9 +147,12 @@ function pristineFor(
 
 /**
  * Commit the outcome of a finished update: the rebased series, the new pin in
- * config and the lockfile, and a rebuilt `inrepo_modules/<name>`. Nothing here
- * runs until the rebase has completed, so a conflicted update never leaves half
- * of it behind.
+ * config and the lockfile, and a rebuilt `inrepo_modules/<name>`.
+ *
+ * State is written first so `--abort` stays available until every committed
+ * write succeeds. The existing series is snapshotted before it is replaced;
+ * a failure after that point restores the snapshot and leaves the update in
+ * progress rather than a new series plus an old module.
  */
 async function finalizeUpdate(
   ctx: UpdateContext,
@@ -163,35 +163,44 @@ async function finalizeUpdate(
   const { cwd } = ctx;
   const name = state.name;
   await assertModuleCaptured(cwd, name);
+  await writeUpdateState(cwd, name, state);
 
-  if (patches != null) {
-    await writeRebasedSeries(seriesDirPath(cwd, name), patches);
-  }
-
-  if (state.persistRef && state.ref) {
-    if (!(await persistConfigRef(cwd, name, state.ref))) {
-      warn(`"${name}" is not in the inrepo config, so --ref was recorded in inrepo.lock.json only.`);
+  try {
+    if (patches != null) {
+      await snapshotUpdateSeries(cwd, name);
+      await writeRebasedSeries(seriesDirPath(cwd, name), patches);
     }
+
+    if (state.persistRef && state.ref) {
+      if (!(await persistConfigRef(cwd, name, state.ref))) {
+        warn(
+          `"${name}" is not in the inrepo config, so --ref was recorded in inrepo.lock.json only.`,
+        );
+      }
+    }
+
+    const lockEntry: LockModule = {
+      source: name,
+      gitUrl: state.gitUrl,
+      commit: state.newCommit,
+      ref: state.ref,
+      updatedAt: new Date().toISOString(),
+    };
+    await upsertLockModule(cwd, name, lockEntry);
+
+    await materializePackage(
+      cwd,
+      { ...ctx.pkg, ref: state.ref ?? undefined },
+      ctx.globalExclude,
+      ctx.globalKeep,
+      { mode: 'sync', force: false, lockEntry },
+    );
+
+    await clearUpdate(cwd, name);
+  } catch (e) {
+    await restoreUpdateSeries(cwd, name);
+    throw e;
   }
-
-  const lockEntry: LockModule = {
-    source: name,
-    gitUrl: state.gitUrl,
-    commit: state.newCommit,
-    ref: state.ref,
-    updatedAt: new Date().toISOString(),
-  };
-  await upsertLockModule(cwd, name, lockEntry);
-
-  await materializePackage(
-    cwd,
-    { ...ctx.pkg, ref: state.ref ?? undefined },
-    ctx.globalExclude,
-    ctx.globalKeep,
-    { mode: 'sync', force: false, lockEntry },
-  );
-
-  await clearUpdate(cwd, name);
 }
 
 function reportSuccess(state: UpdateState, patches: RebasedPatch[] | null): void {
@@ -282,7 +291,7 @@ async function startUpdate(cwd: string, args: UpdateArgs, opts: DispatchOpts): P
   const ctx = await loadUpdateContext(cwd, args.name);
   const name = ctx.pkg.name;
 
-  if (isUpdateInProgress(cwd, name)) throw new Error(inProgressMessage(cwd, name));
+  if (isUpdateInProgress(cwd, name)) throw updateInProgressError(cwd, name);
 
   const legacyEntries = await listLegacyOverlayEntries(overlayDirPath(cwd, name));
   if (legacyEntries.length > 0) {
@@ -369,6 +378,9 @@ async function abortUpdate(cwd: string, name: string, opts: DispatchOpts): Promi
   if (!isUpdateInProgress(cwd, name)) {
     throw new Error(`No update in progress for "${name}".`);
   }
+  // Finalize snapshots the series before replacing it. If a later write
+  // failed — or the process died after the swap — put the original back.
+  await restoreUpdateSeries(cwd, name);
   await clearUpdate(cwd, name);
   console.log(`Discarded the in-progress update for "${name}".`);
   if (!opts.suppressBanners) outro(`"${name}" is unchanged.`);
