@@ -128,6 +128,33 @@ export function symlinkTargetEscapesRoot(
   return rel.startsWith('..') || isAbsolute(rel);
 }
 
+/**
+ * Reject new or rewritten symlinks that are absolute or escape `targetRoot`.
+ * Symlinks inherited unchanged from `pristineRoot` are left alone, matching
+ * the legacy overlay path.
+ */
+export async function assertPatchedSymlinksWithinRoot(
+  pristineRoot: string,
+  targetRoot: string,
+): Promise<void> {
+  const [upstream, patched] = await Promise.all([
+    walkTree(pristineRoot, { treatMissingAsEmpty: true }),
+    walkTree(targetRoot, { treatMissingAsEmpty: true }),
+  ]);
+
+  for (const [relPosix, entry] of patched) {
+    if (entry.kind !== 'symlink' || entry.linkTarget == null) continue;
+    const before = upstream.get(relPosix);
+    if (before?.kind === 'symlink' && before.linkTarget === entry.linkTarget) continue;
+    if (isAbsolute(entry.linkTarget)) {
+      throw new Error(`Refusing to apply absolute symlink target at "${relPosix}"`);
+    }
+    if (symlinkTargetEscapesRoot(targetRoot, relPosix, entry.linkTarget)) {
+      throw new Error(`Refusing to apply symlink escaping module root at "${relPosix}"`);
+    }
+  }
+}
+
 function assertSymlinkWithinRoot(root: string, relPosix: string, target: string): void {
   if (isAbsolute(target)) {
     throw new Error(`Refusing to capture absolute symlink target at "${relPosix}"`);

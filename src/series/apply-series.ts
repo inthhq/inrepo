@@ -1,35 +1,8 @@
 import { mkdir, rm } from 'node:fs/promises';
-import { isAbsolute, join } from 'node:path';
-import { copyTree, symlinkTargetEscapesRoot, walkTree } from '../overlay/tree-utils.js';
+import { join } from 'node:path';
+import { assertPatchedSymlinksWithinRoot, copyTree } from '../overlay/tree-utils.js';
 import { readSeries, type SeriesPatch } from './read-series.js';
 import { initSeriesBaseRepo, runSeriesGit, skipGitDir } from './series-git.js';
-
-/**
- * Reject symlinks the series introduced or rewrote that escape the module root.
- * Symlinks inherited unchanged from upstream are left alone, matching the
- * legacy overlay path.
- */
-async function assertPatchedSymlinksWithinRoot(
-  pristineRoot: string,
-  targetRoot: string,
-): Promise<void> {
-  const [upstream, patched] = await Promise.all([
-    walkTree(pristineRoot, { treatMissingAsEmpty: true }),
-    walkTree(targetRoot, { treatMissingAsEmpty: true }),
-  ]);
-
-  for (const [relPosix, entry] of patched) {
-    if (entry.kind !== 'symlink' || entry.linkTarget == null) continue;
-    const before = upstream.get(relPosix);
-    if (before?.kind === 'symlink' && before.linkTarget === entry.linkTarget) continue;
-    if (isAbsolute(entry.linkTarget)) {
-      throw new Error(`Refusing to apply absolute symlink target at "${relPosix}"`);
-    }
-    if (symlinkTargetEscapesRoot(targetRoot, relPosix, entry.linkTarget)) {
-      throw new Error(`Refusing to apply symlink escaping module root at "${relPosix}"`);
-    }
-  }
-}
 
 async function abortInFlightApply(root: string): Promise<void> {
   try {

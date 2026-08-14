@@ -2,7 +2,12 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { seriesDirPath } from '../overlay/overlay-paths.js';
-import { copyTree, defaultSkipTreePath, walkTree } from '../overlay/tree-utils.js';
+import {
+  assertPatchedSymlinksWithinRoot,
+  copyTree,
+  defaultSkipTreePath,
+  walkTree,
+} from '../overlay/tree-utils.js';
 import { applySeries } from './apply-series.js';
 import { tryFormatSeriesPatch } from './format-series-patch.js';
 import { isSeriesPatchFileName, nextSeriesNumber, readSeries } from './read-series.js';
@@ -107,6 +112,8 @@ export async function captureSeriesPatch(opts: {
       skip: defaultSkipTreePath,
     });
     if (patch == null) return { captured: false };
+
+    await assertPatchedSymlinksWithinRoot(opts.pristineRoot, opts.moduleRoot);
 
     const fileName = seriesPatchFileName(patch.fileName, number);
     const patchPath = join(seriesDir, fileName);

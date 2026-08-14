@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { seriesDirPath } from '../overlay/overlay-paths.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
@@ -169,5 +169,49 @@ describe('captureSeriesPatch', () => {
     expect(content).toContain('Subject: [PATCH] Bump the exported version');
     expect(content).not.toContain('.inrepo-vendor.json');
     expect(content).not.toContain('.cache-meta.json');
+  });
+
+  test('refuses a new ../ symlink and does not write a patch file', async () => {
+    await symlink('../../etc/passwd', join(module, 'escape-link'));
+
+    await expect(capture('Add an escaping symlink')).rejects.toThrow(
+      /Refusing to apply symlink escaping module root at "escape-link"/,
+    );
+    expect(existsSync(seriesDir)).toBe(false);
+  });
+
+  test('refuses a new absolute symlink and does not write a patch file', async () => {
+    await symlink('/tmp/inrepo-abs-target', join(module, 'abs-link'));
+
+    await expect(capture('Add an absolute symlink')).rejects.toThrow(
+      /Refusing to apply absolute symlink target at "abs-link"/,
+    );
+    expect(existsSync(seriesDir)).toBe(false);
+  });
+
+  test('allows an unchanged upstream symlink when capturing a file edit', async () => {
+    await symlink('../../etc/passwd', join(pristine, 'escape-link'));
+    await symlink('../../etc/passwd', join(module, 'escape-link'));
+    await writeFile(join(module, 'src', 'index.ts'), 'export const v = 99;\n', 'utf8');
+
+    const result = await capture('Bump the exported version');
+    expect(result.captured).toBe(true);
+    if (!result.captured) throw new Error('unreachable');
+    expect(result.patchFileName).toBe('0001-Bump-the-exported-version.patch');
+    expect(existsSync(result.patchPath)).toBe(true);
+
+    const header = await readPatchHeader((await readSeries(seriesDir))[0]);
+    expect(header.files).toEqual(['src/index.ts']);
+  });
+
+  test('still captures a normal file edit', async () => {
+    await writeFile(join(module, 'src', 'index.ts'), 'export const v = 7;\n', 'utf8');
+
+    const result = await capture('Tweak the exported version');
+    expect(result.captured).toBe(true);
+    if (!result.captured) throw new Error('unreachable');
+    expect(result.patchFileName).toBe('0001-Tweak-the-exported-version.patch');
+    expect(await readFile(join(module, 'src', 'index.ts'), 'utf8')).toBe('export const v = 7;\n');
+    expect(existsSync(result.patchPath)).toBe(true);
   });
 });
