@@ -56,6 +56,20 @@ describe('CLI: patch series workflow (e2e)', () => {
     expect(migrate.stderr).toMatch(/Empty directories are not part of the patch series.*docs/);
   }
 
+  test('verify succeeds after migrate without an extra sync', async () => {
+    await syncEditAndMigrate();
+
+    // docs/ is empty after deleting its last file; the leftover checkout must
+    // drop it so verify can match the series-rebuilt tree immediately.
+    expect(existsSync(join(moduleDir, 'docs'))).toBe(false);
+    expect(existsSync(join(moduleDir, 'docs', 'guide.md'))).toBe(false);
+    expect(await readFile(join(moduleDir, 'src', 'index.ts'), 'utf8')).toBe('export const v = 99;\n');
+
+    const verify = await runCli(['verify'], { cwd, env: envFor(MODE) });
+    expect(verify.exitCode).toBe(0);
+    expect(verify.stdout).toMatch(/all lockfile entries match checkouts/);
+  });
+
   test('migrate converts the legacy overlay and sync rebuilds the same tree', async () => {
     await syncEditAndMigrate();
 

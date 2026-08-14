@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs';
+import { rename, rm } from 'node:fs/promises';
 import { relative } from 'node:path';
 import {
   isLoadConfigNotFoundError,
@@ -6,16 +8,18 @@ import {
   loadGlobalKeep,
 } from '../../config/load-config.js';
 import { readLockfile } from '../../lockfile/read-lockfile.js';
+import { assembleModuleTree } from '../../overlay/assemble-module.js';
 import { ensurePristine } from '../../overlay/cache.js';
-import { readModuleState, writeModuleState } from '../../overlay/module-state.js';
+import { writeModuleState } from '../../overlay/module-state.js';
 import { overlayDirPath } from '../../overlay/overlay-paths.js';
 import { hashTree } from '../../overlay/tree-hash.js';
+import { moduleDestPath } from '../../paths/module-dest-path.js';
 import { migratePackageToSeries } from '../../series/migrate-package.js';
 import { parseMigrateArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
 import type { DispatchOpts, PackageSpec } from '../types.js';
 import { intro, outro, spinner, warn } from '../ui.js';
-import { mergedVendorExcludes, mergedVendorKeeps } from '../vendor.js';
+import { makeSiblingStage, mergedVendorExcludes, mergedVendorKeeps } from '../vendor.js';
 
 /**
  * Convert a package's legacy whole-file overlay into an ordered patch series.
@@ -82,16 +86,34 @@ export async function cmdMigrate(
       );
     }
 
-    // The overlay directory now holds the series instead of snapshot files;
-    // refresh the recorded hash so the next sync/patch does not read the
-    // migration as an out-of-band overlay edit.
-    const state = await readModuleState(cwd, args.name);
-    if (state) {
-      await writeModuleState(cwd, args.name, {
-        overlayHash: await hashTree(overlayDirPath(cwd, args.name)),
-        moduleHash: state.moduleHash,
+    // Git cannot record empty directories, so the leftover checkout may still
+    // contain ones the series omitted. Rebuild dest the same way sync/verify
+    // do and record hashes of the post-rebuild trees.
+    s.message('Rebuilding generated vendor tree');
+    const dest = moduleDestPath(cwd, args.name);
+    const stage = await makeSiblingStage(dest, '.inrepo-next-');
+    try {
+      await assembleModuleTree({
+        cwd,
+        name: args.name,
+        pristineRoot: pristine.dir,
+        commit: lockEntry.commit,
+        gitUrl: lockEntry.gitUrl,
+        targetRoot: stage,
       });
+      if (existsSync(dest)) {
+        await rm(dest, { recursive: true, force: true });
+      }
+      await rename(stage, dest);
+    } catch (error) {
+      await rm(stage, { recursive: true, force: true });
+      throw error;
     }
+
+    await writeModuleState(cwd, args.name, {
+      overlayHash: await hashTree(overlayDirPath(cwd, args.name)),
+      moduleHash: await hashTree(dest),
+    });
 
     s.stop(`Migrated "${args.name}" → ${relative(cwd, result.patchPath)}`);
   } catch (e) {
