@@ -11,6 +11,7 @@ import { hashTree } from '../../overlay/tree-hash.js';
 import { captureSeriesPatch } from '../../series/capture-series-patch.js';
 import { listLegacyOverlayEntries } from '../../series/legacy-overlay.js';
 import { readSeries } from '../../series/read-series.js';
+import { isUpdateInProgress, updateInProgressError } from '../../series/update-state.js';
 import { moduleDestPath } from '../../paths/module-dest-path.js';
 import { parsePatchArgs } from '../args.js';
 import { selectPackages } from '../package-selection.js';
@@ -55,6 +56,9 @@ export async function cmdPatch(
       throw new Error(
         `Cannot patch "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`,
       );
+    }
+    if (isUpdateInProgress(cwd, pkg.name)) {
+      throw updateInProgressError(cwd, pkg.name, 'patching');
     }
 
     const dest = moduleDestPath(cwd, pkg.name);

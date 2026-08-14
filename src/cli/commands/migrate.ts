@@ -15,6 +15,7 @@ import { overlayDirPath } from '../../overlay/overlay-paths.js';
 import { hashTree } from '../../overlay/tree-hash.js';
 import { moduleDestPath } from '../../paths/module-dest-path.js';
 import { migratePackageToSeries } from '../../series/migrate-package.js';
+import { isUpdateInProgress, updateInProgressError } from '../../series/update-state.js';
 import { parseMigrateArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
 import type { DispatchOpts, PackageSpec } from '../types.js';
@@ -56,6 +57,9 @@ export async function cmdMigrate(
     );
   }
   const pkg = configPackages.find((entry) => entry.name === args.name) ?? { name: args.name };
+  if (isUpdateInProgress(cwd, args.name)) {
+    throw updateInProgressError(cwd, args.name, 'migrating');
+  }
 
   if (!opts.suppressBanners) intro(`inrepo migrate — ${args.name}`);
 

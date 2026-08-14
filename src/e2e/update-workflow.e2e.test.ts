@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import {
   bootstrapHostPackageJson,
@@ -214,6 +214,101 @@ describe('CLI: update workflow (e2e)', () => {
       'export const v = 42;\n',
     );
     expect((await cli(['verify'])).exitCode).toBe(0);
+  });
+
+  test('a failed finalize restores the series and leaves the update abortable', async () => {
+    await syncAndPatch();
+    const before = await lockCommit();
+    const seriesBefore = (await readdir(seriesDir)).sort();
+    const patchBefore = await readFile(join(seriesDir, '0001-Bump-the-exported-version.patch'));
+
+    await fx.commitUpstream({ 'src/index.ts': 'export const v = 3;\n' }, 'conflicting change');
+    expect((await cli(['update', 'upstream'])).exitCode).toBe(1);
+    await writeFile(
+      join(updateDir, 'repo', 'src', 'index.ts'),
+      'export const v = 3 + 42;\n',
+      'utf8',
+    );
+
+    const lockPath = join(cwd, 'inrepo.lock.json');
+    await chmod(lockPath, 0o444);
+
+    const cont = await cli(['update', 'upstream', '--continue']);
+    expect(cont.exitCode).toBe(1);
+    expect((await readdir(seriesDir)).sort()).toEqual(seriesBefore);
+    expect(await readFile(join(seriesDir, '0001-Bump-the-exported-version.patch'))).toEqual(
+      patchBefore,
+    );
+    expect(existsSync(join(updateDir, 'state.json'))).toBe(true);
+    expect(existsSync(join(updateDir, 'series'))).toBe(true);
+    expect(await lockCommit()).toBe(before);
+    expect(await readFile(join(moduleDir, 'src', 'index.ts'), 'utf8')).toBe(
+      'export const v = 42;\n',
+    );
+
+    await chmod(lockPath, 0o644);
+
+    const abort = await cli(['update', 'upstream', '--abort']);
+    expect(abort.exitCode).toBe(0);
+    expect(existsSync(updateDir)).toBe(false);
+    expect(await lockCommit()).toBe(before);
+    expect((await readdir(seriesDir)).sort()).toEqual(seriesBefore);
+    expect(await readFile(join(moduleDir, 'src', 'index.ts'), 'utf8')).toBe(
+      'export const v = 42;\n',
+    );
+  });
+
+  test('--abort restores a series that was replaced before finalize finished', async () => {
+    await syncAndPatch();
+    const seriesBefore = (await readdir(seriesDir)).sort();
+    const patchBefore = await readFile(join(seriesDir, '0001-Bump-the-exported-version.patch'));
+
+    await fx.commitUpstream({ 'src/index.ts': 'export const v = 3;\n' }, 'conflicting change');
+    expect((await cli(['update', 'upstream'])).exitCode).toBe(1);
+
+    // Simulate a crash after the series swap: snapshot exists, live series is new.
+    await mkdir(join(updateDir, 'series'), { recursive: true });
+    for (const name of seriesBefore) {
+      await writeFile(join(updateDir, 'series', name), await readFile(join(seriesDir, name)));
+    }
+    await rm(seriesDir, { recursive: true, force: true });
+    await mkdir(seriesDir, { recursive: true });
+    await writeFile(join(seriesDir, '0001-rebased.patch'), 'should not survive abort\n', 'utf8');
+
+    const abort = await cli(['update', 'upstream', '--abort']);
+    expect(abort.exitCode).toBe(0);
+    expect(existsSync(updateDir)).toBe(false);
+    expect((await readdir(seriesDir)).sort()).toEqual(seriesBefore);
+    expect(await readFile(join(seriesDir, '0001-Bump-the-exported-version.patch'))).toEqual(
+      patchBefore,
+    );
+  });
+
+  test('patch and migrate are refused while an update is paused', async () => {
+    await syncAndPatch();
+    const seriesBefore = (await readdir(seriesDir)).sort();
+    const patchBefore = await readFile(join(seriesDir, '0001-Bump-the-exported-version.patch'));
+
+    await fx.commitUpstream({ 'src/index.ts': 'export const v = 3;\n' }, 'conflicting change');
+    expect((await cli(['update', 'upstream'])).exitCode).toBe(1);
+
+    await writeFile(join(moduleDir, 'src', 'local.ts'), 'export const local = "nope";\n', 'utf8');
+    const patched = await cli(['patch', 'upstream', '-m', 'should not land']);
+    expect(patched.exitCode).toBe(1);
+    expect(patched.stderr).toContain('already in progress');
+    expect(patched.stderr).toContain('inrepo update upstream --continue');
+    expect(patched.stderr).toContain('inrepo update upstream --abort');
+    expect(patched.stderr).toContain('before patching');
+
+    const migrated = await cli(['migrate', 'upstream']);
+    expect(migrated.exitCode).toBe(1);
+    expect(migrated.stderr).toContain('already in progress');
+    expect(migrated.stderr).toContain('before migrating');
+
+    expect((await readdir(seriesDir)).sort()).toEqual(seriesBefore);
+    expect(await readFile(join(seriesDir, '0001-Bump-the-exported-version.patch'))).toEqual(
+      patchBefore,
+    );
   });
 
   test('starting a second update while one is in progress is refused', async () => {
