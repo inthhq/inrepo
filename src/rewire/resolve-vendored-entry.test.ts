@@ -63,6 +63,14 @@ describe('resolveVendoredEntry', () => {
     expect(await resolve('', 'require')).toBe('cjs/index.cjs');
   });
 
+  test('picks default over browser for import', async () => {
+    await writeFiles(
+      { name: 'dep', exports: { browser: './browser.js', default: './default.js' } },
+      { 'browser.js': '', 'default.js': '' },
+    );
+    expect(await resolve('', 'import')).toBe('default.js');
+  });
+
   test('honors an exported subpath before the literal path', async () => {
     await writeFiles(
       { name: 'dep', exports: { '.': './index.js', './sub': './src/sub-impl.js' } },

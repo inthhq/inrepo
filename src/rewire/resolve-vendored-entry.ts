@@ -13,8 +13,8 @@ export type EntryManifest = {
 export type EntryCondition = 'import' | 'require';
 
 const CONDITION_ORDER: Record<EntryCondition, string[]> = {
-  import: ['import', 'module', 'browser', 'node', 'default', 'require'],
-  require: ['require', 'node', 'default', 'browser', 'import'],
+  import: ['import', 'module', 'node', 'default'],
+  require: ['require', 'node', 'default'],
 };
 
 const FILE_EXTENSIONS = ['.js', '.mjs', '.cjs', '.json'];

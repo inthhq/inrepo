@@ -69,6 +69,53 @@ describe('upsertPackageJsonInrepo', () => {
     });
   });
 
+  test('preserves root rewireImports when present', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'host',
+          inrepo: { packages: [{ name: 'a' }], rewireImports: true },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    );
+    await upsertPackageJsonInrepo(cwd, { name: 'b', git: 'https://example.com/b.git' });
+    const pkg = await readPkg(cwd);
+    expect(pkg.inrepo).toEqual({
+      packages: [{ name: 'a' }, { name: 'b', git: 'https://example.com/b.git' }],
+      rewireImports: true,
+    });
+  });
+
+  test('preserves unknown extra root keys when present', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'host',
+          inrepo: {
+            packages: [{ name: 'a' }],
+            somethingCustom: { hello: 'world' },
+            extraFlag: true,
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    );
+    await upsertPackageJsonInrepo(cwd, { name: 'b' });
+    const pkg = await readPkg(cwd);
+    expect(pkg.inrepo).toEqual({
+      packages: [{ name: 'a' }, { name: 'b' }],
+      somethingCustom: { hello: 'world' },
+      extraFlag: true,
+    });
+  });
+
   test('updates existing entry and toggles dev off when omitted', async () => {
     await writeFile(
       join(cwd, 'package.json'),
