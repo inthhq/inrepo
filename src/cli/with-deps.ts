@@ -12,8 +12,10 @@ import { discoverRepositoryDirectory, ensurePristine } from '../overlay/cache.js
 import { readPackageManifest } from '../package-json/read-package-manifest.js';
 import { moduleDestPath } from '../paths/module-dest-path.js';
 import { loadRegistryPackage } from '../registry/load-registry-package.js';
+import { normalizeRepositoryUrlIdentity } from '../registry/normalize-repository-url-identity.js';
 import { resolvePackageSourceFromNpm } from '../registry/resolve-git-url-from-npm.js';
 import type { InrepoPackage } from '../types/inrepo-package.js';
+import type { LockGraph, LockGraphNode } from '../types/lock-graph.js';
 import type { LockModule } from '../types/lock-module.js';
 import { mergedVendorExcludes, mergedVendorKeeps } from './vendor.js';
 import type { PackageSpec } from './types.js';
@@ -57,7 +59,19 @@ export function resolveExistingRootPin(
   return { git, ref, commit };
 }
 
-async function publishedRootDependencies(
+/** Reconstruct declared ranges from a recorded graph node. */
+function lockGraphDependencyRanges(
+  node: LockGraphNode | undefined,
+): Record<string, string> | null {
+  if (node == null) return null;
+  const dependencies: Record<string, string> = {};
+  for (const [name, edge] of Object.entries(node.dependencies ?? {})) {
+    dependencies[name] = edge.range;
+  }
+  return dependencies;
+}
+
+async function publishedManifestDependencies(
   name: string,
   version: string | null,
 ): Promise<Record<string, string> | null> {
@@ -69,34 +83,42 @@ async function publishedRootDependencies(
       null
     );
   } catch {
-    // A manually supplied git source must remain usable without registry
-    // metadata. Its checkout manifest is the compatibility fallback.
+    // Offline and unpublished packages fall back to the lock graph or checkout.
     return null;
   }
 }
 
 /**
- * Describe an already vendored package well enough to dedupe against it, using
- * only committed state: its lockfile pin plus the checkout's package.json.
+ * Prefer already-published dependency ranges for a reused node:
+ * lock-graph edges, then the packument, then the checkout manifest.
+ *
+ * Registry-sourced monorepo packages are planned from rewritten published
+ * ranges and materialized from git, so the checkout may still say `workspace:*`.
  */
 async function describeVendored(
   cwd: string,
   module: string,
   entry: LockModule,
+  graph: LockGraph,
 ): Promise<VendoredPackage> {
   const name = entry.source;
   const dest = moduleDestPath(cwd, module);
-  let version: string | null = null;
-  let dependencies: Record<string, string> = {};
+  const graphNode = graph[module];
+  let version: string | null = graphNode?.version ?? null;
+  let checkoutDependencies: Record<string, string> = {};
   if (existsSync(dest)) {
     try {
       const manifest = await readPackageManifest(dest);
-      version = manifest?.version ?? null;
-      dependencies = manifest?.dependencies ?? {};
+      version = manifest?.version ?? version;
+      checkoutDependencies = manifest?.dependencies ?? {};
     } catch {
-      version = null;
+      // Keep the lock-graph version when the checkout manifest is unreadable.
     }
   }
+  const dependencies =
+    lockGraphDependencyRanges(graphNode) ??
+    (await publishedManifestDependencies(name, version)) ??
+    checkoutDependencies;
   return {
     name,
     module,
@@ -119,7 +141,7 @@ export async function planWithDeps(
   input: PlanWithDepsInput,
 ): Promise<WithDepsPlan> {
   const { root, globalExclude, globalKeep } = input;
-  const { modules } = await readLockfile(cwd);
+  const { modules, graph: lockGraph } = await readLockfile(cwd);
   const lockEntry = modules[root.name];
   const pin = resolveExistingRootPin(
     root,
@@ -147,8 +169,10 @@ export async function planWithDeps(
   const manifest = await readPackageManifest(pristine.dir);
   if (manifest == null) {
     throw new DependencyResolutionError(
-      `Cannot resolve dependencies for "${root.name}": its pinned checkout has no package.json at the repository root. ` +
-        'Monorepo package subdirectories are not supported yet.',
+      repositoryDirectory == null
+        ? `Cannot resolve dependencies for "${root.name}": its pinned checkout has no package.json at the repository root. ` +
+            'Monorepo package subdirectories are not supported yet.'
+        : `Cannot resolve dependencies for "${root.name}": its selected repository directory has no package.json.`,
     );
   }
   if (manifest.name !== root.name) {
@@ -163,26 +187,30 @@ export async function planWithDeps(
   }
   let dependencies =
     (!root.git?.trim()
-      ? await publishedRootDependencies(root.name, manifest.version)
+      ? lockGraphDependencyRanges(lockGraph[root.name]) ??
+        (await publishedManifestDependencies(root.name, manifest.version))
       : null) ?? manifest.dependencies;
 
-  // The generated checkout is the patched tree (series already applied). Prefer
-  // its dependencies over the pristine cache so a committed series that edits
-  // package.json#dependencies is visible to graph resolution.
   const dest = moduleDestPath(cwd, root.name);
   if (existsSync(dest)) {
     try {
       const patched = await readPackageManifest(dest);
-      if (patched != null) dependencies = patched.dependencies;
+      const patchedDeps = patched?.dependencies ?? {};
+      const usesWorkspaceProtocol = Object.values(patchedDeps).some(
+        (range) => range.startsWith('workspace:') || range.startsWith('file:'),
+      );
+      if (patched != null && !usesWorkspaceProtocol) {
+        dependencies = patchedDeps;
+      }
     } catch {
-      // Unreadable checkout: fall back to the published/pristine manifest.
+      // Unreadable checkout: keep lock-graph / published / pristine ranges.
     }
   }
 
   const vendored = new Map<string, VendoredPackage>();
   for (const [module, entry] of Object.entries(modules)) {
     if (module === root.name) continue;
-    vendored.set(module, await describeVendored(cwd, module, entry));
+    vendored.set(module, await describeVendored(cwd, module, entry, lockGraph));
   }
 
   const graph = await resolveDependencyGraph({

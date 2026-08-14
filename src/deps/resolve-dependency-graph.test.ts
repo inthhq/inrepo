@@ -208,6 +208,42 @@ describe('resolveDependencyGraph', () => {
     expect(graph.nodes.map((node) => node.name)).toContain('gamma');
   });
 
+  test('reuses published ranges on a vendored monorepo package instead of workspace specifiers', async () => {
+    const vendored = new Map<string, VendoredPackage>([
+      [
+        'beta',
+        {
+          name: 'beta',
+          version: '1.0.0',
+          gitUrl: 'https://github.com/test/workspace.git',
+          repositoryDirectory: 'packages/beta',
+          ref: 'v1.0.0',
+          commit: 'b'.repeat(40),
+          // Published range, as describeVendored reconstructs from lock/packument.
+          dependencies: { gamma: '^2.0.0' },
+        },
+      ],
+    ]);
+    const graph = await resolve(
+      {
+        beta: { '1.0.0': { dependencies: { gamma: 'workspace:*' } } },
+        gamma: { '2.0.0': {} },
+      },
+      makeRoot({ beta: '^1.0.0' }),
+      vendored,
+    );
+
+    const beta = graph.nodes.find((node) => node.name === 'beta');
+    expect(beta?.reused).toBe(true);
+    expect(beta?.dependencies).toEqual({ gamma: '^2.0.0' });
+    expect(graph.nodes.map((node) => node.name)).toEqual(['root', 'beta', 'gamma']);
+    expect(beta?.resolvedDependencies.gamma).toMatchObject({
+      range: '^2.0.0',
+      module: 'gamma@2.0.0',
+      version: '2.0.0',
+    });
+  });
+
   test('coexists with an already vendored incompatible package', async () => {
     const vendored = new Map<string, VendoredPackage>([
       [

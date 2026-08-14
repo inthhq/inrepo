@@ -34,6 +34,17 @@ describe('CLI: monorepo add --with-deps (e2e)', () => {
         manifest: { type: 'module' },
         files: { 'index.js': `export const leaf = 'shared-checkout';\n` },
       },
+      {
+        name: '@scope/other',
+        directory: 'packages/other',
+        version: '1.0.0',
+        checkoutDependencies: { '@scope/root': 'workspace:*' },
+        publishedDependencies: { '@scope/root': '^1.0.0' },
+        manifest: { type: 'module' },
+        files: {
+          'index.js': `import { leaf } from '@scope/root';\nconsole.log(leaf);\n`,
+        },
+      },
     ]);
   });
 
@@ -121,6 +132,43 @@ describe('CLI: monorepo add --with-deps (e2e)', () => {
     expect((await runCli(['sync'], { cwd, env: offlineEnv })).exitCode).toBe(0);
     expect((await runCli(['verify'], { cwd, env: offlineEnv })).exitCode).toBe(0);
     expect(await readFile(rootIndex, 'utf8')).toContain("from '../leaf@1.0.0/index.js'");
+  });
+
+  test('a second overlapping add --with-deps reuses published ranges, not checkout workspace specifiers', async () => {
+    const first = await runCli(['add', '--with-deps', '@scope/root'], { cwd, env });
+    expect(first.exitCode).toBe(0);
+
+    const before = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+      modules: Record<string, { commit: string }>;
+    };
+
+    const again = await runCli(['add', '--with-deps', '@scope/root'], { cwd, env });
+    expect(again.exitCode).toBe(0);
+    expect(again.stderr).not.toMatch(/workspace protocol/);
+    expect(again.stdout).toMatch(/already vendored/);
+
+    const second = await runCli(['add', '--with-deps', '@scope/other'], { cwd, env });
+    expect(second.exitCode).toBe(0);
+    expect(second.stderr).not.toMatch(/workspace protocol/);
+    expect(second.stdout).toMatch(/already vendored/);
+    expect(second.stdout).toMatch(/Vendored 1 package\(s\) for "@scope\/other"; 2 already vendored/);
+
+    const lock = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+      modules: Record<string, { commit: string }>;
+      graph: Record<string, { dependencies?: Record<string, { range: string; module: string }> }>;
+    };
+    expect(lock.modules['@scope/root']?.commit).toBe(before.modules['@scope/root']?.commit);
+    expect(lock.modules['@scope/leaf@1.0.0']?.commit).toBe(
+      before.modules['@scope/leaf@1.0.0']?.commit,
+    );
+    expect(lock.graph['@scope/root']?.dependencies?.['@scope/leaf']).toMatchObject({
+      range: '^1.0.0',
+      module: '@scope/leaf@1.0.0',
+    });
+    expect(lock.graph['@scope/other']?.dependencies?.['@scope/root']).toMatchObject({
+      range: '^1.0.0',
+      module: '@scope/root',
+    });
   });
 
   test('plain registry add persists its discovered repository directory', async () => {
