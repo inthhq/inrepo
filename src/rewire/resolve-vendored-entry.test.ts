@@ -63,12 +63,27 @@ describe('resolveVendoredEntry', () => {
     expect(await resolve('', 'require')).toBe('cjs/index.cjs');
   });
 
-  test('picks default over browser for import', async () => {
+  test('prefers default over browser and node over default for an import', async () => {
     await writeFiles(
       { name: 'dep', exports: { browser: './browser.js', default: './default.js' } },
       { 'browser.js': '', 'default.js': '' },
     );
     expect(await resolve('', 'import')).toBe('default.js');
+
+    await writeFiles(
+      { name: 'dep', exports: { node: './node.js', default: './default.js' } },
+      { 'node.js': '', 'default.js': '' },
+    );
+    expect(await resolve('', 'import')).toBe('node.js');
+
+    await writeFiles(
+      {
+        name: 'dep',
+        exports: { import: './esm.js', node: './node.js', default: './default.js' },
+      },
+      { 'esm.js': '', 'node.js': '', 'default.js': '' },
+    );
+    expect(await resolve('', 'import')).toBe('esm.js');
   });
 
   test('honors an exported subpath before the literal path', async () => {
@@ -77,6 +92,15 @@ describe('resolveVendoredEntry', () => {
       { 'index.js': '', 'src/sub-impl.js': '', 'sub.js': '' },
     );
     expect(await resolve('sub')).toBe('src/sub-impl.js');
+  });
+
+  test('does not resolve a subpath omitted from the exports map', async () => {
+    await writeFiles(
+      { name: 'dep', exports: { '.': './index.js', './public': './public.js' } },
+      { 'index.js': '', 'public.js': '', 'secret.js': '', 'src/secret.js': '' },
+    );
+    expect(await resolve('secret')).toBeNull();
+    expect(await resolve('public')).toBe('public.js');
   });
 
   test('adds an extension and falls back to a directory index', async () => {

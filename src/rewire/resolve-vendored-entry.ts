@@ -14,6 +14,7 @@ export type EntryManifest = {
 /** Which set of `exports` conditions to honor, decided by the importing syntax. */
 export type EntryCondition = 'import' | 'require';
 
+/** Node/Bun export conditions. Browser builds are not selected. */
 const CONDITION_ORDER: Record<EntryCondition, string[]> = {
   import: ['import', 'module', 'node', 'default'],
   require: ['require', 'node', 'default'],
@@ -200,13 +201,15 @@ function subpathCandidates(
   subpath: string,
   condition: EntryCondition,
 ): string[] {
-  const candidates: string[] = [];
   if (manifest != null && isSubpathExports(manifest.exports)) {
     const mapped = exportedSubpathValue(manifest.exports as Record<string, unknown>, subpath);
-    candidates.push(...withSourceAlternatives(exportsTargets(mapped, condition)));
+    // An exports map is an allowlist: unlisted subpaths must not resolve just
+    // because a matching file exists on disk. Mapped targets still get the
+    // dist → src fallbacks used for missing publish-only output.
+    if (mapped === undefined) return [];
+    return withSourceAlternatives(exportsTargets(mapped, condition));
   }
-  candidates.push(subpath, `src/${subpath}`, `source/${subpath}`);
-  return candidates;
+  return [subpath, `src/${subpath}`, `source/${subpath}`];
 }
 
 /**
