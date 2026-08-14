@@ -9,6 +9,7 @@ import { parsePatchHeader } from './read-patch-header.js';
 import { readSeries } from './read-series.js';
 import {
   continueSeriesRebase,
+  rebaseInProgress,
   startSeriesRebase,
   writeRebasedSeries,
   type RebasedPatch,
@@ -179,6 +180,31 @@ describe('startSeriesRebase / continueSeriesRebase', () => {
     expect(conflicted).toContain('PATCHED');
   });
 
+  test('continue refuses to stage unresolved conflict markers', async () => {
+    const newRoot = await writeTree(join(tmp, 'new'), {
+      ...BASE_FILES,
+      'a.txt': 'a1\nUPSTREAM\na3\n',
+    });
+    const started = await startSeriesRebase({
+      repoRoot,
+      seriesDir,
+      oldRoot,
+      resolveNewRoot: async () => newRoot,
+      author: AUTHOR,
+    });
+    expect(started.result.status).toBe('conflict');
+
+    await expect(
+      continueSeriesRebase({ repoRoot, newBase: started.newBase, author: AUTHOR }),
+    ).rejects.toThrow(/unresolved conflicts remain:[\s\S]*a\.txt/);
+
+    expect(rebaseInProgress(repoRoot)).toBe(true);
+    const conflicted = await readFile(join(repoRoot, 'a.txt'), 'utf8');
+    expect(conflicted).toContain('<<<<<<<');
+    expect(conflicted).toContain('UPSTREAM');
+    expect(conflicted).toContain('PATCHED');
+  });
+
   test('continue finishes the rebase once the conflict is resolved by hand', async () => {
     const newRoot = await writeTree(join(tmp, 'new'), {
       ...BASE_FILES,
@@ -299,6 +325,7 @@ describe('writeRebasedSeries', () => {
 
     expect((await readdir(seriesDir)).sort()).toEqual(['0001-first.patch', '0002-second.patch']);
     expect((await readSeries(seriesDir)).map((entry) => entry.index)).toEqual([1, 2]);
+    expect((await readdir(tmp)).filter((name) => name.startsWith('.series-'))).toEqual([]);
   });
 
   test('removes the directory when every patch became redundant', async () => {

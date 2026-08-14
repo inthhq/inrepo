@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { copyTree, defaultSkipTreePath } from '../overlay/tree-utils.js';
 import { applySeriesToRepo } from './apply-series.js';
 import { readSeries, seriesPatchFileName, type SeriesPatch } from './read-series.js';
@@ -60,6 +60,28 @@ async function conflictedFiles(repoRoot: string): Promise<string[]> {
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line !== '');
+}
+
+/** True when a work-tree file still carries leftover git conflict markers. */
+function hasConflictMarkers(text: string): boolean {
+  return text.includes('<<<<<<<') || text.includes('>>>>>>>');
+}
+
+/**
+ * Unmerged paths whose work-tree contents still have conflict markers.
+ *
+ * Git keeps a path unmerged until it is staged, so `conflictedFiles()` alone
+ * cannot tell a resolved edit from an untouched conflict. Staging first would
+ * mark the markers resolved, which is the bug this check prevents.
+ */
+async function unresolvedConflictedFiles(repoRoot: string): Promise<string[]> {
+  const leftover: string[] = [];
+  for (const file of await conflictedFiles(repoRoot)) {
+    const abs = join(repoRoot, file);
+    if (!existsSync(abs)) continue;
+    if (hasConflictMarkers(await readFile(abs, 'utf8'))) leftover.push(file);
+  }
+  return leftover;
 }
 
 /** Subject of the patch git is currently stuck on. */
@@ -215,10 +237,12 @@ export async function startSeriesRebase(opts: {
 }
 
 /**
- * Resume a rebase the user has resolved by hand. Everything in the scratch work
- * tree is staged first, so resolving a conflict is just editing files. A
- * resolution that leaves the patch with no effect skips it, mirroring what git
- * asks for when `--continue` finds nothing to commit.
+ * Resume a rebase the user has resolved by hand. Conflicted files that still
+ * carry `<<<<<<<` / `>>>>>>>` markers are refused so `--continue` cannot stage
+ * them as a resolution. Everything else in the scratch work tree is staged, so
+ * resolving a conflict is just editing files. A resolution that leaves the
+ * patch with no effect skips it, mirroring what git asks for when `--continue`
+ * finds nothing to commit.
  */
 export async function continueSeriesRebase(opts: {
   repoRoot: string;
@@ -230,6 +254,17 @@ export async function continueSeriesRebase(opts: {
     // The rebase already finished (for example a previous --continue crashed
     // after git committed); regenerating from the range is still correct.
     return { status: 'rebased', patches: await collectRebasedPatches(repo, opts.newBase) };
+  }
+
+  const unresolved = await unresolvedConflictedFiles(repo);
+  if (unresolved.length > 0) {
+    throw new Error(
+      [
+        'Cannot continue the rebase: unresolved conflicts remain:',
+        ...unresolved.map((file) => `  ${file}`),
+        'Resolve every listed file, then run --continue again.',
+      ].join('\n'),
+    );
   }
 
   await stageAll(repo);
@@ -263,15 +298,42 @@ async function runRebaseStep(
  * the rebase has finished, so the committed patch files change exactly once per
  * successful update. An empty result removes the series directory, because a
  * package whose patches all became redundant no longer has any.
+ *
+ * Patches are written to a sibling directory and renamed into place so a crash
+ * mid-write cannot leave an empty `series/` behind. Callers that snapshot the
+ * previous series can restore it if a later step fails.
  */
 export async function writeRebasedSeries(
   seriesDir: string,
   patches: RebasedPatch[],
 ): Promise<void> {
-  await rm(seriesDir, { recursive: true, force: true });
-  if (patches.length === 0) return;
-  await mkdir(seriesDir, { recursive: true });
-  for (const patch of patches) {
-    await writeFile(join(seriesDir, patch.fileName), patch.content);
+  const parent = dirname(seriesDir);
+  await mkdir(parent, { recursive: true });
+
+  if (patches.length === 0) {
+    await rm(seriesDir, { recursive: true, force: true });
+    return;
+  }
+
+  const staging = await mkdtemp(join(parent, '.series-next-'));
+  try {
+    for (const patch of patches) {
+      await writeFile(join(staging, patch.fileName), patch.content);
+    }
+
+    const previous = existsSync(seriesDir) ? `${staging}.prev` : null;
+    if (previous) await rename(seriesDir, previous);
+    try {
+      await rename(staging, seriesDir);
+    } catch (e) {
+      if (previous && existsSync(previous) && !existsSync(seriesDir)) {
+        await rename(previous, seriesDir);
+      }
+      throw e;
+    }
+    if (previous) await rm(previous, { recursive: true, force: true });
+  } catch (e) {
+    await rm(staging, { recursive: true, force: true });
+    throw e;
   }
 }
