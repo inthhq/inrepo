@@ -1,4 +1,4 @@
-export type InrepoPackage = {
+export interface InrepoPackage {
   name: string;
   /** Storage identity for a graph-managed package instance; defaults to name. */
   module?: string;
@@ -14,4 +14,4 @@ export type InrepoPackage = {
   keep?: string[];
   /** Overrides the root `rewireImports` setting for this package only. */
   rewireImports?: boolean;
-};
+}

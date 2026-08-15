@@ -1,15 +1,26 @@
-import { readFile } from 'node:fs/promises';
-import { existsSync } from 'node:fs';
-import { lockfilePath } from '../paths/lockfile-path.js';
-import { normalizeRepositoryDirectory } from '../registry/normalize-repository-directory.js';
-import type { LockGraph, LockGraphEdge, LockGraphNode } from '../types/lock-graph.js';
-import type { LockModule } from '../types/lock-module.js';
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 
-type LockfileShape = {
-  lockfileVersion?: unknown;
-  modules?: unknown;
-  graph?: unknown;
-};
+import {
+  isBoolean,
+  isJsonObject,
+  isNumber,
+  isString,
+} from "../json/unknown.js";
+import type { JsonValue } from "../json/unknown.js";
+import { lockfilePath } from "../paths/lockfile-path.js";
+import { normalizeRepositoryDirectory } from "../registry/normalize-repository-directory.js";
+import type {
+  LockGraph,
+  LockGraphEdge,
+  LockGraphNode,
+} from "../types/lock-graph.js";
+import type { LockModule } from "../types/lock-module.js";
+
+/** Modules table keyed by module directory name. */
+interface LockModulesByName {
+  [name: string]: LockModule;
+}
 
 /**
  * Lockfile versions this build understands. Version 2 only adds the optional
@@ -19,159 +30,215 @@ type LockfileShape = {
  */
 export const SUPPORTED_LOCKFILE_VERSIONS = [1, 2, 3, 4, 5] as const;
 
-function assertLockModule(module: unknown, label: string): LockModule {
-  if (module == null || typeof module !== 'object' || Array.isArray(module)) {
+const assertLockModule = function assertLockModule(
+  module: JsonValue,
+  label: string
+): LockModule {
+  if (!isJsonObject(module)) {
     throw new Error(`inrepo.lock.json ${label} must be an object`);
   }
-  const rec = module as Record<string, unknown>;
-  for (const key of ['source', 'gitUrl', 'commit', 'updatedAt']) {
-    if (typeof rec[key] !== 'string') {
-      throw new Error(`inrepo.lock.json ${label}.${key} must be a string`);
+  const rec = module;
+  for (const key of ["source", "gitUrl", "commit", "updatedAt"]) {
+    if (!isString(rec[key])) {
+      throw new TypeError(`inrepo.lock.json ${label}.${key} must be a string`);
     }
   }
-  if (rec.ref !== null && typeof rec.ref !== 'string') {
+  if (rec.ref != null && !isString(rec.ref)) {
     throw new Error(`inrepo.lock.json ${label}.ref must be a string or null`);
   }
-  if (rec.repositoryDirectory != null && typeof rec.repositoryDirectory !== 'string') {
+  if (rec.repositoryDirectory != null && !isString(rec.repositoryDirectory)) {
     throw new Error(
-      `inrepo.lock.json ${label}.repositoryDirectory must be a string when set`,
+      `inrepo.lock.json ${label}.repositoryDirectory must be a string when set`
     );
   }
-  const repositoryDirectory =
-    typeof rec.repositoryDirectory === 'string'
-      ? normalizeRepositoryDirectory(
-          rec.repositoryDirectory,
-          `inrepo.lock.json ${label}.repositoryDirectory`,
-        )
-      : null;
-  let artifact: LockModule['artifact'];
+  const repositoryDirectory = isString(rec.repositoryDirectory)
+    ? normalizeRepositoryDirectory(
+        rec.repositoryDirectory,
+        `inrepo.lock.json ${label}.repositoryDirectory`
+      )
+    : null;
+  let artifact: LockModule["artifact"];
   if (rec.artifact != null) {
-    if (typeof rec.artifact !== 'object' || Array.isArray(rec.artifact)) {
-      throw new Error(`inrepo.lock.json ${label}.artifact must be an object when set`);
+    if (!isJsonObject(rec.artifact)) {
+      throw new TypeError(
+        `inrepo.lock.json ${label}.artifact must be an object when set`
+      );
     }
-    const value = rec.artifact as Record<string, unknown>;
-    if (typeof value.tarballUrl !== 'string' || !/^https?:\/\//.test(value.tarballUrl)) {
-      throw new Error(`inrepo.lock.json ${label}.artifact.tarballUrl must be an HTTP URL`);
+    const value = rec.artifact;
+    if (
+      !isString(value.tarballUrl) ||
+      !/^https?:\/\//u.test(value.tarballUrl)
+    ) {
+      throw new Error(
+        `inrepo.lock.json ${label}.artifact.tarballUrl must be an HTTP URL`
+      );
     }
     if (
-      typeof value.integrity !== 'string' ||
-      !/^[a-z0-9]+-[A-Za-z0-9+/]+={0,2}(?:\s+[a-z0-9]+-[A-Za-z0-9+/]+={0,2})*$/i.test(value.integrity)
+      !isString(value.integrity) ||
+      !/^[a-z0-9]+-[A-Za-z0-9+/]+={0,2}(?:\s+[a-z0-9]+-[A-Za-z0-9+/]+={0,2})*$/iu.test(
+        value.integrity
+      )
     ) {
-      throw new Error(`inrepo.lock.json ${label}.artifact.integrity must be npm SRI`);
+      throw new Error(
+        `inrepo.lock.json ${label}.artifact.integrity must be npm SRI`
+      );
     }
-    artifact = { tarballUrl: value.tarballUrl, integrity: value.integrity };
+    artifact = { integrity: value.integrity, tarballUrl: value.tarballUrl };
   }
-  return {
-    source: rec.source as string,
-    gitUrl: rec.gitUrl as string,
-    ...(repositoryDirectory == null ? {} : { repositoryDirectory }),
+  // SAFETY: source/gitUrl/commit/updatedAt checked as strings above; ref is string or null.
+  const result: LockModule = {
     commit: rec.commit as string,
+    gitUrl: rec.gitUrl as string,
     ref: rec.ref as string | null,
-    ...(artifact == null ? {} : { artifact }),
+    source: rec.source as string,
     updatedAt: rec.updatedAt as string,
   };
-}
-
-function assertLockModules(modules: unknown): Record<string, LockModule> {
-  if (modules == null) return {};
-  if (typeof modules !== 'object' || Array.isArray(modules)) {
-    throw new Error('inrepo.lock.json "modules" must be an object');
+  if (repositoryDirectory != null) {
+    result.repositoryDirectory = repositoryDirectory;
   }
-  const out: Record<string, LockModule> = {};
-  for (const [name, module] of Object.entries(modules as Record<string, unknown>)) {
+  if (artifact != null) {
+    result.artifact = artifact;
+  }
+  return result;
+};
+
+const assertLockModules = function assertLockModules(
+  modules: JsonValue | undefined
+): LockModulesByName {
+  if (modules == null) {
+    return {};
+  }
+  if (!isJsonObject(modules)) {
+    throw new TypeError('inrepo.lock.json "modules" must be an object');
+  }
+  const out: LockModulesByName = {};
+  for (const [name, module] of Object.entries(modules)) {
     out[name] = assertLockModule(module, `modules["${name}"]`);
   }
   return out;
-}
+};
 
-function assertGraphEdge(edge: unknown, label: string): LockGraphEdge {
-  if (edge == null || typeof edge !== 'object' || Array.isArray(edge)) {
+const assertGraphEdge = function assertGraphEdge(
+  edge: JsonValue,
+  label: string
+): LockGraphEdge {
+  if (!isJsonObject(edge)) {
     throw new Error(`inrepo.lock.json ${label} must be an object`);
   }
-  const rec = edge as Record<string, unknown>;
-  if (typeof rec.range !== 'string' || typeof rec.module !== 'string') {
-    throw new Error(`inrepo.lock.json ${label} needs string "range" and "module"`);
+  const rec = edge;
+  if (!isString(rec.range) || !isString(rec.module)) {
+    throw new TypeError(
+      `inrepo.lock.json ${label} needs string "range" and "module"`
+    );
   }
-  if (rec.version != null && typeof rec.version !== 'string') {
-    throw new Error(`inrepo.lock.json ${label}.version must be a string when set`);
+  if (rec.version != null && !isString(rec.version)) {
+    throw new Error(
+      `inrepo.lock.json ${label}.version must be a string when set`
+    );
   }
-  return {
-    range: rec.range,
+  const result: LockGraphEdge = {
     module: rec.module,
-    ...(typeof rec.version === 'string' ? { version: rec.version } : {}),
+    range: rec.range,
   };
-}
+  if (isString(rec.version)) {
+    result.version = rec.version;
+  }
+  return result;
+};
 
-function assertGraphNode(node: unknown, label: string): LockGraphNode {
-  if (node == null || typeof node !== 'object' || Array.isArray(node)) {
+const assertGraphNode = function assertGraphNode(
+  node: JsonValue,
+  label: string
+): LockGraphNode {
+  if (!isJsonObject(node)) {
     throw new Error(`inrepo.lock.json ${label} must be an object`);
   }
-  const rec = node as Record<string, unknown>;
-  if (rec.version != null && typeof rec.version !== 'string') {
-    throw new Error(`inrepo.lock.json ${label}.version must be a string when set`);
+  const rec = node;
+  if (rec.version != null && !isString(rec.version)) {
+    throw new Error(
+      `inrepo.lock.json ${label}.version must be a string when set`
+    );
   }
-  if (rec.root != null && typeof rec.root !== 'boolean') {
-    throw new Error(`inrepo.lock.json ${label}.root must be a boolean when set`);
+  if (rec.root != null && !isBoolean(rec.root)) {
+    throw new Error(
+      `inrepo.lock.json ${label}.root must be a boolean when set`
+    );
   }
   const out: LockGraphNode = {};
-  if (typeof rec.version === 'string') out.version = rec.version;
-  if (rec.root === true) out.root = true;
+  if (isString(rec.version)) {
+    out.version = rec.version;
+  }
+  if (rec.root === true) {
+    out.root = true;
+  }
   if (rec.dependencies != null) {
-    if (typeof rec.dependencies !== 'object' || Array.isArray(rec.dependencies)) {
-      throw new Error(`inrepo.lock.json ${label}.dependencies must be an object`);
+    if (!isJsonObject(rec.dependencies)) {
+      throw new TypeError(
+        `inrepo.lock.json ${label}.dependencies must be an object`
+      );
     }
-    const dependencies: Record<string, LockGraphEdge> = {};
-    for (const [name, edge] of Object.entries(rec.dependencies as Record<string, unknown>)) {
-      dependencies[name] = assertGraphEdge(edge, `${label}.dependencies["${name}"]`);
+    const dependencies: { [name: string]: LockGraphEdge } = {};
+    for (const [name, edge] of Object.entries(rec.dependencies)) {
+      dependencies[name] = assertGraphEdge(
+        edge,
+        `${label}.dependencies["${name}"]`
+      );
     }
     out.dependencies = dependencies;
   }
   return out;
-}
+};
 
-function assertLockGraph(graph: unknown): LockGraph {
-  if (graph == null) return {};
-  if (typeof graph !== 'object' || Array.isArray(graph)) {
-    throw new Error('inrepo.lock.json "graph" must be an object');
+const assertLockGraph = function assertLockGraph(
+  graph: JsonValue | undefined
+): LockGraph {
+  if (graph == null) {
+    return {};
+  }
+  if (!isJsonObject(graph)) {
+    throw new TypeError('inrepo.lock.json "graph" must be an object');
   }
   const out: LockGraph = {};
-  for (const [name, node] of Object.entries(graph as Record<string, unknown>)) {
+  for (const [name, node] of Object.entries(graph)) {
     out[name] = assertGraphNode(node, `graph["${name}"]`);
   }
   return out;
-}
+};
 
-export async function readLockfile(cwd: string): Promise<{
+export const readLockfile = async function readLockfile(cwd: string): Promise<{
   lockfileVersion: number;
-  modules: Record<string, LockModule>;
+  modules: LockModulesByName;
   graph: LockGraph;
 }> {
   const p = lockfilePath(cwd);
   if (!existsSync(p)) {
-    return { lockfileVersion: 1, modules: {}, graph: {} };
+    return { graph: {}, lockfileVersion: 1, modules: {} };
   }
-  const raw = await readFile(p, 'utf8');
-  let data: unknown;
+  const raw = await readFile(p, "utf-8");
+  let data: JsonValue;
   try {
-    data = JSON.parse(raw) as unknown;
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e));
-    throw new Error(`Invalid inrepo.lock.json: ${err.message}`);
+    // SAFETY: JSON.parse produces a JSON value from file contents.
+    data = JSON.parse(raw) as JsonValue;
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    throw new Error(`Invalid inrepo.lock.json: ${err.message}`, {
+      cause: error,
+    });
   }
-  if (data == null || typeof data !== 'object' || Array.isArray(data)) {
-    throw new Error('inrepo.lock.json must be a JSON object');
+  if (!isJsonObject(data)) {
+    throw new Error("inrepo.lock.json must be a JSON object");
   }
-  const rec = data as LockfileShape;
-  const lockfileVersion = rec.lockfileVersion;
+  const { graph, lockfileVersion, modules } = data;
+  // SAFETY: supported versions are exactly the 1–5 numeric tags this build handles.
   if (
-    typeof lockfileVersion !== 'number' ||
+    !isNumber(lockfileVersion) ||
     !SUPPORTED_LOCKFILE_VERSIONS.includes(lockfileVersion as 1 | 2 | 3 | 4 | 5)
   ) {
     throw new Error(`Unsupported lockfileVersion: ${String(lockfileVersion)}`);
   }
   return {
+    graph: assertLockGraph(graph),
     lockfileVersion,
-    modules: assertLockModules(rec.modules),
-    graph: assertLockGraph(rec.graph),
+    modules: assertLockModules(modules),
   };
-}
+};

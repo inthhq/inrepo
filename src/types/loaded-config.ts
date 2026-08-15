@@ -1,6 +1,6 @@
-import type { InrepoPackage } from './inrepo-package.js';
+import type { InrepoPackage } from "./inrepo-package.js";
 
-export type LoadedConfig = {
+export interface LoadedConfig {
   packages: InrepoPackage[];
   /** Paths relative to each vendored module root removed after clone (before finalize). */
   exclude: string[];
@@ -8,5 +8,5 @@ export type LoadedConfig = {
   keep: string[];
   /** Project-wide default for the generated import-rewiring transform. Off unless set. */
   rewireImports: boolean;
-  source: 'inrepo.json' | 'package.json';
-};
+  source: "inrepo.json" | "package.json";
+}

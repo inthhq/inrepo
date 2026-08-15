@@ -1,11 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
-type Result = {
+interface Result {
   status: number;
   stderr: string;
   stdout: string;
-};
+}
 
 const variants = [
   { command: "bun", label: "bun npm baseline", prefix: ["cli.ts"] },
@@ -25,12 +25,14 @@ const scenarios = [
   { args: ["unknown-command"], label: "invalid command" },
 ] as const;
 
-function run(command: string, args: readonly string[]): Result {
+const run = function run(command: string, args: readonly string[]): Result {
   const result = spawnSync(command, [...args], {
-    encoding: "utf8",
+    encoding: "utf-8",
     env: { ...process.env, FORCE_COLOR: "0", NO_COLOR: "1" },
   });
-  if (result.error) throw result.error;
+  if (result.error) {
+    throw result.error;
+  }
   if (result.status == null) {
     throw new Error(
       `${command} terminated without an exit status (${
@@ -43,7 +45,7 @@ function run(command: string, args: readonly string[]): Result {
     stderr: result.stderr,
     stdout: result.stdout,
   };
-}
+};
 
 for (const variant of variants) {
   if (variant.command.startsWith("./") && !existsSync(variant.command)) {

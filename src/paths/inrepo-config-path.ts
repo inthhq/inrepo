@@ -1,5 +1,5 @@
-import { join } from 'node:path';
+import nodePath from "node:path";
 
-export function inrepoConfigPath(cwd: string): string {
-  return join(cwd, 'inrepo.json');
-}
+export const inrepoConfigPath = function inrepoConfigPath(cwd: string): string {
+  return nodePath.join(cwd, "inrepo.json");
+};

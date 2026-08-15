@@ -1,12 +1,23 @@
-import { spawn } from 'node:child_process';
-import { readFile, writeFile } from 'node:fs/promises';
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { stdin as input, stdout as output } from 'node:process';
-import { cancel, confirm, intro, isCancel, outro, select, ui } from '../cli/ui.js';
-import { defaultInrepoJsonSchemaRef } from '../inrepo-json/default-inrepo-json-schema-ref.js';
-import { inrepoConfigPath } from '../paths/inrepo-config-path.js';
-import { packageJsonPath } from '../paths/package-json-path.js';
+import { spawn } from "node:child_process";
+import { existsSync, readFileSync } from "node:fs";
+import { readFile, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+import { stdin as input, stdout as output } from "node:process";
+
+import {
+  cancel,
+  confirm,
+  intro,
+  isCancel,
+  outro,
+  select,
+  ui,
+} from "../cli/ui.js";
+import { defaultInrepoJsonSchemaRef } from "../inrepo-json/default-inrepo-json-schema-ref.js";
+import { isJsonObject } from "../json/unknown.js";
+import type { JsonObject, JsonValue } from "../json/unknown.js";
+import { inrepoConfigPath } from "../paths/inrepo-config-path.js";
+import { packageJsonPath } from "../paths/package-json-path.js";
 
 const STUB = `{
   "packages": [],
@@ -14,148 +25,181 @@ const STUB = `{
 }
 `;
 
-const GITIGNORE_LINES = ['/inrepo_modules/', '/.inrepo/'] as const;
+const GITIGNORE_LINES = ["/inrepo_modules/", "/.inrepo/"] as const;
 const GITIGNORE_RECOMMENDATION =
   'Keep "/inrepo_modules/" and "/.inrepo/" in .gitignore (init recommends or adds them; never ignore "inrepo_patches/").';
-const GITHUB_REPO_URL = 'https://github.com/inthhq/inrepo';
+const GITHUB_REPO_URL = "https://github.com/inthhq/inrepo";
 
-function normalizeGitignoreLine(line: string): string {
+const normalizeGitignoreLine = function normalizeGitignoreLine(
+  line: string
+): string {
   const trimmed = line.trim();
-  if (!trimmed) return trimmed;
-  return trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
-}
+  if (!trimmed) {
+    return trimmed;
+  }
+  return trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+};
 
-function packageJsonHasInrepoKey(cwd: string): boolean {
+const packageJsonHasInrepoKey = function packageJsonHasInrepoKey(
+  cwd: string
+): boolean {
   const pkgPath = packageJsonPath(cwd);
-  if (!existsSync(pkgPath)) return false;
-  const raw = readFileSync(pkgPath, 'utf8');
+  if (!existsSync(pkgPath)) {
+    return false;
+  }
+  const raw = readFileSync(pkgPath, "utf-8");
   if (!raw.trim()) {
-    throw new Error('Invalid package.json: file is empty');
+    throw new Error("Invalid package.json: file is empty");
   }
-  let pkg: unknown;
+  let pkg: JsonValue;
   try {
-    pkg = JSON.parse(raw);
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e));
-    throw new Error(`Invalid package.json: ${err.message}`);
+    // SAFETY: JSON.parse produces a JSON value from file contents.
+    pkg = JSON.parse(raw) as JsonValue;
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    throw new Error(`Invalid package.json: ${err.message}`, { cause: error });
   }
-  if (pkg == null || typeof pkg !== 'object' || Array.isArray(pkg)) {
-    throw new Error('Invalid package.json: expected a JSON object at the root');
+  if (!isJsonObject(pkg)) {
+    throw new Error("Invalid package.json: expected a JSON object at the root");
   }
-  const obj = pkg as Record<string, unknown>;
-  return 'inrepo' in obj && obj.inrepo != null;
-}
+  return "inrepo" in pkg && pkg.inrepo != null;
+};
 
-async function writeInrepoJsonStub(cwd: string): Promise<void> {
-  await writeFile(inrepoConfigPath(cwd), STUB, 'utf8');
-}
+const writeInrepoJsonStub = async function writeInrepoJsonStub(
+  cwd: string
+): Promise<void> {
+  await writeFile(inrepoConfigPath(cwd), STUB, "utf-8");
+};
 
-async function writePackageJsonInrepoStub(cwd: string): Promise<void> {
+const writePackageJsonInrepoStub = async function writePackageJsonInrepoStub(
+  cwd: string
+): Promise<void> {
   const pkgPath = packageJsonPath(cwd);
-  const raw = await readFile(pkgPath, 'utf8');
-  let pkg: Record<string, unknown>;
+  const raw = await readFile(pkgPath, "utf-8");
+  let parsed: JsonValue;
   try {
-    pkg = JSON.parse(raw) as Record<string, unknown>;
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e));
-    throw new Error(`Invalid package.json: ${err.message}`);
+    // SAFETY: JSON.parse produces a JSON value from file contents.
+    parsed = JSON.parse(raw) as JsonValue;
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    throw new Error(`Invalid package.json: ${err.message}`, { cause: error });
   }
-  if (pkg == null || typeof pkg !== 'object' || Array.isArray(pkg)) {
-    throw new Error('package.json must contain a JSON object');
+  if (!isJsonObject(parsed)) {
+    throw new Error("package.json must contain a JSON object");
   }
-  if (pkg.inrepo != null) return;
+  const pkg: JsonObject = parsed;
+  if (pkg.inrepo != null) {
+    return;
+  }
   pkg.inrepo = { packages: [] };
-  await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');
-}
+  await writeFile(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`, "utf-8");
+};
 
-async function appendGitignoreLines(
+const appendGitignoreLines = async function appendGitignoreLines(
   cwd: string,
-  opts: { interactive: boolean },
+  opts: { interactive: boolean }
 ): Promise<string[]> {
-  const path = join(cwd, '.gitignore');
-  const raw = existsSync(path) ? await readFile(path, 'utf8') : '';
-  const existing = new Set(raw.split(/\r?\n/).map(normalizeGitignoreLine));
-  const missing = GITIGNORE_LINES.filter((line) => !existing.has(normalizeGitignoreLine(line)));
-  if (missing.length === 0) return [];
+  const path = nodePath.join(cwd, ".gitignore");
+  const raw = existsSync(path) ? await readFile(path, "utf-8") : "";
+  const existing = new Set(raw.split(/\r?\n/u).map(normalizeGitignoreLine));
+  const missing = GITIGNORE_LINES.filter(
+    (line) => !existing.has(normalizeGitignoreLine(line))
+  );
+  if (missing.length === 0) {
+    return [];
+  }
 
   if (opts.interactive) {
     const shouldAppend = await confirm({
-      message: `Add these lines to .gitignore?\n${missing.map((line) => `  ${line}`).join('\n')}`,
       initialValue: true,
+      message: `Add these lines to .gitignore?\n${missing.map((line) => `  ${line}`).join("\n")}`,
     });
     if (isCancel(shouldAppend) || shouldAppend !== true) {
       return [];
     }
   }
 
-  const prefix = raw === '' ? '' : raw.endsWith('\n') ? '' : '\n';
-  await writeFile(path, `${raw}${prefix}${missing.join('\n')}\n`, 'utf8');
+  let prefix = "";
+  if (raw !== "" && !raw.endsWith("\n")) {
+    prefix = "\n";
+  }
+  await writeFile(path, `${raw}${prefix}${missing.join("\n")}\n`, "utf-8");
   return missing;
-}
+};
 
-function logGitignoreRecommendation(added: string[]): void {
+const logGitignoreRecommendation = function logGitignoreRecommendation(
+  added: string[]
+): void {
   if (added.length > 0) {
-    ui.info(`Added to .gitignore: ${added.join(', ')}`);
+    ui.info(`Added to .gitignore: ${added.join(", ")}`);
   }
   ui.message(GITIGNORE_RECOMMENDATION);
-}
+};
 
-function openUrl(url: string): boolean {
-  const command =
-    process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'cmd' : 'xdg-open';
-  const args = process.platform === 'win32' ? ['/c', 'start', '', url] : [url];
+const openUrl = function openUrl(url: string): boolean {
+  let command = "xdg-open";
+  if (process.platform === "darwin") {
+    command = "open";
+  } else if (process.platform === "win32") {
+    command = "cmd";
+  }
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
   const child = spawn(command, args, {
     detached: true,
-    stdio: 'ignore',
+    stdio: "ignore",
   });
-  child.on('error', () => {
+  child.on("error", () => {
     // Browser launch is best-effort; setup should still succeed if no opener exists.
   });
   child.unref();
   return child.pid != null;
-}
+};
 
-async function promptToStarOnGithub(): Promise<void> {
-  const shouldOpen = await confirm({
-    message: 'Would you like to open GitHub and star inrepo?',
-    initialValue: true,
-  });
-  if (isCancel(shouldOpen) || shouldOpen !== true) return;
+const promptToStarOnGithub =
+  async function promptToStarOnGithub(): Promise<void> {
+    const shouldOpen = await confirm({
+      initialValue: true,
+      message: "Would you like to open GitHub and star inrepo?",
+    });
+    if (isCancel(shouldOpen) || shouldOpen !== true) {
+      return;
+    }
 
-  if (openUrl(GITHUB_REPO_URL)) {
-    ui.info(`Opening ${GITHUB_REPO_URL}`);
-  } else {
-    ui.message(`Star inrepo here: ${GITHUB_REPO_URL}`);
-  }
-}
+    if (openUrl(GITHUB_REPO_URL)) {
+      ui.info(`Opening ${GITHUB_REPO_URL}`);
+    } else {
+      ui.message(`Star inrepo here: ${GITHUB_REPO_URL}`);
+    }
+  };
 
-function isNonInteractive(): boolean {
+const isNonInteractive = function isNonInteractive(): boolean {
   return (
     !input.isTTY ||
     !output.isTTY ||
-    process.env.CI === 'true' ||
-    process.env.INREPO_NONINTERACTIVE === '1'
+    process.env.CI === "true" ||
+    process.env.INREPO_NONINTERACTIVE === "1"
   );
-}
+};
 
 /**
  * Whether the current process can run interactive Clack prompts: a TTY on both
  * stdin/stdout, not in CI, and not explicitly opted out via INREPO_NONINTERACTIVE.
  */
-export function canPromptInteractively(): boolean {
-  return !isNonInteractive();
-}
+export const canPromptInteractively =
+  function canPromptInteractively(): boolean {
+    return !isNonInteractive();
+  };
 
-function nonInteractiveHint(): string {
+const nonInteractiveHint = function nonInteractiveHint(): string {
   const example = JSON.stringify({
-    packages: [],
     $schema: defaultInrepoJsonSchemaRef,
+    packages: [],
   });
   return (
     `Create inrepo.json with ${example}, or add "inrepo": {"packages":[]} to package.json. ` +
-    'Alternatively set INREPO_CONFIG=inrepo.json or INREPO_CONFIG=package.json (non-interactive setup).'
+    "Alternatively set INREPO_CONFIG=inrepo.json or INREPO_CONFIG=package.json (non-interactive setup)."
   );
-}
+};
 
 /**
  * Whether this project already has inrepo configuration in either supported
@@ -164,16 +208,20 @@ function nonInteractiveHint(): string {
  * Throws if `package.json` is present but malformed, so callers surface a
  * clear error instead of silently treating the project as uninitialized.
  */
-export function isInrepoInitialized(cwd: string): boolean {
-  if (existsSync(inrepoConfigPath(cwd))) return true;
+export const isInrepoInitialized = function isInrepoInitialized(
+  cwd: string
+): boolean {
+  if (existsSync(inrepoConfigPath(cwd))) {
+    return true;
+  }
   return packageJsonHasInrepoKey(cwd);
-}
+};
 
 /** Thrown when the user aborts first-time setup (e.g. Escape); the CLI exits without a generic error line. */
 export class InrepoSetupCancelledError extends Error {
   constructor() {
-    super('First-time setup cancelled.');
-    this.name = 'InrepoSetupCancelledError';
+    super("First-time setup cancelled.");
+    this.name = "InrepoSetupCancelledError";
   }
 }
 
@@ -181,15 +229,23 @@ export class InrepoSetupCancelledError extends Error {
  * First-time setup: if there is no inrepo.json and no package.json#inrepo, prompt (TTY) or
  * read INREPO_CONFIG / fail with instructions (CI).
  */
-export async function ensureInrepoInitialized(cwd: string): Promise<void> {
-  if (existsSync(inrepoConfigPath(cwd))) return;
-  if (packageJsonHasInrepoKey(cwd)) return;
+export const ensureInrepoInitialized = async function ensureInrepoInitialized(
+  cwd: string
+): Promise<void> {
+  if (existsSync(inrepoConfigPath(cwd))) {
+    return;
+  }
+  if (packageJsonHasInrepoKey(cwd)) {
+    return;
+  }
 
   const envRaw = process.env.INREPO_CONFIG?.trim().toLowerCase();
-  if (envRaw === 'inrepo.json' || envRaw === 'package.json') {
-    if (envRaw === 'package.json') {
+  if (envRaw === "inrepo.json" || envRaw === "package.json") {
+    if (envRaw === "package.json") {
       if (!existsSync(packageJsonPath(cwd))) {
-        throw new Error('INREPO_CONFIG=package.json requires a package.json in the project root.');
+        throw new Error(
+          "INREPO_CONFIG=package.json requires a package.json in the project root."
+        );
       }
       await writePackageJsonInrepoStub(cwd);
     } else {
@@ -201,50 +257,52 @@ export async function ensureInrepoInitialized(cwd: string): Promise<void> {
   }
 
   if (isNonInteractive()) {
-    throw new Error(`inrepo: first-time setup needs an interactive terminal.\n${nonInteractiveHint()}`);
+    throw new Error(
+      `inrepo: first-time setup needs an interactive terminal.\n${nonInteractiveHint()}`
+    );
   }
 
   const hasPackageJson = existsSync(packageJsonPath(cwd));
 
-  intro('inrepo — first-time setup');
+  intro("inrepo — first-time setup");
 
-  type ConfigLocation = 'inrepo.json' | 'package.json';
+  type ConfigLocation = "inrepo.json" | "package.json";
   const options: { value: ConfigLocation; label: string; hint: string }[] = [
     {
-      value: 'inrepo.json',
-      label: 'inrepo.json',
-      hint: 'Dedicated file at the project root',
+      hint: "Dedicated file at the project root",
+      label: "inrepo.json",
+      value: "inrepo.json",
     },
   ];
   if (hasPackageJson) {
     options.push({
-      value: 'package.json',
-      label: 'package.json',
       hint: '"inrepo" field',
+      label: "package.json",
+      value: "package.json",
     });
   }
 
   const choice = await select<ConfigLocation>({
-    message: 'Where should vendoring configuration live?',
+    initialValue: "inrepo.json",
+    message: "Where should vendoring configuration live?",
     options,
-    initialValue: 'inrepo.json',
   });
 
   if (isCancel(choice)) {
-    cancel('First-time setup cancelled.');
+    cancel("First-time setup cancelled.");
     throw new InrepoSetupCancelledError();
   }
 
-  if (choice === 'inrepo.json') {
+  let outroMessage: string;
+  if (choice === "inrepo.json") {
     await writeInrepoJsonStub(cwd);
-    const added = await appendGitignoreLines(cwd, { interactive: true });
-    outro('Created inrepo.json with an empty packages list.');
-    logGitignoreRecommendation(added);
+    outroMessage = "Created inrepo.json with an empty packages list.";
   } else {
     await writePackageJsonInrepoStub(cwd);
-    const added = await appendGitignoreLines(cwd, { interactive: true });
-    outro('Added "inrepo" to package.json.');
-    logGitignoreRecommendation(added);
+    outroMessage = 'Added "inrepo" to package.json.';
   }
+  const added = await appendGitignoreLines(cwd, { interactive: true });
+  outro(outroMessage);
+  logGitignoreRecommendation(added);
   await promptToStarOnGithub();
-}
+};

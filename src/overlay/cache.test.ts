@@ -1,221 +1,263 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-import { readFile, rename, symlink } from 'node:fs/promises';
-import { join } from 'node:path';
-import { discoverRepositoryDirectory, ensurePristine } from './cache.js';
-import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
 import {
-  makeLocalGitFixture,
-  type LocalGitFixture,
-} from '../test-utils/local-git-fixture.js';
-import { runGit } from '../test-utils/run-git.js';
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "bun:test";
+import { existsSync } from "node:fs";
+import { readFile, rename, symlink } from "node:fs/promises";
+import nodePath from "node:path";
 
-describe('ensurePristine', () => {
+import { makeLocalGitFixture } from "../test-utils/local-git-fixture.js";
+import type { LocalGitFixture } from "../test-utils/local-git-fixture.js";
+import { runGit } from "../test-utils/run-git.js";
+import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
+import { discoverRepositoryDirectory, ensurePristine } from "./cache.js";
+
+describe("ensurePristine", () => {
   let fx: LocalGitFixture | undefined;
   let cwd: string;
 
+  const requireFixture = function requireFixture(): LocalGitFixture {
+    expect(fx).toBeDefined();
+    if (fx == null) {
+      throw new Error("Local git fixture was not initialized");
+    }
+    return fx;
+  };
+
   beforeAll(async () => {
-    fx = await makeLocalGitFixture('inrepo-cache-fixture-');
+    fx = await makeLocalGitFixture("inrepo-cache-fixture-");
   });
 
   afterAll(async () => {
-    if (fx) await fx.cleanup();
+    if (fx) {
+      await fx.cleanup();
+    }
   });
 
   beforeEach(async () => {
-    cwd = await makeTmpDir('inrepo-cache-');
+    cwd = await makeTmpDir("inrepo-cache-");
   });
 
   afterEach(async () => {
     await cleanupTmpDir(cwd);
   });
 
-  test('builds the pristine cache at a pinned commit', async () => {
+  test("builds the pristine cache at a pinned commit", async () => {
+    const fixture = requireFixture();
     const pristine = await ensurePristine({
+      commit: fixture.c1,
       cwd,
-      name: 'upstream',
-      gitUrl: fx!.url,
-      commit: fx!.c1,
-      ref: null,
-      keep: ['src', 'package.json'],
       exclude: [],
+      gitUrl: fixture.url,
+      keep: ["src", "package.json"],
+      name: "upstream",
+      ref: null,
     });
 
-    expect(pristine.commit).toBe(fx!.c1);
-    expect(await readFile(join(pristine.dir, 'src', 'index.ts'), 'utf8')).toBe('export const v = 1;\n');
-    expect(existsSync(join(pristine.dir, 'package.json'))).toBe(true);
-    expect(existsSync(join(pristine.dir, 'README.md'))).toBe(false);
+    expect(pristine.commit).toBe(fixture.c1);
+    expect(
+      await readFile(nodePath.join(pristine.dir, "src", "index.ts"), "utf-8")
+    ).toBe("export const v = 1;\n");
+    expect(existsSync(nodePath.join(pristine.dir, "package.json"))).toBe(true);
+    expect(existsSync(nodePath.join(pristine.dir, "README.md"))).toBe(false);
   });
 
-  test('creates the cache parent for a scoped package', async () => {
+  test("creates the cache parent for a scoped package", async () => {
+    const fixture = requireFixture();
     const pristine = await ensurePristine({
+      commit: fixture.c1,
       cwd,
-      name: '@scope/upstream',
-      gitUrl: fx!.url,
-      commit: fx!.c1,
-      ref: null,
+      exclude: [],
+      gitUrl: fixture.url,
       keep: [],
-      exclude: [],
+      name: "@scope/upstream",
+      ref: null,
     });
 
-    expect(pristine.dir).toBe(join(cwd, '.inrepo', 'cache', '@scope', 'upstream'));
-    expect(await readFile(join(pristine.dir, 'src', 'index.ts'), 'utf8')).toBe(
-      'export const v = 1;\n',
+    expect(pristine.dir).toBe(
+      nodePath.join(cwd, ".inrepo", "cache", "@scope", "upstream")
     );
+    expect(
+      await readFile(nodePath.join(pristine.dir, "src", "index.ts"), "utf-8")
+    ).toBe("export const v = 1;\n");
   });
 
-  test('rebuilds when the pinned commit or filters change', async () => {
+  test("rebuilds when the pinned commit or filters change", async () => {
+    const fixture = requireFixture();
     const first = await ensurePristine({
+      commit: fixture.c1,
       cwd,
-      name: 'upstream',
-      gitUrl: fx!.url,
-      commit: fx!.c1,
-      ref: null,
-      keep: ['src', 'package.json'],
       exclude: [],
+      gitUrl: fixture.url,
+      keep: ["src", "package.json"],
+      name: "upstream",
+      ref: null,
     });
-    expect(await readFile(join(first.dir, 'src', 'index.ts'), 'utf8')).toBe('export const v = 1;\n');
+    expect(
+      await readFile(nodePath.join(first.dir, "src", "index.ts"), "utf-8")
+    ).toBe("export const v = 1;\n");
 
     const second = await ensurePristine({
+      commit: fixture.c2,
       cwd,
-      name: 'upstream',
-      gitUrl: fx!.url,
-      commit: fx!.c2,
-      ref: null,
-      keep: ['src', 'package.json', 'CHANGELOG.md'],
       exclude: [],
+      gitUrl: fixture.url,
+      keep: ["src", "package.json", "CHANGELOG.md"],
+      name: "upstream",
+      ref: null,
     });
-    expect(second.commit).toBe(fx!.c2);
-    expect(await readFile(join(second.dir, 'src', 'index.ts'), 'utf8')).toBe('export const v = 2;\n');
-    expect(existsSync(join(second.dir, 'CHANGELOG.md'))).toBe(true);
+    expect(second.commit).toBe(fixture.c2);
+    expect(
+      await readFile(nodePath.join(second.dir, "src", "index.ts"), "utf-8")
+    ).toBe("export const v = 2;\n");
+    expect(existsSync(nodePath.join(second.dir, "CHANGELOG.md"))).toBe(true);
 
     const third = await ensurePristine({
+      commit: fixture.c2,
       cwd,
-      name: 'upstream',
-      gitUrl: fx!.url,
-      commit: fx!.c2,
-      ref: null,
-      keep: ['src'],
       exclude: [],
+      gitUrl: fixture.url,
+      keep: ["src"],
+      name: "upstream",
+      ref: null,
     });
-    expect(existsSync(join(third.dir, 'package.json'))).toBe(false);
+    expect(existsSync(nodePath.join(third.dir, "package.json"))).toBe(false);
   });
 
-  test('shares an exact repository snapshot while projecting package-relative views', async () => {
-    const mono = await makeLocalGitFixture('inrepo-cache-monorepo-');
+  test("shares an exact repository snapshot while projecting package-relative views", async () => {
+    const mono = await makeLocalGitFixture("inrepo-cache-monorepo-");
     try {
       const commit = await mono.commitUpstream(
         {
-          'packages/a/package.json': '{"name":"@scope/a"}\n',
-          'packages/a/src/index.ts': 'export const packageName = "a";\n',
-          'packages/a/docs/a.md': '# a\n',
-          'packages/b/package.json': '{"name":"@scope/b"}\n',
-          'packages/b/src/index.ts': 'export const packageName = "b";\n',
+          "packages/a/docs/a.md": "# a\n",
+          "packages/a/package.json": '{"name":"@scope/a"}\n',
+          "packages/a/src/index.ts": 'export const packageName = "a";\n',
+          "packages/b/package.json": '{"name":"@scope/b"}\n',
+          "packages/b/src/index.ts": 'export const packageName = "b";\n',
         },
-        'add workspace packages',
+        "add workspace packages"
       );
 
       const first = await ensurePristine({
-        cwd,
-        name: '@scope/a',
-        gitUrl: mono.url,
-        repositoryDirectory: 'packages/a',
         commit,
-        keep: ['package.json', 'src'],
+        cwd,
         exclude: [],
+        gitUrl: mono.url,
+        keep: ["package.json", "src"],
+        name: "@scope/a",
+        repositoryDirectory: "packages/a",
       });
-      expect(await readFile(join(first.dir, 'src', 'index.ts'), 'utf8')).toContain('"a"');
-      expect(existsSync(join(first.dir, 'docs'))).toBe(false);
-      expect(existsSync(join(first.dir, 'packages'))).toBe(false);
+      expect(
+        await readFile(nodePath.join(first.dir, "src", "index.ts"), "utf-8")
+      ).toContain('"a"');
+      expect(existsSync(nodePath.join(first.dir, "docs"))).toBe(false);
+      expect(existsSync(nodePath.join(first.dir, "packages"))).toBe(false);
 
       // Prove the second package uses the raw content-addressed snapshot rather
       // than cloning the same repository commit again.
       await rename(mono.url, `${mono.url}.offline`);
       const second = await ensurePristine({
-        cwd,
-        name: '@scope/b',
-        gitUrl: mono.url,
-        repositoryDirectory: 'packages/b',
         commit,
-        keep: [],
+        cwd,
         exclude: [],
+        gitUrl: mono.url,
+        keep: [],
+        name: "@scope/b",
+        repositoryDirectory: "packages/b",
       });
-      expect(await readFile(join(second.dir, 'src', 'index.ts'), 'utf8')).toContain('"b"');
+      expect(
+        await readFile(nodePath.join(second.dir, "src", "index.ts"), "utf-8")
+      ).toContain('"b"');
 
       // repositoryDirectory participates in package-view invalidation too.
       const retargeted = await ensurePristine({
-        cwd,
-        name: '@scope/a',
-        gitUrl: mono.url,
-        repositoryDirectory: 'packages/b',
         commit,
-        keep: [],
+        cwd,
         exclude: [],
+        gitUrl: mono.url,
+        keep: [],
+        name: "@scope/a",
+        repositoryDirectory: "packages/b",
       });
-      expect(await readFile(join(retargeted.dir, 'src', 'index.ts'), 'utf8')).toContain('"b"');
+      expect(
+        await readFile(
+          nodePath.join(retargeted.dir, "src", "index.ts"),
+          "utf-8"
+        )
+      ).toContain('"b"');
     } finally {
       await mono.cleanup();
     }
   });
 
-  test('discovers one exact package directory at an immutable commit', async () => {
-    const mono = await makeLocalGitFixture('inrepo-cache-discovery-');
+  test("discovers one exact package directory at an immutable commit", async () => {
+    const mono = await makeLocalGitFixture("inrepo-cache-discovery-");
     try {
       const commit = await mono.commitUpstream(
         {
-          'package.json': '{"name":"workspace-root","version":"1.0.0"}\n',
-          'packages/schema/package.json': '{"name":"@scope/schema","version":"2.2.0"}\n',
-          'packages/other/package.json': '{"name":"@scope/other","version":"2.2.0"}\n',
+          "package.json": '{"name":"workspace-root","version":"1.0.0"}\n',
+          "packages/other/package.json":
+            '{"name":"@scope/other","version":"2.2.0"}\n',
+          "packages/schema/package.json":
+            '{"name":"@scope/schema","version":"2.2.0"}\n',
         },
-        'add discoverable package',
+        "add discoverable package"
       );
       expect(
         await discoverRepositoryDirectory({
-          cwd,
-          name: '@scope/schema',
-          version: '2.2.0',
-          gitUrl: mono.url,
           commit,
-        }),
-      ).toBe('packages/schema');
+          cwd,
+          gitUrl: mono.url,
+          name: "@scope/schema",
+          version: "2.2.0",
+        })
+      ).toBe("packages/schema");
       expect(
         await discoverRepositoryDirectory({
-          cwd,
-          name: 'workspace-root',
-          version: '1.0.0',
-          gitUrl: mono.url,
           commit,
-        }),
+          cwd,
+          gitUrl: mono.url,
+          name: "workspace-root",
+          version: "1.0.0",
+        })
       ).toBeNull();
     } finally {
       await mono.cleanup();
     }
   });
 
-  test('rejects a package-subtree symlink that escapes to another repository path', async () => {
-    const mono = await makeLocalGitFixture('inrepo-cache-symlink-');
+  test("rejects a package-subtree symlink that escapes to another repository path", async () => {
+    const mono = await makeLocalGitFixture("inrepo-cache-symlink-");
     try {
       await mono.commitUpstream(
-        { 'packages/a/package.json': '{"name":"a"}\n' },
-        'add workspace package',
+        { "packages/a/package.json": '{"name":"a"}\n' },
+        "add workspace package"
       );
-      await symlink('../../README.md', join(mono.work, 'packages', 'a', 'leak'));
-      await runGit(['add', '--all', '.'], mono.work);
-      await runGit(['commit', '-m', 'add escaping symlink'], mono.work);
-      await runGit(['push', 'origin', 'HEAD'], mono.work);
-      const commit = await runGit(['rev-parse', 'HEAD'], mono.work);
+      await symlink(
+        "../../README.md",
+        nodePath.join(mono.work, "packages", "a", "leak")
+      );
+      await runGit(["add", "--all", "."], mono.work);
+      await runGit(["commit", "-m", "add escaping symlink"], mono.work);
+      await runGit(["push", "origin", "HEAD"], mono.work);
+      const commit = await runGit(["rev-parse", "HEAD"], mono.work);
 
       await expect(
         ensurePristine({
-          cwd,
-          name: 'a',
-          gitUrl: mono.url,
-          repositoryDirectory: 'packages/a',
           commit,
-          keep: [],
+          cwd,
           exclude: [],
-        }),
-      ).rejects.toThrow(/symlink escaping module root at "leak"/);
+          gitUrl: mono.url,
+          keep: [],
+          name: "a",
+          repositoryDirectory: "packages/a",
+        })
+      ).rejects.toThrow(/symlink escaping module root at "leak"/u);
     } finally {
       await mono.cleanup();
     }

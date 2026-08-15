@@ -1,97 +1,106 @@
-import { resolve } from 'node:path';
-import type { CliCommand } from 'hexbus';
-import { cmdAdd } from './commands/add.js';
-import { cmdDiff } from './commands/diff.js';
-import { cmdInit } from './commands/init.js';
-import { cmdMigrate } from './commands/migrate.js';
-import { cmdPatch } from './commands/patch.js';
-import { cmdSync } from './commands/sync.js';
-import { cmdUpdate } from './commands/update.js';
-import { cmdVerify } from './commands/verify.js';
+import nodePath from "node:path";
+
+import type { CliCommand } from "hexbus";
+
+import { cmdAdd } from "./commands/add.js";
+import { cmdDiff } from "./commands/diff.js";
+import { cmdInit } from "./commands/init.js";
+import { cmdMigrate } from "./commands/migrate.js";
+import { cmdPatch } from "./commands/patch.js";
+import { cmdSync } from "./commands/sync.js";
+import { cmdUpdate } from "./commands/update.js";
+import { cmdVerify } from "./commands/verify.js";
 
 export const commands: CliCommand[] = [
   {
     action: async (context) => {
-      if (context.commandArgs.length) throw new Error('init does not take arguments');
-      await cmdInit(resolve(context.cwd));
+      if (context.commandArgs.length) {
+        throw new Error("init does not take arguments");
+      }
+      await cmdInit(nodePath.resolve(context.cwd));
     },
     description:
       'Create an empty inrepo config (inrepo.json or package.json "inrepo"); no-op if already initialized.',
-    hint: 'Create config',
-    label: 'Init',
-    name: 'init',
+    hint: "Create config",
+    label: "Init",
+    name: "init",
   },
   {
     action: async (context) => {
-      await cmdSync(resolve(context.cwd), context.commandArgs, {
+      await cmdSync(nodePath.resolve(context.cwd), context.commandArgs, {
         force: context.flags.force === true,
       });
     },
     description:
-      'Build inrepo_modules from the pinned upstream lockfile state plus any committed files in inrepo_patches/.',
-    hint: 'Refresh vendored packages',
-    label: 'Sync',
-    name: 'sync',
+      "Build inrepo_modules from the pinned upstream lockfile state plus any committed files in inrepo_patches/.",
+    hint: "Refresh vendored packages",
+    label: "Sync",
+    name: "sync",
   },
   {
     action: async (context) => {
-      await cmdPatch(resolve(context.cwd), context.commandArgs);
+      await cmdPatch(nodePath.resolve(context.cwd), context.commandArgs);
     },
     description:
       'Capture edits from inrepo_modules into inrepo_patches/ as a new numbered patch (-m "reason") or a legacy overlay.',
-    hint: 'Capture local edits',
-    label: 'Patch',
-    name: 'patch',
+    hint: "Capture local edits",
+    label: "Patch",
+    name: "patch",
   },
   {
     action: async (context) => {
-      await cmdDiff(resolve(context.cwd), context.commandArgs);
+      await cmdDiff(nodePath.resolve(context.cwd), context.commandArgs);
     },
     description:
-      'Show the effective delta between the pinned upstream commit and the patched tree, with the patch series that produced it.',
-    hint: 'Review vendored changes',
-    label: 'Diff',
-    name: 'diff',
+      "Show the effective delta between the pinned upstream commit and the patched tree, with the patch series that produced it.",
+    hint: "Review vendored changes",
+    label: "Diff",
+    name: "diff",
   },
   {
     action: async (context) => {
-      if (context.commandArgs.length) throw new Error('verify does not take arguments');
-      const ok = await cmdVerify(resolve(context.cwd));
-      if (!ok) process.exitCode = 1;
-    },
-    description: 'Check vendored dirs match the lockfile plus any committed overlays.',
-    hint: 'Check generated output',
-    label: 'Verify',
-    name: 'verify',
-  },
-  {
-    action: async (context) => {
-      await cmdUpdate(resolve(context.cwd), context.commandArgs);
+      if (context.commandArgs.length) {
+        throw new Error("verify does not take arguments");
+      }
+      const ok = await cmdVerify(nodePath.resolve(context.cwd));
+      if (!ok) {
+        process.exitCode = 1;
+      }
     },
     description:
-      'Move a package to a newer upstream commit by rebasing its patch series onto it (--ref, --continue, --abort).',
-    hint: 'Rebase onto new upstream',
-    label: 'Update',
-    name: 'update',
+      "Check vendored dirs match the lockfile plus any committed overlays.",
+    hint: "Check generated output",
+    label: "Verify",
+    name: "verify",
   },
   {
     action: async (context) => {
-      await cmdMigrate(resolve(context.cwd), context.commandArgs);
+      await cmdUpdate(nodePath.resolve(context.cwd), context.commandArgs);
     },
     description:
-      'Convert a package\'s legacy overlay files in inrepo_patches/ into an ordered git patch series.',
-    hint: 'Convert overlay to patches',
-    label: 'Migrate',
-    name: 'migrate',
+      "Move a package to a newer upstream commit by rebasing its patch series onto it (--ref, --continue, --abort).",
+    hint: "Rebase onto new upstream",
+    label: "Update",
+    name: "update",
   },
   {
     action: async (context) => {
-      await cmdAdd(resolve(context.cwd), context.commandArgs);
+      await cmdMigrate(nodePath.resolve(context.cwd), context.commandArgs);
     },
     description:
-      'Vendor or refresh a package pin, then rebuild its generated checkout in inrepo_modules (--with-deps also vendors its runtime dependencies).',
-    hint: 'Vendor a package',
-    label: 'Add',
-    name: 'add',
+      "Convert a package's legacy overlay files in inrepo_patches/ into an ordered git patch series.",
+    hint: "Convert overlay to patches",
+    label: "Migrate",
+    name: "migrate",
+  },
+  {
+    action: async (context) => {
+      await cmdAdd(nodePath.resolve(context.cwd), context.commandArgs);
+    },
+    description:
+      "Vendor or refresh a package pin, then rebuild its generated checkout in inrepo_modules (--with-deps also vendors its runtime dependencies).",
+    hint: "Vendor a package",
+    label: "Add",
+    name: "add",
   },
 ];

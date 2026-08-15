@@ -1,5 +1,5 @@
-import { join } from 'node:path';
+import nodePath from "node:path";
 
-export function packageJsonPath(cwd: string): string {
-  return join(cwd, 'package.json');
-}
+export const packageJsonPath = function packageJsonPath(cwd: string): string {
+  return nodePath.join(cwd, "package.json");
+};

@@ -1,22 +1,34 @@
-import { existsSync } from 'node:fs';
-import { realpath, rm } from 'node:fs/promises';
-import { isAbsolute, sep } from 'node:path';
-import { assertSafeUnderDest } from './vendor-path-utils.js';
-import { listRelativePathsRecursive, pathDepth } from './vendor-tree-paths.js';
-import safeRegex from 'safe-regex';
+import { existsSync } from "node:fs";
+import { realpath, rm } from "node:fs/promises";
+import nodePath from "node:path";
+
+import safeRegex from "safe-regex";
+
+import { assertSafeUnderDest } from "./vendor-path-utils.js";
+import { listRelativePathsRecursive, pathDepth } from "./vendor-tree-paths.js";
 
 /**
  * Parse `/body/flags` style entries (flags optional, a–z only).
  * Returns null if the string is not meant to be a regex literal.
  */
-function tryParseSlashDelimitedRegex(trimmed: string): RegExp | null {
-  if (!trimmed.startsWith('/') || trimmed.length < 3) return null;
-  const last = trimmed.lastIndexOf('/');
-  if (last <= 0) return null;
+const tryParseSlashDelimitedRegex = function tryParseSlashDelimitedRegex(
+  trimmed: string
+): RegExp | null {
+  if (!trimmed.startsWith("/") || trimmed.length < 3) {
+    return null;
+  }
+  const last = trimmed.lastIndexOf("/");
+  if (last <= 0) {
+    return null;
+  }
   const body = trimmed.slice(1, last);
   const flags = trimmed.slice(last + 1);
-  if (flags && !/^[a-z]*$/.test(flags)) return null;
-  if (!body) return null;
+  if (flags && !/^[a-z]*$/u.test(flags)) {
+    return null;
+  }
+  if (!body) {
+    return null;
+  }
   let re: RegExp;
   try {
     re = new RegExp(body, flags);
@@ -25,11 +37,11 @@ function tryParseSlashDelimitedRegex(trimmed: string): RegExp | null {
   }
   if (!safeRegex(re)) {
     throw new Error(
-      `Exclude regex is potentially unsafe (ReDoS risk): ${JSON.stringify(trimmed)}`,
+      `Exclude regex is potentially unsafe (ReDoS risk): ${JSON.stringify(trimmed)}`
     );
   }
   return re;
-}
+};
 
 /**
  * Remove paths under `dest` (typically after `git clone`).
@@ -38,8 +50,13 @@ function tryParseSlashDelimitedRegex(trimmed: string): RegExp | null {
  * - **Regex** entries: slash-delimited `/pattern/optionalflags` (e.g. `/^\\.git$/`).
  *   Patterns are tested against paths relative to the module root using `/` separators.
  */
-export async function applyVendorExcludes(dest: string, paths: string[]): Promise<void> {
-  if (paths.length === 0) return;
+export const applyVendorExcludes = async function applyVendorExcludes(
+  dest: string,
+  paths: string[]
+): Promise<void> {
+  if (paths.length === 0) {
+    return;
+  }
 
   let destRoot: string;
   try {
@@ -53,7 +70,9 @@ export async function applyVendorExcludes(dest: string, paths: string[]): Promis
 
   for (const raw of paths) {
     const trimmed = raw.trim();
-    if (!trimmed) continue;
+    if (!trimmed) {
+      continue;
+    }
 
     const parsedRe = tryParseSlashDelimitedRegex(trimmed);
     if (parsedRe) {
@@ -61,17 +80,19 @@ export async function applyVendorExcludes(dest: string, paths: string[]): Promis
       continue;
     }
 
-    if (trimmed.startsWith('/')) {
+    if (trimmed.startsWith("/")) {
       throw new Error(
-        `Invalid exclude regex (expected /pattern/ or /pattern/flags): ${JSON.stringify(raw)}`,
+        `Invalid exclude regex (expected /pattern/ or /pattern/flags): ${JSON.stringify(raw)}`
       );
     }
 
-    if (isAbsolute(trimmed) || /^[A-Za-z]:[\\/]/.test(trimmed)) {
-      throw new Error(`Exclude path must be relative to the module root: ${JSON.stringify(raw)}`);
+    if (nodePath.isAbsolute(trimmed) || /^[A-Za-z]:[\\/]/u.test(trimmed)) {
+      throw new Error(
+        `Exclude path must be relative to the module root: ${JSON.stringify(raw)}`
+      );
     }
 
-    literals.push(trimmed.split(sep).join('/'));
+    literals.push(trimmed.split(nodePath.sep).join("/"));
   }
 
   const toRemove = new Set<string>();
@@ -94,18 +115,20 @@ export async function applyVendorExcludes(dest: string, paths: string[]): Promis
     toRemove.add(lit);
   }
 
-  const sorted = [...toRemove].sort((a, b) => pathDepth(b) - pathDepth(a));
+  const sorted = [...toRemove].toSorted((a, b) => pathDepth(b) - pathDepth(a));
   const seenAbs = new Set<string>();
 
   for (const relPosix of sorted) {
     const abs = assertSafeUnderDest(destRoot, relPosix);
-    if (seenAbs.has(abs)) continue;
+    if (seenAbs.has(abs)) {
+      continue;
+    }
     seenAbs.add(abs);
 
     if (!existsSync(abs)) {
       // Literal excludes may target optional paths; regex may list parents already removed.
       continue;
     }
-    await rm(abs, { recursive: true, force: true });
+    await rm(abs, { force: true, recursive: true });
   }
-}
+};

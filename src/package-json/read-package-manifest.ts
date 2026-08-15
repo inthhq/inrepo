@@ -1,43 +1,65 @@
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import nodePath from "node:path";
+
+import { isJsonObject, isString } from "../json/unknown.js";
+import type { JsonValue } from "../json/unknown.js";
+
+/** Runtime dependency name → version range from package.json. */
+export interface PackageDependencyMap {
+  [name: string]: string;
+}
 
 /** The parts of a package's own package.json that dependency vendoring needs. */
-export type PackageManifest = {
+export interface PackageManifest {
   name: string | null;
   version: string | null;
   /** Runtime `dependencies` only; dev and peer dependencies are never vendored. */
-  dependencies: Record<string, string>;
-};
+  dependencies: PackageDependencyMap;
+}
 
-function stringRecord(raw: unknown): Record<string, string> {
-  if (raw == null || typeof raw !== 'object' || Array.isArray(raw)) return {};
-  const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
-    if (typeof value === 'string') out[key] = value;
+const stringRecord = function stringRecord(
+  raw: JsonValue | undefined
+): PackageDependencyMap {
+  if (!isJsonObject(raw)) {
+    return {};
+  }
+  const out: PackageDependencyMap = {};
+  for (const [key, value] of Object.entries(raw)) {
+    if (isString(value)) {
+      out[key] = value;
+    }
   }
   return out;
-}
+};
 
 /**
  * Read `<dir>/package.json`. Returns null when the file is absent, which is a
  * legitimate outcome for a checkout narrowed by `keep` or `exclude`.
  */
-export async function readPackageManifest(dir: string): Promise<PackageManifest | null> {
-  const path = join(dir, 'package.json');
-  if (!existsSync(path)) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(await readFile(path, 'utf8')) as unknown;
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e));
-    throw new Error(`Invalid package.json in ${dir}: ${err.message}`);
+export const readPackageManifest = async function readPackageManifest(
+  dir: string
+): Promise<PackageManifest | null> {
+  const path = nodePath.join(dir, "package.json");
+  if (!existsSync(path)) {
+    return null;
   }
-  if (parsed == null || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-  const rec = parsed as Record<string, unknown>;
+  let parsed: JsonValue;
+  try {
+    // SAFETY: JSON.parse produces a JSON value from file contents.
+    parsed = JSON.parse(await readFile(path, "utf-8")) as JsonValue;
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
+    throw new Error(`Invalid package.json in ${dir}: ${err.message}`, {
+      cause: error,
+    });
+  }
+  if (!isJsonObject(parsed)) {
+    return null;
+  }
   return {
-    name: typeof rec.name === 'string' ? rec.name : null,
-    version: typeof rec.version === 'string' ? rec.version : null,
-    dependencies: stringRecord(rec.dependencies),
+    dependencies: stringRecord(parsed.dependencies),
+    name: isString(parsed.name) ? parsed.name : null,
+    version: isString(parsed.version) ? parsed.version : null,
   };
-}
+};

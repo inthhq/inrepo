@@ -1,10 +1,20 @@
-import { existsSync } from 'node:fs';
-import { mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { copyTree, defaultSkipTreePath } from '../overlay/tree-utils.js';
-import { applySeriesToRepo } from './apply-series.js';
-import { readSeries, seriesPatchFileName, type SeriesPatch } from './read-series.js';
+import { existsSync } from "node:fs";
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rename,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { tmpdir } from "node:os";
+import nodePath from "node:path";
+
+import { copyTree, defaultSkipTreePath } from "../overlay/tree-utils.js";
+import { applySeriesToRepo } from "./apply-series.js";
+import { readSeries, seriesPatchFileName } from "./read-series.js";
+import type { SeriesPatch } from "./read-series.js";
 import {
   initSeriesBaseRepo,
   replaceWorkTree,
@@ -14,25 +24,25 @@ import {
   stageAll,
   trySeriesGit,
   SERIES_BASE_BRANCH,
-  type SeriesAuthor,
-} from './series-git.js';
+} from "./series-git.js";
+import type { SeriesAuthor } from "./series-git.js";
 
 /** Branch holding the new upstream pin inside an update scratch repository. */
-export const SERIES_TARGET_BRANCH = 'inrepo-new-upstream';
+export const SERIES_TARGET_BRANCH = "inrepo-new-upstream";
 
 /** One patch of a successfully rebased series, ready to be written to disk. */
-export type RebasedPatch = {
+export interface RebasedPatch {
   /** Position in the rebased series, 1-based; also the `NNNN-` prefix. */
   number: number;
   subject: string;
   fileName: string;
   content: Buffer;
-};
+}
 
 export type SeriesRebaseResult =
-  | { status: 'rebased'; patches: RebasedPatch[] }
+  | { status: "rebased"; patches: RebasedPatch[] }
   | {
-      status: 'conflict';
+      status: "conflict";
       /** 1-based position of the patch the rebase stopped on. */
       number: number;
       subject: string;
@@ -40,32 +50,39 @@ export type SeriesRebaseResult =
       files: string[];
     };
 
-function updateSkip(relPosix: string): boolean {
+const updateSkip = function updateSkip(relPosix: string): boolean {
   return skipGitDir(relPosix) || defaultSkipTreePath(relPosix);
-}
+};
 
 /** True while git has a rebase parked in the scratch repository. */
-export function rebaseInProgress(repoRoot: string): boolean {
+export const rebaseInProgress = function rebaseInProgress(
+  repoRoot: string
+): boolean {
   return (
-    existsSync(join(repoRoot, '.git', 'rebase-merge')) ||
-    existsSync(join(repoRoot, '.git', 'rebase-apply'))
+    existsSync(nodePath.join(repoRoot, ".git", "rebase-merge")) ||
+    existsSync(nodePath.join(repoRoot, ".git", "rebase-apply"))
   );
-}
+};
 
-async function conflictedFiles(repoRoot: string): Promise<string[]> {
-  const raw = await runSeriesGitCapture(['diff', '--name-only', '--diff-filter=U'], {
-    cwd: repoRoot,
-  });
+const conflictedFiles = async function conflictedFiles(
+  repoRoot: string
+): Promise<string[]> {
+  const raw = await runSeriesGitCapture(
+    ["diff", "--name-only", "--diff-filter=U"],
+    {
+      cwd: repoRoot,
+    }
+  );
   return raw
-    .split('\n')
+    .split("\n")
     .map((line) => line.trim())
-    .filter((line) => line !== '');
-}
+    .filter((line) => line !== "");
+};
 
 /** True when a work-tree file still carries leftover git conflict markers. */
-function hasConflictMarkers(text: string): boolean {
-  return text.includes('<<<<<<<') || text.includes('>>>>>>>');
-}
+const hasConflictMarkers = function hasConflictMarkers(text: string): boolean {
+  return text.includes("<<<<<<<") || text.includes(">>>>>>>");
+};
 
 /**
  * Unmerged paths whose work-tree contents still have conflict markers.
@@ -74,103 +91,163 @@ function hasConflictMarkers(text: string): boolean {
  * cannot tell a resolved edit from an untouched conflict. Staging first would
  * mark the markers resolved, which is the bug this check prevents.
  */
-async function unresolvedConflictedFiles(repoRoot: string): Promise<string[]> {
+const unresolvedConflictedFiles = async function unresolvedConflictedFiles(
+  repoRoot: string
+): Promise<string[]> {
   const leftover: string[] = [];
   for (const file of await conflictedFiles(repoRoot)) {
-    const abs = join(repoRoot, file);
-    if (!existsSync(abs)) continue;
-    if (hasConflictMarkers(await readFile(abs, 'utf8'))) leftover.push(file);
+    const abs = nodePath.join(repoRoot, file);
+    if (!existsSync(abs)) {
+      continue;
+    }
+    if (hasConflictMarkers(await readFile(abs, "utf-8"))) {
+      leftover.push(file);
+    }
   }
   return leftover;
-}
+};
 
 /** Subject of the patch git is currently stuck on. */
-async function stoppedSubject(repoRoot: string): Promise<string> {
+const stoppedSubject = async function stoppedSubject(
+  repoRoot: string
+): Promise<string> {
   try {
-    return await runSeriesGitCapture(['log', '-1', '--format=%s', 'REBASE_HEAD'], {
-      cwd: repoRoot,
-    });
+    return await runSeriesGitCapture(
+      ["log", "-1", "--format=%s", "REBASE_HEAD"],
+      {
+        cwd: repoRoot,
+      }
+    );
   } catch {
-    const messagePath = join(repoRoot, '.git', 'rebase-merge', 'message');
-    if (!existsSync(messagePath)) return '(unknown patch)';
-    return (await readFile(messagePath, 'utf8')).split('\n')[0].trim() || '(unknown patch)';
+    const messagePath = nodePath.join(
+      repoRoot,
+      ".git",
+      "rebase-merge",
+      "message"
+    );
+    if (!existsSync(messagePath)) {
+      return "(unknown patch)";
+    }
+    return (
+      (await (await readFile(messagePath, "utf-8")).split("\n")[0].trim()) ||
+      "(unknown patch)"
+    );
   }
-}
+};
 
-async function commitCount(repoRoot: string, range: string): Promise<number> {
-  const raw = await runSeriesGitCapture(['rev-list', '--count', range], { cwd: repoRoot });
-  const parsed = Number.parseInt(raw, 10);
+const commitCount = async function commitCount(
+  repoRoot: string,
+  range: string
+): Promise<number> {
+  const raw = await runSeriesGitCapture(["rev-list", "--count", range], {
+    cwd: repoRoot,
+  });
+  const parsed = Math.trunc(Number(raw));
   return Number.isNaN(parsed) ? 0 : parsed;
-}
+};
 
-async function conflictResult(repoRoot: string, newBase: string): Promise<SeriesRebaseResult> {
+const conflictResult = async function conflictResult(
+  repoRoot: string,
+  newBase: string
+): Promise<SeriesRebaseResult> {
   return {
-    status: 'conflict',
-    number: (await commitCount(repoRoot, `${newBase}..HEAD`)) + 1,
-    subject: await stoppedSubject(repoRoot),
     files: await conflictedFiles(repoRoot),
+    number: (await commitCount(repoRoot, `${newBase}..HEAD`)) + 1,
+    status: "conflict",
+    subject: await stoppedSubject(repoRoot),
   };
-}
+};
 
 /**
  * Regenerate the series from the commits that now sit on top of the new
  * upstream base. `git format-patch` renumbers them from 0001 and carries each
  * commit's original author, date, and subject into the new file.
  */
-async function collectRebasedPatches(
+const collectRebasedPatches = async function collectRebasedPatches(
   repoRoot: string,
-  newBase: string,
+  newBase: string
 ): Promise<RebasedPatch[]> {
-  const out = await mkdtemp(join(tmpdir(), 'inrepo-rebase-out-'));
+  const out = await mkdtemp(nodePath.join(tmpdir(), "inrepo-rebase-out-"));
   try {
     const range = `${newBase}..HEAD`;
     await runSeriesGit(
       [
-        'format-patch',
-        '--binary',
-        '--full-index',
-        '--no-signature',
-        '--no-numbered',
-        '--start-number',
-        '1',
-        '-o',
+        "format-patch",
+        "--binary",
+        "--full-index",
+        "--no-signature",
+        "--no-numbered",
+        "--start-number",
+        "1",
+        "-o",
         out,
         range,
       ],
-      { cwd: repoRoot },
+      { cwd: repoRoot }
     );
 
-    const produced = (await readdir(out)).filter((name) => name.endsWith('.patch')).sort();
+    const produced = await (
+      await readdir(out)
+    )
+      .filter((name) => name.endsWith(".patch"))
+      .toSorted();
     // `<sha>\t<subject>` keeps one line per commit even when a subject is
     // empty, which a hand-written patch file is allowed to be.
     const subjectLines = await runSeriesGitCapture(
-      ['log', '--reverse', '--format=%H%x09%s', range],
-      { cwd: repoRoot, trim: false },
+      ["log", "--reverse", "--format=%H%x09%s", range],
+      { cwd: repoRoot, trim: false }
     );
     const subjects = subjectLines
-      .split('\n')
-      .filter((line) => line !== '')
-      .map((line) => line.slice(line.indexOf('\t') + 1));
+      .split("\n")
+      .filter((line) => line !== "")
+      .map((line) => line.slice(line.indexOf("\t") + 1));
     if (subjects.length !== produced.length) {
       throw new Error(
-        `Expected ${subjects.length} patch file(s) from git format-patch, got ${produced.length}`,
+        `Expected ${subjects.length} patch file(s) from git format-patch, got ${produced.length}`
       );
     }
 
     const patches: RebasedPatch[] = [];
     for (let i = 0; i < produced.length; i += 1) {
       patches.push({
+        content: await readFile(nodePath.join(out, produced[i])),
+        fileName: seriesPatchFileName(produced[i], i + 1),
         number: i + 1,
         subject: subjects[i],
-        fileName: seriesPatchFileName(produced[i], i + 1),
-        content: await readFile(join(out, produced[i])),
       });
     }
     return patches;
   } finally {
-    await rm(out, { recursive: true, force: true });
+    await rm(out, { force: true, recursive: true });
   }
-}
+};
+
+/**
+ * Run one rebase command and translate its outcome: a stopped rebase is a
+ * conflict to report, anything else is a real failure.
+ */
+const runRebaseStep = async function runRebaseStep(
+  repoRoot: string,
+  args: string[],
+  newBase: string,
+  author?: SeriesAuthor
+): Promise<SeriesRebaseResult> {
+  try {
+    await runSeriesGit(args, { author, cwd: repoRoot });
+  } catch (error) {
+    if (!rebaseInProgress(repoRoot)) {
+      throw error;
+    }
+    return conflictResult(repoRoot, newBase);
+  }
+  if (rebaseInProgress(repoRoot)) {
+    return conflictResult(repoRoot, newBase);
+  }
+  return {
+    patches: await collectRebasedPatches(repoRoot, newBase),
+    status: "rebased",
+  };
+};
 
 /**
  * Start rebasing a package's committed patch series onto a newer upstream
@@ -185,7 +262,7 @@ async function collectRebasedPatches(
  * `resolveNewRoot` is called only after the old upstream tree has been copied
  * into the scratch repository, so both trees may be the same cache directory.
  */
-export async function startSeriesRebase(opts: {
+export const startSeriesRebase = async function startSeriesRebase(opts: {
   repoRoot: string;
   seriesDir: string;
   /** Upstream tree at the currently pinned commit. */
@@ -202,39 +279,57 @@ export async function startSeriesRebase(opts: {
   }
 
   const repo = opts.repoRoot;
-  await rm(repo, { recursive: true, force: true });
+  await rm(repo, { force: true, recursive: true });
   await mkdir(repo, { recursive: true });
-  await copyTree(opts.oldRoot, repo, { skip: updateSkip, treatMissingAsEmpty: true });
+  await copyTree(opts.oldRoot, repo, {
+    skip: updateSkip,
+    treatMissingAsEmpty: true,
+  });
   await initSeriesBaseRepo(repo);
-  const oldBase = await runSeriesGitCapture(['rev-parse', 'HEAD'], { cwd: repo });
+  const oldBase = await runSeriesGitCapture(["rev-parse", "HEAD"], {
+    cwd: repo,
+  });
 
   try {
     await applySeriesToRepo(repo, patches, { onPatch: opts.onPatch });
-  } catch (e) {
-    const err = e instanceof Error ? e : new Error(String(e));
+  } catch (error) {
+    const err = error instanceof Error ? error : new Error(String(error));
     throw new Error(
       `The committed series does not apply to the pinned commit, so there is nothing to rebase: ${err.message}`,
+      { cause: error }
     );
   }
 
   const newRoot = await opts.resolveNewRoot();
-  await runSeriesGit(['checkout', '--quiet', '-b', SERIES_TARGET_BRANCH, oldBase], { cwd: repo });
+  await runSeriesGit(
+    ["checkout", "--quiet", "-b", SERIES_TARGET_BRANCH, oldBase],
+    { cwd: repo }
+  );
   await replaceWorkTree(repo, newRoot, { skip: updateSkip });
   await stageAll(repo);
   await runSeriesGit(
-    ['commit', '--quiet', '--no-verify', '--allow-empty', '-m', 'inrepo upstream update'],
-    { cwd: repo, author: opts.author },
+    [
+      "commit",
+      "--quiet",
+      "--no-verify",
+      "--allow-empty",
+      "-m",
+      "inrepo upstream update",
+    ],
+    { author: opts.author, cwd: repo }
   );
-  const newBase = await runSeriesGitCapture(['rev-parse', 'HEAD'], { cwd: repo });
+  const newBase = await runSeriesGitCapture(["rev-parse", "HEAD"], {
+    cwd: repo,
+  });
 
   const result = await runRebaseStep(
     repo,
-    ['rebase', '--onto', SERIES_TARGET_BRANCH, oldBase, SERIES_BASE_BRANCH],
+    ["rebase", "--onto", SERIES_TARGET_BRANCH, oldBase, SERIES_BASE_BRANCH],
     newBase,
-    opts.author,
+    opts.author
   );
   return { newBase, result };
-}
+};
 
 /**
  * Resume a rebase the user has resolved by hand. Conflicted files that still
@@ -244,7 +339,7 @@ export async function startSeriesRebase(opts: {
  * patch with no effect skips it, mirroring what git asks for when `--continue`
  * finds nothing to commit.
  */
-export async function continueSeriesRebase(opts: {
+export const continueSeriesRebase = async function continueSeriesRebase(opts: {
   repoRoot: string;
   newBase: string;
   author?: SeriesAuthor;
@@ -253,45 +348,30 @@ export async function continueSeriesRebase(opts: {
   if (!rebaseInProgress(repo)) {
     // The rebase already finished (for example a previous --continue crashed
     // after git committed); regenerating from the range is still correct.
-    return { status: 'rebased', patches: await collectRebasedPatches(repo, opts.newBase) };
+    return {
+      patches: await collectRebasedPatches(repo, opts.newBase),
+      status: "rebased",
+    };
   }
 
   const unresolved = await unresolvedConflictedFiles(repo);
   if (unresolved.length > 0) {
     throw new Error(
       [
-        'Cannot continue the rebase: unresolved conflicts remain:',
+        "Cannot continue the rebase: unresolved conflicts remain:",
         ...unresolved.map((file) => `  ${file}`),
-        'Resolve every listed file, then run --continue again.',
-      ].join('\n'),
+        "Resolve every listed file, then run --continue again.",
+      ].join("\n")
     );
   }
 
   await stageAll(repo);
-  const patchIsEmpty = await trySeriesGit(['diff', '--cached', '--quiet'], { cwd: repo });
-  const args = patchIsEmpty ? ['rebase', '--skip'] : ['rebase', '--continue'];
+  const patchIsEmpty = await trySeriesGit(["diff", "--cached", "--quiet"], {
+    cwd: repo,
+  });
+  const args = patchIsEmpty ? ["rebase", "--skip"] : ["rebase", "--continue"];
   return runRebaseStep(repo, args, opts.newBase, opts.author);
-}
-
-/**
- * Run one rebase command and translate its outcome: a stopped rebase is a
- * conflict to report, anything else is a real failure.
- */
-async function runRebaseStep(
-  repoRoot: string,
-  args: string[],
-  newBase: string,
-  author?: SeriesAuthor,
-): Promise<SeriesRebaseResult> {
-  try {
-    await runSeriesGit(args, { cwd: repoRoot, author });
-  } catch (e) {
-    if (!rebaseInProgress(repoRoot)) throw e;
-    return conflictResult(repoRoot, newBase);
-  }
-  if (rebaseInProgress(repoRoot)) return conflictResult(repoRoot, newBase);
-  return { status: 'rebased', patches: await collectRebasedPatches(repoRoot, newBase) };
-}
+};
 
 /**
  * Replace a package's committed series with the rebased one. Called only once
@@ -303,37 +383,41 @@ async function runRebaseStep(
  * mid-write cannot leave an empty `series/` behind. Callers that snapshot the
  * previous series can restore it if a later step fails.
  */
-export async function writeRebasedSeries(
+export const writeRebasedSeries = async function writeRebasedSeries(
   seriesDir: string,
-  patches: RebasedPatch[],
+  patches: RebasedPatch[]
 ): Promise<void> {
-  const parent = dirname(seriesDir);
+  const parent = nodePath.dirname(seriesDir);
   await mkdir(parent, { recursive: true });
 
   if (patches.length === 0) {
-    await rm(seriesDir, { recursive: true, force: true });
+    await rm(seriesDir, { force: true, recursive: true });
     return;
   }
 
-  const staging = await mkdtemp(join(parent, '.series-next-'));
+  const staging = await mkdtemp(nodePath.join(parent, ".series-next-"));
   try {
     for (const patch of patches) {
-      await writeFile(join(staging, patch.fileName), patch.content);
+      await writeFile(nodePath.join(staging, patch.fileName), patch.content);
     }
 
     const previous = existsSync(seriesDir) ? `${staging}.prev` : null;
-    if (previous) await rename(seriesDir, previous);
+    if (previous) {
+      await rename(seriesDir, previous);
+    }
     try {
       await rename(staging, seriesDir);
-    } catch (e) {
+    } catch (error) {
       if (previous && existsSync(previous) && !existsSync(seriesDir)) {
         await rename(previous, seriesDir);
       }
-      throw e;
+      throw error;
     }
-    if (previous) await rm(previous, { recursive: true, force: true });
-  } catch (e) {
-    await rm(staging, { recursive: true, force: true });
-    throw e;
+    if (previous) {
+      await rm(previous, { force: true, recursive: true });
+    }
+  } catch (error) {
+    await rm(staging, { force: true, recursive: true });
+    throw error;
   }
-}
+};

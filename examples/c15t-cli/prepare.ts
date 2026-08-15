@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import nodePath from "node:path";
 
-const SOURCE = join(
+const SOURCE = nodePath.join(
   import.meta.dir,
   "vendor",
   "inrepo_modules",
@@ -21,7 +21,7 @@ const HARNESS_TYPE_IMPORT =
 
 let source: string;
 try {
-  source = await readFile(SOURCE, "utf8");
+  source = await readFile(SOURCE, "utf-8");
 } catch {
   throw new Error(
     `Missing ${SOURCE}. Run \`npm run sync\` from examples/c15t-cli first.`
@@ -34,7 +34,9 @@ if (actualHash !== EXPECTED_SHA256) {
   );
 }
 if (!source.includes(TYPE_IMPORT)) {
-  throw new Error("Selected c15t help source no longer contains its type import");
+  throw new Error(
+    "Selected c15t help source no longer contains its type import"
+  );
 }
 
 const common = source
@@ -59,9 +61,13 @@ const variants = {
 };
 
 for (const [name, contents] of Object.entries(variants)) {
-  const outputDir = join(import.meta.dir, "generated", name);
+  const outputDir = nodePath.join(import.meta.dir, "generated", name);
   await mkdir(outputDir, { recursive: true });
-  await writeFile(join(outputDir, "show-help-menu.ts"), contents, "utf8");
+  await writeFile(
+    nodePath.join(outputDir, "show-help-menu.ts"),
+    contents,
+    "utf-8"
+  );
 }
 
 console.log(`Selected @c15t/cli@2.2.0 help source (${actualHash}).`);

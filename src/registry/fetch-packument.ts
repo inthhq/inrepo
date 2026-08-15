@@ -1,36 +1,42 @@
-export type PackumentVersion = {
-  version?: unknown;
-  repository?: unknown;
-  dependencies?: unknown;
-  gitHead?: unknown;
-  dist?: unknown;
-};
+import type { JsonValue } from "../json/unknown.js";
 
-export type Packument = {
-  repository?: unknown;
-  'dist-tags'?: Record<string, string>;
+/** One version entry from an npm packument, before field-level parsing. */
+export interface PackumentVersion {
+  version?: JsonValue;
+  repository?: JsonValue;
+  dependencies?: JsonValue;
+  gitHead?: JsonValue;
+  dist?: JsonValue;
+}
+
+/** npm registry package document after JSON parse, before normalization. */
+export interface Packument {
+  repository?: JsonValue;
+  "dist-tags"?: Record<string, string>;
   versions?: Record<string, PackumentVersion>;
-};
+}
 
-const DEFAULT_REGISTRY = 'https://registry.npmjs.org';
+const DEFAULT_REGISTRY = "https://registry.npmjs.org";
 
 /**
  * Registry root. `INREPO_REGISTRY` exists so tests (and private mirrors) can
  * point the resolver somewhere other than the public npm registry.
  */
-export function registryBaseUrl(): string {
+export const registryBaseUrl = function registryBaseUrl(): string {
   const configured = process.env.INREPO_REGISTRY?.trim();
-  return (configured || DEFAULT_REGISTRY).replace(/\/+$/, '');
-}
+  return (configured || DEFAULT_REGISTRY).replace(/\/+$/u, "");
+};
 
-export function packumentUrl(packageName: string): string {
+export const packumentUrl = function packumentUrl(packageName: string): string {
   return `${registryBaseUrl()}/${encodeURIComponent(packageName)}`;
-}
+};
 
 /** Fetch a package document from the npm registry. */
-export async function fetchPackument(packageName: string): Promise<Packument> {
+export const fetchPackument = async function fetchPackument(
+  packageName: string
+): Promise<Packument> {
   const res = await fetch(packumentUrl(packageName), {
-    headers: { accept: 'application/json' },
+    headers: { accept: "application/json" },
   });
   if (res.status === 404) {
     throw new Error(`npm registry: package not found: ${packageName}`);
@@ -38,5 +44,6 @@ export async function fetchPackument(packageName: string): Promise<Packument> {
   if (!res.ok) {
     throw new Error(`npm registry: HTTP ${res.status} for ${packageName}`);
   }
+  // SAFETY: value was parsed or constructed by the surrounding function before this assertion.
   return (await res.json()) as Packument;
-}
+};

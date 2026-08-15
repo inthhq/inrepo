@@ -1,92 +1,111 @@
-import { existsSync } from 'node:fs';
+import { existsSync } from "node:fs";
+
 import {
   DependencyResolutionError,
   resolveDependencyGraph,
-  type DependencyGraph,
-  type ResolvedNode,
-  type VendoredPackage,
-} from '../deps/resolve-dependency-graph.js';
-import { resolveVersionPins } from '../deps/resolve-version-pin.js';
-import { readLockfile } from '../lockfile/read-lockfile.js';
-import { discoverRepositoryDirectory, ensurePristine } from '../overlay/cache.js';
-import { readPackageManifest } from '../package-json/read-package-manifest.js';
-import { moduleDestPath } from '../paths/module-dest-path.js';
-import { loadRegistryPackage } from '../registry/load-registry-package.js';
-import { normalizeRepositoryUrlIdentity } from '../registry/normalize-repository-url-identity.js';
-import { resolvePackageSourceFromNpm } from '../registry/resolve-git-url-from-npm.js';
-import type { InrepoPackage } from '../types/inrepo-package.js';
-import type { LockGraph, LockGraphNode } from '../types/lock-graph.js';
-import type { LockModule } from '../types/lock-module.js';
-import { mergedVendorExcludes, mergedVendorKeeps } from './vendor.js';
-import type { PackageSpec } from './types.js';
+} from "../deps/resolve-dependency-graph.js";
+import type {
+  DependencyGraph,
+  ResolvedNode,
+  VendoredPackage,
+} from "../deps/resolve-dependency-graph.js";
+import { resolveVersionPins } from "../deps/resolve-version-pin.js";
+import { readLockfile } from "../lockfile/read-lockfile.js";
+import {
+  discoverRepositoryDirectory,
+  ensurePristine,
+} from "../overlay/cache.js";
+import { readPackageManifest } from "../package-json/read-package-manifest.js";
+import { moduleDestPath } from "../paths/module-dest-path.js";
+import { loadRegistryPackage } from "../registry/load-registry-package.js";
+import { resolvePackageSourceFromNpm } from "../registry/resolve-git-url-from-npm.js";
+import type { InrepoPackage } from "../types/inrepo-package.js";
+import type { LockGraph, LockGraphNode } from "../types/lock-graph.js";
+import type { LockModule } from "../types/lock-module.js";
+import type { PackageSpec } from "./types.js";
+import { mergedVendorExcludes, mergedVendorKeeps } from "./vendor.js";
 
-export type WithDepsPlan = {
+export interface WithDepsPlan {
   graph: DependencyGraph;
   /** Dependencies that still need vendoring, in a stable order. */
   pending: ResolvedNode[];
   /** Dependencies an existing vendored pin already satisfied. */
   reused: ResolvedNode[];
-};
+}
 
-export type PlanWithDepsInput = {
+export interface PlanWithDepsInput {
   root: PackageSpec;
   globalExclude: string[];
   globalKeep: string[];
-};
+}
 
-export type ExistingRootPin = {
+export interface ExistingRootPin {
   gitUrl?: string;
   ref?: string | null;
   commit?: string;
-};
+}
+
+export interface ResolvedRootPin {
+  git?: string;
+  ref?: string;
+  commit: string | null;
+}
 
 /**
  * Prefer an explicit CLI git/ref (a moving tip). Otherwise stay on the
  * recorded lock/config pin, including its commit.
  */
-export function resolveExistingRootPin(
-  requested: Pick<PackageSpec, 'git' | 'ref' | 'commit'>,
-  existing?: ExistingRootPin,
-): { git?: string; ref?: string; commit: string | null } {
+export const resolveExistingRootPin = function resolveExistingRootPin(
+  requested: Pick<PackageSpec, "git" | "ref" | "commit">,
+  existing?: ExistingRootPin
+): ResolvedRootPin {
   const explicitGit = requested.git?.trim() || undefined;
   const explicitRef = requested.ref?.trim() || undefined;
   const git = explicitGit ?? existing?.gitUrl?.trim() ?? undefined;
   // A new --git retargets the repo; do not keep the previous ref pin.
   const ref =
-    explicitRef ?? (explicitGit != null ? undefined : (existing?.ref?.trim() || undefined));
+    explicitRef ??
+    (explicitGit == null ? existing?.ref?.trim() || undefined : undefined);
   const movingTip = explicitGit != null || explicitRef != null;
-  const commit = requested.commit ?? (movingTip ? null : (existing?.commit ?? null));
-  return { git, ref, commit };
-}
+  const commit =
+    requested.commit ?? (movingTip ? null : (existing?.commit ?? null));
+  return { commit, git, ref };
+};
 
 /** Reconstruct declared ranges from a recorded graph node. */
-function lockGraphDependencyRanges(
-  node: LockGraphNode | undefined,
+const lockGraphDependencyRanges = function lockGraphDependencyRanges(
+  node: LockGraphNode | undefined
 ): Record<string, string> | null {
-  if (node == null) return null;
+  if (node == null) {
+    return null;
+  }
   const dependencies: Record<string, string> = {};
   for (const [name, edge] of Object.entries(node.dependencies ?? {})) {
     dependencies[name] = edge.range;
   }
   return dependencies;
-}
+};
 
-async function publishedManifestDependencies(
-  name: string,
-  version: string | null,
-): Promise<Record<string, string> | null> {
-  if (version == null) return null;
-  try {
-    const registryPackage = await loadRegistryPackage(name);
-    return (
-      registryPackage.manifests.find((manifest) => manifest.version === version)?.dependencies ??
-      null
-    );
-  } catch {
-    // Offline and unpublished packages fall back to the lock graph or checkout.
-    return null;
-  }
-}
+const publishedManifestDependencies =
+  async function publishedManifestDependencies(
+    name: string,
+    version: string | null
+  ): Promise<Record<string, string> | null> {
+    if (version == null) {
+      return null;
+    }
+    try {
+      const registryPackage = await loadRegistryPackage(name);
+      return (
+        registryPackage.manifests.find(
+          (manifest) => manifest.version === version
+        )?.dependencies ?? null
+      );
+    } catch {
+      // Offline and unpublished packages fall back to the lock graph or checkout.
+      return null;
+    }
+  };
 
 /**
  * Prefer already-published dependency ranges for a reused node:
@@ -95,11 +114,11 @@ async function publishedManifestDependencies(
  * Registry-sourced monorepo packages are planned from rewritten published
  * ranges and materialized from git, so the checkout may still say `workspace:*`.
  */
-async function describeVendored(
+const describeVendored = async function describeVendored(
   cwd: string,
   module: string,
   entry: LockModule,
-  graph: LockGraph,
+  graph: LockGraph
 ): Promise<VendoredPackage> {
   const name = entry.source;
   const dest = moduleDestPath(cwd, module);
@@ -120,26 +139,26 @@ async function describeVendored(
     (await publishedManifestDependencies(name, version)) ??
     checkoutDependencies;
   return {
-    name,
-    module,
-    version,
-    gitUrl: entry.gitUrl,
-    repositoryDirectory: entry.repositoryDirectory ?? null,
-    ref: entry.ref,
+    artifact: entry.artifact ?? null,
     commit: entry.commit,
     dependencies,
-    artifact: entry.artifact ?? null,
+    gitUrl: entry.gitUrl,
+    module,
+    name,
+    ref: entry.ref,
+    repositoryDirectory: entry.repositoryDirectory ?? null,
+    version,
   };
-}
+};
 
 /**
  * Resolve the whole runtime dependency closure of `root` before anything is
  * written. Conflicts and unsupported sources throw here, so a failed
  * `--with-deps` leaves the project exactly as it was.
  */
-export async function planWithDeps(
+export const planWithDeps = async function planWithDeps(
   cwd: string,
-  input: PlanWithDepsInput,
+  input: PlanWithDepsInput
 ): Promise<WithDepsPlan> {
   const { root, globalExclude, globalKeep } = input;
   const { modules, graph: lockGraph } = await readLockfile(cwd);
@@ -148,51 +167,60 @@ export async function planWithDeps(
     root,
     lockEntry == null
       ? undefined
-      : { gitUrl: lockEntry.gitUrl, ref: lockEntry.ref, commit: lockEntry.commit },
+      : {
+          commit: lockEntry.commit,
+          gitUrl: lockEntry.gitUrl,
+          ref: lockEntry.ref,
+        }
   );
   const source = pin.git
     ? { gitUrl: pin.git, repositoryDirectory: root.repositoryDirectory ?? null }
     : await resolvePackageSourceFromNpm(root.name);
-  const repositoryDirectory = root.repositoryDirectory ?? source.repositoryDirectory;
-  const gitUrl = source.gitUrl;
+  const repositoryDirectory =
+    root.repositoryDirectory ?? source.repositoryDirectory;
+  const { gitUrl } = source;
   const ref = pin.ref ?? null;
 
   const pristine = await ensurePristine({
-    cwd,
-    name: root.name,
-    gitUrl,
-    repositoryDirectory,
-    ref,
     commit: pin.commit,
-    keep: mergedVendorKeeps(globalKeep, root),
+    cwd,
     exclude: mergedVendorExcludes(globalExclude, root),
+    gitUrl,
+    keep: mergedVendorKeeps(globalKeep, root),
+    name: root.name,
+    ref,
+    repositoryDirectory,
   });
   const manifest = await readPackageManifest(pristine.dir);
   if (manifest == null) {
     throw new DependencyResolutionError(
       repositoryDirectory == null
         ? `Cannot resolve dependencies for "${root.name}": its pinned checkout has no package.json at the repository root. ` +
-            'Monorepo package subdirectories are not supported yet.'
-        : `Cannot resolve dependencies for "${root.name}": its selected repository directory has no package.json.`,
+            "Monorepo package subdirectories are not supported yet."
+        : `Cannot resolve dependencies for "${root.name}": its selected repository directory has no package.json.`
     );
   }
   if (manifest.name !== root.name) {
-    throw new DependencyResolutionError(
-      manifest.name == null
-        ? `Cannot resolve dependencies for "${root.name}": its selected package.json has no name.`
-        : repositoryDirectory == null
-        ? `Cannot resolve dependencies for "${root.name}": the repository root declares package "${manifest.name}". ` +
-            'Monorepo package subdirectories are not supported yet.'
-        : `Cannot resolve dependencies for "${root.name}": the selected repository directory declares package "${manifest.name}".`,
-    );
+    let nameMismatch: string;
+    if (manifest.name == null) {
+      nameMismatch = `Cannot resolve dependencies for "${root.name}": its selected package.json has no name.`;
+    } else if (repositoryDirectory == null) {
+      nameMismatch =
+        `Cannot resolve dependencies for "${root.name}": the repository root declares package "${manifest.name}". ` +
+        "Monorepo package subdirectories are not supported yet.";
+    } else {
+      nameMismatch = `Cannot resolve dependencies for "${root.name}": the selected repository directory declares package "${manifest.name}".`;
+    }
+    throw new DependencyResolutionError(nameMismatch);
   }
   // `root.git` is only set when the user passed --git. A reused lock pin is
   // resolved above and must not flip this onto checkout workspace:/file: ranges.
   let dependencies =
-    (!root.git?.trim()
-      ? lockGraphDependencyRanges(lockGraph[root.name]) ??
-        (await publishedManifestDependencies(root.name, manifest.version))
-      : null) ?? manifest.dependencies;
+    (root.git?.trim()
+      ? null
+      : (lockGraphDependencyRanges(lockGraph[root.name]) ??
+        (await publishedManifestDependencies(root.name, manifest.version)))) ??
+    manifest.dependencies;
 
   const dest = moduleDestPath(cwd, root.name);
   if (existsSync(dest)) {
@@ -200,7 +228,7 @@ export async function planWithDeps(
       const patched = await readPackageManifest(dest);
       const patchedDeps = patched?.dependencies ?? {};
       const usesWorkspaceProtocol = Object.values(patchedDeps).some(
-        (range) => range.startsWith('workspace:') || range.startsWith('file:'),
+        (range) => range.startsWith("workspace:") || range.startsWith("file:")
       );
       if (patched != null && !usesWorkspaceProtocol) {
         dependencies = patchedDeps;
@@ -212,28 +240,31 @@ export async function planWithDeps(
 
   const vendored = new Map<string, VendoredPackage>();
   for (const [module, entry] of Object.entries(modules)) {
-    if (module === root.name) continue;
+    if (module === root.name) {
+      continue;
+    }
     vendored.set(module, await describeVendored(cwd, module, entry, lockGraph));
   }
 
   const graph = await resolveDependencyGraph({
-    root: {
-      name: root.name,
-      version: manifest.version,
-      gitUrl: pristine.gitUrl,
-      repositoryDirectory,
-      ref,
-      commit: pristine.commit,
-      dependencies,
-    },
-    vendored,
     io: {
       loadRegistryPackage,
-      resolveVersionPins: (manifest, name) => resolveVersionPins(name, manifest),
       resolveRepositoryDirectory: async (candidate) =>
         candidate.repositoryDirectory ??
         (await discoverRepositoryDirectory({ cwd, ...candidate })),
+      resolveVersionPins: (packageManifest, name) =>
+        resolveVersionPins(name, packageManifest),
     },
+    root: {
+      commit: pristine.commit,
+      dependencies,
+      gitUrl: pristine.gitUrl,
+      name: root.name,
+      ref,
+      repositoryDirectory,
+      version: manifest.version,
+    },
+    vendored,
   });
 
   return {
@@ -241,13 +272,43 @@ export async function planWithDeps(
     pending: graph.nodes.filter((node) => !node.root && !node.reused),
     reused: graph.nodes.filter((node) => node.reused),
   };
-}
+};
+
+/** Turn a resolved dependency into the spec `materializePackage` expects. */
+export const dependencySpec = function dependencySpec(
+  node: ResolvedNode,
+  dev: boolean,
+  config: InrepoPackage | undefined
+): PackageSpec {
+  const spec: PackageSpec = {
+    dev,
+    git: node.gitUrl,
+    module: node.module,
+    name: node.name,
+  };
+  if (node.artifact != null) {
+    spec.artifact = node.artifact;
+  }
+  if (config?.exclude !== undefined) {
+    spec.exclude = config.exclude;
+  }
+  if (config?.keep !== undefined) {
+    spec.keep = config.keep;
+  }
+  if (node.ref != null) {
+    spec.ref = node.ref;
+  }
+  if (node.repositoryDirectory != null) {
+    spec.repositoryDirectory = node.repositoryDirectory;
+  }
+  return spec;
+};
 
 /**
  * Prepare and validate every newly selected dependency subtree before config,
  * graph, or generated module state is mutated.
  */
-export async function preflightWithDeps(
+export const preflightWithDeps = async function preflightWithDeps(
   cwd: string,
   plan: WithDepsPlan,
   input: {
@@ -255,55 +316,40 @@ export async function preflightWithDeps(
     globalExclude: string[];
     globalKeep: string[];
     configByName: Map<string, InrepoPackage>;
-  },
+  }
 ): Promise<void> {
   for (const node of plan.pending) {
-    const spec = dependencySpec(node, input.dev, input.configByName.get(node.module));
+    const spec = dependencySpec(
+      node,
+      input.dev,
+      input.configByName.get(node.module)
+    );
     const pristine = await ensurePristine({
-      cwd,
-      name: node.name,
-      gitUrl: node.gitUrl,
-      repositoryDirectory: node.repositoryDirectory,
-      ref: node.ref,
-      commit: node.commit,
-      keep: mergedVendorKeeps(input.globalKeep, spec),
-      exclude: mergedVendorExcludes(input.globalExclude, spec),
       artifact: node.artifact,
+      commit: node.commit,
+      cwd,
+      exclude: mergedVendorExcludes(input.globalExclude, spec),
+      gitUrl: node.gitUrl,
+      keep: mergedVendorKeeps(input.globalKeep, spec),
+      name: node.name,
+      ref: node.ref,
+      repositoryDirectory: node.repositoryDirectory,
     });
     const manifest = await readPackageManifest(pristine.dir);
     if (manifest == null) {
-      if (node.repositoryDirectory == null) continue;
+      if (node.repositoryDirectory == null) {
+        continue;
+      }
       throw new DependencyResolutionError(
-        `Cannot vendor "${node.name}": its selected repository directory has no package.json.`,
+        `Cannot vendor "${node.name}": its selected repository directory has no package.json.`
       );
     }
     if (manifest.name !== node.name) {
       throw new DependencyResolutionError(
         manifest.name == null
           ? `Cannot vendor "${node.name}": its selected repository directory package.json has no name.`
-          : `Cannot vendor "${node.name}": its selected repository directory declares package "${manifest.name}".`,
+          : `Cannot vendor "${node.name}": its selected repository directory declares package "${manifest.name}".`
       );
     }
   }
-}
-
-/** Turn a resolved dependency into the spec `materializePackage` expects. */
-export function dependencySpec(
-  node: ResolvedNode,
-  dev: boolean,
-  config: InrepoPackage | undefined,
-): PackageSpec {
-  return {
-    name: node.name,
-    module: node.module,
-    git: node.gitUrl,
-    ...(node.repositoryDirectory == null
-      ? {}
-      : { repositoryDirectory: node.repositoryDirectory }),
-    ...(node.ref == null ? {} : { ref: node.ref }),
-    dev,
-    ...(config?.exclude === undefined ? {} : { exclude: config.exclude }),
-    ...(config?.keep === undefined ? {} : { keep: config.keep }),
-    ...(node.artifact == null ? {} : { artifact: node.artifact }),
-  };
-}
+};

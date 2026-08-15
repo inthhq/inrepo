@@ -1,17 +1,17 @@
-export type CliCommand = {
+export interface CliCommand {
   name: string;
   description: string;
   hidden?: boolean;
-};
-export type CliFlag = {
+}
+export interface CliFlag {
   names: string[];
   description: string;
   expectsValue: boolean;
-};
+}
 
-export type CliContext = {
+export interface CliContext {
   logger: {
-    debug(message: string): void;
-    note(message: string, title: string): void;
+    debug: (message: string) => void;
+    note: (message: string, title: string) => void;
   };
-};
+}

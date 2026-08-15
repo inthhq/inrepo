@@ -1,9 +1,9 @@
 {
   "name": "inrepo-example-c15t-help",
-  "private": true,
   "version": "2.2.0",
-  "type": "module",
+  "private": true,
   "description": "Narrow @c15t/cli help-renderer parity benchmark for npm/dynamic versus selected-source/static scriptc",
+  "type": "module",
   "scripts": {
     "sync": "cd vendor && bun ../../../src/cli.ts sync",
     "prepare:source": "bun prepare.ts",

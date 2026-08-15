@@ -5,83 +5,85 @@ export const VERSION = "2.2.0";
 // Descriptors from packages/cli/src/index.ts at the pinned commit. Actions are
 // deliberately absent: this benchmark measures only the help renderer.
 export const commands: CliCommand[] = [
-  { name: "setup", description: "Set up c15t in your project." },
+  { description: "Set up c15t in your project.", name: "setup" },
   {
-    name: "codemods",
     description:
       "Run project codemods (for example translations -> i18n migration).",
+    name: "codemods",
   },
   {
-    name: "skills",
     description:
       "Install c15t skills for AI-assisted development (Claude, Cursor, etc.)",
+    name: "skills",
   },
   {
-    name: "docs",
     description: "Open the c15t documentation in your browser.",
+    name: "docs",
   },
   {
-    name: "changelog",
     description: "Open the c15t changelog in your browser.",
+    name: "changelog",
   },
   {
-    name: "self-host",
     description: "Self-host workflow commands (migrations).",
+    name: "self-host",
   },
   {
-    name: "github",
     description: "Open our GitHub repository to give us a star.",
+    name: "github",
   },
   {
-    name: "projects",
     description: "List, select, and create c15t projects.",
+    name: "projects",
   },
-  { name: "instances", description: "Alias for `projects`", hidden: true },
+  { description: "Alias for `projects`", hidden: true, name: "instances" },
 ];
 
 // Flags from packages/cli/src/context/parser.ts at the pinned commit.
 export const flags: CliFlag[] = [
   {
-    names: ["--help", "-h"],
     description: "Show this help message.",
     expectsValue: false,
+    names: ["--help", "-h"],
   },
   {
-    names: ["--version", "-v"],
     description: "Show the CLI version.",
     expectsValue: false,
+    names: ["--version", "-v"],
   },
   {
-    names: ["--logger"],
     description: "Set log level (fatal, error, warn, info, debug).",
     expectsValue: true,
+    names: ["--logger"],
   },
   {
-    names: ["--config"],
     description: "Specify path to configuration file.",
     expectsValue: true,
+    names: ["--config"],
   },
   {
-    names: ["-y", "--yes"],
     description: "Skip confirmation prompts (use with caution).",
     expectsValue: false,
+    names: ["-y", "--yes"],
   },
   {
-    names: ["--no-telemetry"],
     description: "Disable telemetry data collection.",
     expectsValue: false,
+    names: ["--no-telemetry"],
   },
   {
-    names: ["--telemetry-debug"],
     description:
       "Enable debug mode for telemetry (shows detailed telemetry logs).",
     expectsValue: false,
+    names: ["--telemetry-debug"],
   },
 ];
 
 export const context: CliContext = {
   logger: {
-    debug(_message: string): void {},
+    debug(_message: string): void {
+      /* empty */
+    },
     note(message: string, title: string): void {
       console.log(`${title}\n${message}`);
     },

@@ -1,17 +1,20 @@
-import { createHash } from 'node:crypto';
+import { createHash } from "node:crypto";
 
-function sortedUnique(values: string[]): string[] {
-  return [...new Set(values)].sort();
-}
+const sortedUnique = function sortedUnique(values: string[]): string[] {
+  return [...new Set(values)].toSorted();
+};
 
-export function filtersHash(keep: string[], exclude: string[]): string {
-  return createHash('sha256')
+export const filtersHash = function filtersHash(
+  keep: string[],
+  exclude: string[]
+): string {
+  return createHash("sha256")
     .update(
       JSON.stringify({
-        keep: sortedUnique(keep),
         exclude: sortedUnique(exclude),
+        keep: sortedUnique(keep),
       }),
-      'utf8',
+      "utf-8"
     )
-    .digest('hex');
-}
+    .digest("hex");
+};

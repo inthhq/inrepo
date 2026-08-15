@@ -1,3 +1,1 @@
-export type VerifyResult =
-  | { ok: true }
-  | { ok: false; errors: string[] };
+export type VerifyResult = { ok: true } | { ok: false; errors: string[] };
