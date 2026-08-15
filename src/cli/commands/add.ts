@@ -141,9 +141,12 @@ export async function performAdd(
     plan = await planWithDeps(cwd, {
       root: {
         name: args.name,
-        git: pin.git,
-        repositoryDirectory: pkgRepositoryDirectory,
-        ref: pin.ref,
+        // Only the caller's --git/--ref. A lock pin is applied inside
+        // planWithDeps; stuffing it into `git` would look like an explicit
+        // manual source and switch the root onto checkout workspace: ranges.
+        git: args.git,
+        repositoryDirectory: pkgRepositoryDirectory ?? lockEntry?.repositoryDirectory,
+        ref: args.ref,
         commit: pin.commit,
         dev: args.dev,
         exclude: pkgExclude,

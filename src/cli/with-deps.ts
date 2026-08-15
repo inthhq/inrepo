@@ -186,6 +186,8 @@ export async function planWithDeps(
         : `Cannot resolve dependencies for "${root.name}": the selected repository directory declares package "${manifest.name}".`,
     );
   }
+  // `root.git` is only set when the user passed --git. A reused lock pin is
+  // resolved above and must not flip this onto checkout workspace:/file: ranges.
   let dependencies =
     (!root.git?.trim()
       ? lockGraphDependencyRanges(lockGraph[root.name]) ??
