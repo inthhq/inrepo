@@ -153,6 +153,18 @@ describe('CLI: help and argument validation (e2e)', () => {
     expect(r.stderr).toMatch(/--ref requires a value/);
   });
 
+  test('add validates --repository-directory', async () => {
+    const missing = await runCli(['add', '--repository-directory'], { cwd });
+    expect(missing.exitCode).toBe(1);
+    expect(missing.stderr).toMatch(/--repository-directory requires a path/);
+
+    const unsafe = await runCli(['add', '--repository-directory', '../pkg', 'pkg'], {
+      cwd,
+    });
+    expect(unsafe.exitCode).toBe(1);
+    expect(unsafe.stderr).toMatch(/--repository-directory.*traversal/);
+  });
+
   test('sync without config fails with first-time-setup hint in non-interactive mode', async () => {
     const r = await runCli(['sync'], { cwd, env: { INREPO_NONINTERACTIVE: '1' } });
     expect(r.exitCode).toBe(1);

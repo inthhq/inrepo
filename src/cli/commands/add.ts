@@ -6,16 +6,87 @@ import {
   loadGlobalExclude,
   loadGlobalKeep,
 } from '../../config/load-config.js';
+import { buildLockGraph } from '../../deps/build-lock-graph.js';
+import { renderDependencyTree } from '../../deps/render-dependency-tree.js';
+import { orderByDependencies } from '../../deps/vendored-graph.js';
 import { upsertInrepoJson, type InrepoJsonEntry } from '../../inrepo-json/upsert-inrepo-json.js';
 import { upsertPackageJsonInrepo } from '../../inrepo-json/upsert-package-json-inrepo.js';
+import { upsertLockGraph } from '../../lockfile/upsert-lock-graph.js';
 import { readLockfile } from '../../lockfile/read-lockfile.js';
 import { inrepoConfigPath } from '../../paths/inrepo-config-path.js';
 import { moduleDestPath } from '../../paths/module-dest-path.js';
+import type { InrepoPackage } from '../../types/inrepo-package.js';
 import { parseAddArgs } from '../args.js';
 import { printBanner } from '../rendering.js';
 import type { AddArgs, DispatchOpts } from '../types.js';
-import { cancel, confirm, intro, isCancel, outro, text } from '../ui.js';
+import { cancel, confirm, intro, isCancel, outro, text, ui } from '../ui.js';
 import { materializePackage } from '../vendor.js';
+import {
+  dependencySpec,
+  planWithDeps,
+  preflightWithDeps,
+  resolveExistingRootPin,
+  type WithDepsPlan,
+} from '../with-deps.js';
+
+/** Persist a package entry to whichever config location the project uses. */
+async function saveConfigEntry(cwd: string, entry: InrepoJsonEntry): Promise<void> {
+  if (existsSync(inrepoConfigPath(cwd))) {
+    await upsertInrepoJson(cwd, entry);
+  } else {
+    await upsertPackageJsonInrepo(cwd, entry);
+  }
+}
+
+/**
+ * Vendor the resolved dependencies, deepest first.
+ *
+ * The recorded graph is written before any of them is materialized, and the
+ * order follows it, so a package that opted into import rewiring always finds
+ * its dependencies' checkouts already in place.
+ */
+async function vendorPlannedDependencies(
+  cwd: string,
+  plan: WithDepsPlan,
+  ctx: {
+    dev: boolean;
+    globalExclude: string[];
+    globalKeep: string[];
+    configByName: Map<string, InrepoPackage>;
+  },
+): Promise<void> {
+  const graph = buildLockGraph(plan.graph);
+  await upsertLockGraph(cwd, graph);
+
+  // Config entries are recorded in resolution order, which is what the user
+  // reads; vendoring then follows dependency order, which is what the generated
+  // transforms need.
+  for (const node of plan.pending) {
+    await saveConfigEntry(cwd, {
+      name: node.name,
+      module: node.module,
+      git: node.gitUrl,
+      ...(node.repositoryDirectory == null ? {} : { repositoryDirectory: node.repositoryDirectory }),
+      ...(node.ref == null ? {} : { ref: node.ref }),
+      dev: ctx.dev,
+    });
+  }
+
+  const { modules } = await readLockfile(cwd);
+  for (const node of orderByDependencies(plan.pending, graph)) {
+    const config = ctx.configByName.get(node.module);
+    const spec = dependencySpec(node, ctx.dev, config);
+    await materializePackage(cwd, spec, ctx.globalExclude, ctx.globalKeep, {
+      mode: 'add',
+      force:
+        config == null &&
+        !modules[node.module] &&
+        existsSync(moduleDestPath(cwd, node.module)),
+      lockEntry: modules[node.module],
+      resolvedCommit: node.commit,
+    });
+  }
+}
 
 export async function performAdd(
   cwd: string,
@@ -33,16 +104,20 @@ export async function performAdd(
   let globalKeep: string[] = [];
   let pkgExclude: string[] | undefined;
   let pkgKeep: string[] | undefined;
+  let pkgRepositoryDirectory: string | undefined;
   let hasConfigEntry = false;
+  const configByName = new Map<string, InrepoPackage>();
   const { modules } = await readLockfile(cwd);
   try {
     const cfg = await loadConfig(cwd);
     globalExclude = cfg.exclude;
     globalKeep = cfg.keep;
-    const entry = cfg.packages.find((p) => p.name === args.name);
+    for (const pkg of cfg.packages) configByName.set(pkg.module ?? pkg.name, pkg);
+    const entry = configByName.get(args.name);
     hasConfigEntry = entry != null;
     pkgExclude = entry?.exclude;
     pkgKeep = entry?.keep;
+    pkgRepositoryDirectory = args.repositoryDirectory ?? entry?.repositoryDirectory;
   } catch (e) {
     if (!isLoadConfigNotFoundError(e)) throw e;
     globalExclude = await loadGlobalExclude(cwd);
@@ -51,47 +126,121 @@ export async function performAdd(
 
   if (!opts.suppressBanners) intro(`inrepo add — ${args.name}${args.dev ? ' (dev)' : ''}`);
 
-  await materializePackage(
-    cwd,
-    {
-      name: args.name,
-      git: args.git,
-      ref: args.ref,
-      dev: args.dev,
-      exclude: pkgExclude,
-      keep: pkgKeep,
-    },
-    globalExclude,
-    globalKeep,
-    {
-      mode: 'add',
-      force:
-        !hasConfigEntry &&
-        !modules[args.name] &&
-        existsSync(moduleDestPath(cwd, args.name)),
-      lockEntry: modules[args.name],
-    },
-  );
+  const lockEntry = modules[args.name];
+  const configEntry = configByName.get(args.name);
+  const pin = resolveExistingRootPin(args, {
+    gitUrl: configEntry?.git ?? lockEntry?.gitUrl,
+    ref: configEntry?.ref ?? lockEntry?.ref,
+    commit: lockEntry?.commit,
+  });
 
-  if (args.save) {
-    const entry: InrepoJsonEntry = {
-      name: args.name,
+  // Resolving the whole closure first means a conflict or an unsupported
+  // dependency source fails before any package is vendored.
+  let plan: WithDepsPlan | null = null;
+  if (args.withDeps) {
+    plan = await planWithDeps(cwd, {
+      root: {
+        name: args.name,
+        // Only the caller's --git/--ref. A lock pin is applied inside
+        // planWithDeps; stuffing it into `git` would look like an explicit
+        // manual source and switch the root onto checkout workspace: ranges.
+        git: args.git,
+        repositoryDirectory: pkgRepositoryDirectory ?? lockEntry?.repositoryDirectory,
+        ref: args.ref,
+        commit: pin.commit,
+        dev: args.dev,
+        exclude: pkgExclude,
+        keep: pkgKeep,
+      },
+      globalExclude,
+      globalKeep,
+    });
+    ui.note(
+      renderDependencyTree(plan.graph),
+      `Dependency graph — ${plan.graph.nodes.length} package(s)`,
+    );
+    await preflightWithDeps(cwd, plan, {
       dev: args.dev,
-    };
+      globalExclude,
+      globalKeep,
+      configByName,
+    });
+  }
+
+  const rootEntry: InrepoJsonEntry | null = args.save ? { name: args.name, dev: args.dev } : null;
+  if (rootEntry) {
     if (args.git !== undefined && args.git !== '') {
-      entry.git = args.git;
+      rootEntry.git = args.git;
     }
     if (args.ref !== undefined && args.ref !== '') {
-      entry.ref = args.ref;
+      rootEntry.ref = args.ref;
     }
-    if (existsSync(inrepoConfigPath(cwd))) {
-      await upsertInrepoJson(cwd, entry);
-    } else {
-      await upsertPackageJsonInrepo(cwd, entry);
+    const plannedRoot = plan?.graph.nodes.find((node) => node.root);
+    const repositoryDirectory = args.repositoryDirectory ?? plannedRoot?.repositoryDirectory ?? pkgRepositoryDirectory;
+    if (repositoryDirectory != null) rootEntry.repositoryDirectory = repositoryDirectory;
+  }
+
+  const vendorRoot = (): Promise<void> =>
+    materializePackage(
+      cwd,
+      {
+        name: args.name,
+        git: pin.git,
+        repositoryDirectory:
+          args.repositoryDirectory ??
+          plan?.graph.nodes.find((node) => node.root)?.repositoryDirectory ??
+          pkgRepositoryDirectory,
+        ref: pin.ref,
+        commit: pin.commit,
+        dev: args.dev,
+        exclude: pkgExclude,
+        keep: pkgKeep,
+      },
+      globalExclude,
+      globalKeep,
+      {
+        mode: 'add',
+        force:
+          !hasConfigEntry &&
+          !modules[args.name] &&
+          existsSync(moduleDestPath(cwd, args.name)),
+        lockEntry: modules[args.name],
+        resolvedCommit: plan?.graph.nodes.find((node) => node.root)?.commit,
+      },
+    );
+
+  if (plan) {
+    // The root is vendored last so that import rewiring finds every dependency
+    // checkout already in place. Its config entry is written first so the
+    // recorded `packages` list still starts with the package the user named.
+    if (rootEntry) await saveConfigEntry(cwd, rootEntry);
+    await vendorPlannedDependencies(cwd, plan, {
+      dev: args.dev,
+      globalExclude,
+      globalKeep,
+      configByName,
+    });
+    await vendorRoot();
+  } else {
+    await vendorRoot();
+    if (rootEntry) {
+      const lockEntry = (await readLockfile(cwd)).modules[args.name];
+      if (lockEntry?.repositoryDirectory != null) {
+        rootEntry.repositoryDirectory = lockEntry.repositoryDirectory;
+      }
+      await saveConfigEntry(cwd, rootEntry);
     }
   }
 
   if (!opts.suppressBanners) {
+    if (plan) {
+      const reused = plan.reused.length;
+      outro(
+        `Vendored ${plan.pending.length + 1} package(s) for "${args.name}"` +
+          `${reused > 0 ? `; ${reused} already vendored` : ''}.`,
+      );
+      return;
+    }
     outro(
       args.save
         ? `Recorded "${args.name}" in inrepo config.`
@@ -142,6 +291,12 @@ export async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | 
   });
   if (isCancel(dev)) return onCancel();
 
+  const withDeps = await confirm({
+    message: 'Also vendor its runtime dependencies?',
+    initialValue: false,
+  });
+  if (isCancel(withDeps)) return onCancel();
+
   if (!opts.suppressBanners) outro('Starting vendor checkout');
 
   const trimmedGit = typeof git === 'string' ? git.trim() : '';
@@ -152,5 +307,6 @@ export async function promptAddArgs(opts: DispatchOpts = {}): Promise<AddArgs | 
     ref: trimmedRef === '' ? undefined : trimmedRef,
     dev: dev === true,
     save: true,
+    withDeps: withDeps === true,
   };
 }

@@ -77,6 +77,58 @@ describe('loadConfig', () => {
     expect(cfg.keep).toEqual([]);
   });
 
+  test('rewireImports is off unless a project sets it', async () => {
+    await writeFile(join(cwd, 'inrepo.json'), JSON.stringify({ packages: [{ name: 'a' }] }), 'utf8');
+    expect((await loadConfig(cwd)).rewireImports).toBe(false);
+
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'a' }], rewireImports: true }),
+      'utf8',
+    );
+    expect((await loadConfig(cwd)).rewireImports).toBe(true);
+  });
+
+  test('a package can override the project-wide rewireImports setting', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({
+        packages: [{ name: 'a', rewireImports: false }, { name: 'b' }, { name: 'c', rewireImports: true }],
+        rewireImports: true,
+      }),
+      'utf8',
+    );
+    const cfg = await loadConfig(cwd);
+    expect(cfg.packages.map((p) => p.rewireImports)).toEqual([false, undefined, true]);
+  });
+
+  test('rejects a non-boolean rewireImports at both levels', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'a', rewireImports: 'yes' }] }),
+      'utf8',
+    );
+    await expect(loadConfig(cwd)).rejects.toThrow(/packages\[0\]\.rewireImports must be a boolean/);
+
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'a' }], rewireImports: 'yes' }),
+      'utf8',
+    );
+    await expect(loadConfig(cwd)).rejects.toThrow(/"rewireImports" must be a boolean/);
+  });
+
+  test('reads rewireImports from package.json#inrepo too', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ name: 'h', inrepo: { packages: [{ name: 'a' }], rewireImports: true } }),
+      'utf8',
+    );
+    const cfg = await loadConfig(cwd);
+    expect(cfg.source).toBe('package.json');
+    expect(cfg.rewireImports).toBe(true);
+  });
+
   test('per-package validation errors include the index', async () => {
     await writeFile(
       join(cwd, 'inrepo.json'),
@@ -93,6 +145,57 @@ describe('loadConfig', () => {
       'utf8',
     );
     await expect(loadConfig(cwd)).rejects.toThrow(/packages\[0\]\.dev must be a boolean/);
+  });
+
+  test('loads and validates version-qualified module identities', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'shared', module: 'shared@1.0.0' }] }),
+      'utf8',
+    );
+    expect((await loadConfig(cwd)).packages).toEqual([
+      { name: 'shared', module: 'shared@1.0.0' },
+    ]);
+
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'shared', module: '' }] }),
+      'utf8',
+    );
+    await expect(loadConfig(cwd)).rejects.toThrow(/packages\[0\]\.module/);
+  });
+
+  test('normalizes a package repositoryDirectory', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({
+        packages: [{ name: '@scope/cli', repositoryDirectory: './packages/cli/' }],
+      }),
+      'utf8',
+    );
+    expect((await loadConfig(cwd)).packages).toEqual([
+      { name: '@scope/cli', repositoryDirectory: 'packages/cli' },
+    ]);
+  });
+
+  test('rejects invalid package repositoryDirectory values', async () => {
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'a', repositoryDirectory: '../a' }] }),
+      'utf8',
+    );
+    await expect(loadConfig(cwd)).rejects.toThrow(
+      /packages\[0\]\.repositoryDirectory.*traversal/,
+    );
+
+    await writeFile(
+      join(cwd, 'inrepo.json'),
+      JSON.stringify({ packages: [{ name: 'a', repositoryDirectory: 42 }] }),
+      'utf8',
+    );
+    await expect(loadConfig(cwd)).rejects.toThrow(
+      /packages\[0\]\.repositoryDirectory must be a string/,
+    );
   });
 
   test('throws on empty inrepo.json', async () => {

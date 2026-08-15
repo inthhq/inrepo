@@ -1,0 +1,105 @@
+From c61ed860f57e692ec11d1b0c40b578bf2cb6b353 Mon Sep 17 00:00:00 2001
+From: Kaylee <65376239+KayleeWilliams@users.noreply.github.com>
+Date: Tue, 11 Aug 2026 20:46:13 +0100
+Subject: [PATCH] Replace EventEmitter inheritance with a minimal Map-based
+ emitter
+
+---
+ lib/command.js | 62 ++++++++++++++++++++++++++++++++++++++++++++------
+ 1 file changed, 55 insertions(+), 7 deletions(-)
+
+diff --git a/lib/command.js b/lib/command.js
+index a87caa1bd547a25107807360c1da8b17240e6b52..881f92c37c269b7fec1793b0f5d95fee628c8dd6 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -1,4 +1,3 @@
+-import { EventEmitter } from 'node:events';
+ import childProcess from 'node:child_process';
+ import path from 'node:path';
+ import fs from 'node:fs';
+@@ -11,7 +10,53 @@ import { Help } from './help.js';
+ import { Option, DualOptions } from './option.js';
+ import { suggestSimilar } from './suggestSimilar.js';
+ 
+-export class Command extends EventEmitter {
++export class Command {
++
++  /**
++   * Register an event listener (minimal EventEmitter replacement).
++   *
++   * @param {string} eventName
++   * @param {(a?: string | Array<string> | HelpTextEventContext, b?: Array<string>) => void} listener
++   * @return {Command} `this` command for chaining
++   */
++  on(eventName, listener) {
++    const existing = this._eventListeners.get(eventName);
++    if (existing) {
++      existing.push(listener);
++    } else {
++      this._eventListeners.set(eventName, [listener]);
++    }
++    return this;
++  }
++
++  /**
++   * Emit an event (minimal EventEmitter replacement).
++   *
++   * @param {string} eventName
++   * @param {(string | Array<string> | HelpTextEventContext)} [a]
++   * @param {Array<string>} [b]
++   * @return {boolean} whether the event had listeners
++   */
++  emit(eventName, a, b) {
++    const listeners = this._eventListeners.get(eventName);
++    if (!listeners || listeners.length === 0) return false;
++    for (const listener of listeners.slice()) {
++      listener(a, b);
++    }
++    return true;
++  }
++
++  /**
++   * Count listeners for an event (minimal EventEmitter replacement).
++   *
++   * @param {string} eventName
++   * @return {number}
++   */
++  listenerCount(eventName) {
++    const listeners = this._eventListeners.get(eventName);
++    return listeners ? listeners.length : 0;
++  }
++
+   /**
+    * Initialize a new `Command`.
+    *
+@@ -19,7 +64,8 @@ export class Command extends EventEmitter {
+    */
+ 
+   constructor(name) {
+-    super();
++    /** @type {Map<string, Array<(a?: string | Array<string> | HelpTextEventContext, b?: Array<string>) => void>>} */
++    this._eventListeners = new Map();
+     /** @type {Command[]} */
+     this.commands = [];
+     /** @type {Option[]} */
+@@ -719,14 +765,16 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     };
+ 
+     this.on('option:' + oname, (val) => {
+-      const invalidValueMessage = `error: option '${option.flags}' argument '${val}' is invalid.`;
+-      handleOptionValue(val, invalidValueMessage, 'cli');
++      const strVal = typeof val === 'string' ? val : undefined;
++      const invalidValueMessage = `error: option '${option.flags}' argument '${strVal !== undefined ? strVal : ''}' is invalid.`;
++      handleOptionValue(strVal, invalidValueMessage, 'cli');
+     });
+ 
+     if (option.envVar) {
+       this.on('optionEnv:' + oname, (val) => {
+-        const invalidValueMessage = `error: option '${option.flags}' value '${val}' from env '${option.envVar}' is invalid.`;
+-        handleOptionValue(val, invalidValueMessage, 'env');
++        const strVal = typeof val === 'string' ? val : undefined;
++        const invalidValueMessage = `error: option '${option.flags}' value '${strVal !== undefined ? strVal : ''}' from env '${option.envVar}' is invalid.`;
++        handleOptionValue(strVal, invalidValueMessage, 'env');
+       });
+     }
+ 

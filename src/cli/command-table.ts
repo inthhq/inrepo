@@ -1,9 +1,12 @@
 import { resolve } from 'node:path';
 import type { CliCommand } from 'hexbus';
 import { cmdAdd } from './commands/add.js';
+import { cmdDiff } from './commands/diff.js';
 import { cmdInit } from './commands/init.js';
+import { cmdMigrate } from './commands/migrate.js';
 import { cmdPatch } from './commands/patch.js';
 import { cmdSync } from './commands/sync.js';
+import { cmdUpdate } from './commands/update.js';
 import { cmdVerify } from './commands/verify.js';
 
 export const commands: CliCommand[] = [
@@ -35,10 +38,20 @@ export const commands: CliCommand[] = [
       await cmdPatch(resolve(context.cwd), context.commandArgs);
     },
     description:
-      'Capture edits from inrepo_modules back into committed overlay files under inrepo_patches/.',
+      'Capture edits from inrepo_modules into inrepo_patches/ as a new numbered patch (-m "reason") or a legacy overlay.',
     hint: 'Capture local edits',
     label: 'Patch',
     name: 'patch',
+  },
+  {
+    action: async (context) => {
+      await cmdDiff(resolve(context.cwd), context.commandArgs);
+    },
+    description:
+      'Show the effective delta between the pinned upstream commit and the patched tree, with the patch series that produced it.',
+    hint: 'Review vendored changes',
+    label: 'Diff',
+    name: 'diff',
   },
   {
     action: async (context) => {
@@ -53,10 +66,30 @@ export const commands: CliCommand[] = [
   },
   {
     action: async (context) => {
+      await cmdUpdate(resolve(context.cwd), context.commandArgs);
+    },
+    description:
+      'Move a package to a newer upstream commit by rebasing its patch series onto it (--ref, --continue, --abort).',
+    hint: 'Rebase onto new upstream',
+    label: 'Update',
+    name: 'update',
+  },
+  {
+    action: async (context) => {
+      await cmdMigrate(resolve(context.cwd), context.commandArgs);
+    },
+    description:
+      'Convert a package\'s legacy overlay files in inrepo_patches/ into an ordered git patch series.',
+    hint: 'Convert overlay to patches',
+    label: 'Migrate',
+    name: 'migrate',
+  },
+  {
+    action: async (context) => {
       await cmdAdd(resolve(context.cwd), context.commandArgs);
     },
     description:
-      'Vendor or refresh a single package pin, then rebuild its generated checkout in inrepo_modules.',
+      'Vendor or refresh a package pin, then rebuild its generated checkout in inrepo_modules (--with-deps also vendors its runtime dependencies).',
     hint: 'Vendor a package',
     label: 'Add',
     name: 'add',

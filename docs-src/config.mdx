@@ -14,6 +14,7 @@ Prefer `inrepo.json` at the project root:
     {
       "name": "example-package",
       "git": "https://github.com/owner/repo",
+      "repositoryDirectory": "packages/example-package",
       "ref": "main",
       "dev": false,
       "keep": ["src", "package.json"],
@@ -21,7 +22,8 @@ Prefer `inrepo.json` at the project root:
     }
   ],
   "keep": ["LICENSE"],
-  "exclude": [".github"]
+  "exclude": [".github"],
+  "rewireImports": false
 }
 ```
 
@@ -47,14 +49,19 @@ Package fields:
 
 | Field | Meaning |
 | --- | --- |
-| `name` | Package name and destination under `inrepo_modules/`. |
+| `name` | npm package/source name used by imports and the root dependency key. |
+| `module` | Optional storage identity under config, lockfile, `inrepo_modules/`, and `inrepo_patches/`. Generated as `name@version` for `--with-deps` dependencies; otherwise defaults to `name`. |
 | `git` | Optional git clone URL. Required when npm registry lookup cannot resolve a GitHub repository. |
+| `repositoryDirectory` | Optional package root inside the repository. Discovered from npm `repository.directory`, or set explicitly for a manual git source. |
 | `ref` | Optional branch, tag, or commit to pin before resolving the lockfile commit. |
 | `dev` | When `true`, sync wires the root `package.json#devDependencies`; otherwise it uses `dependencies`. |
 | `keep` | Optional allowlist of relative path prefixes to retain before exclusions run. |
 | `exclude` | Optional relative paths or slash-delimited regexes to remove from the vendored tree. |
+| `rewireImports` | Overrides the root `rewireImports` setting for this package only. |
 
 Root and per-package `keep` lists are merged. Root and per-package `exclude` lists are also merged.
+
+Root `rewireImports` is a project-wide default rather than a merged list, and a package entry overrides it.
 
 Filtering always runs in this order:
 
@@ -63,4 +70,22 @@ Filtering always runs in this order:
 
 If `keep` is set, list every root file you still need, such as `package.json` or `LICENSE`. Nothing is kept implicitly.
 
+For a monorepo package, filtering and patches are relative to `repositoryDirectory`, not the repository root. Registry dependency resolution uses npm `repository.directory` when present; otherwise it searches the immutable checkout for a unique package manifest matching the published name and version. The selected directory is recorded and replayed offline by `sync`, `verify`, `diff`, and `patch`. Use `inrepo add <name> --git <url> --repository-directory <path>` for a manual source.
+
 `inrepo add <package>` updates config by default after a successful checkout. Use `--no-save` for a one-off vendoring operation that should not upsert config.
+
+`inrepo add <package> --with-deps` adds one entry per resolved runtime dependency instance. A generated entry such as `{ "name": "citty", "module": "citty@0.2.2", … }` separates the npm import name from its storage identity, allowing incompatible versions to coexist. Each entry is pinned to an exact `git` URL and immutable commit so `sync` stays offline. Graph-managed instances cannot be updated directly; rerun `add --with-deps` for the graph root. The command cannot be combined with `--no-save`.
+
+Lockfile versions 1–4 remain readable. Version 4 is written when a module identity differs from its package source name. Version 5 records an integrity-pinned npm artifact used to fill publish-only files absent from the repository checkout; git source and `package.json` take precedence. Artifact caches make later `sync` and `verify` independent of the registry.
+
+## Import rewiring
+
+`rewireImports` is off by default. With it on, `sync` rewrites bare specifiers that name a vendored runtime dependency into relative paths pointing at the sibling checkout, so the vendored graph resolves as plain source with no `node_modules` lookup:
+
+```js
+import pc from '../../picocolors/picocolors.js';
+```
+
+Only packages the recorded `graph` in `inrepo.lock.json` connects are affected, so the setting does nothing until you vendor a dependency graph with `inrepo add <package> --with-deps`. Specifiers are located with a JavaScript lexer in `.js`, `.mjs`, `.cjs`, `.ts`, `.mts`, and `.cts` files, covering `import`, `export … from`, `import(…)`, and `require(…)`; a package name inside a string, comment, or regular expression is never touched. A bare package name resolves to the dependency's `exports`, `module`, or `main` entry file, and a specifier that resolves to no file is left unchanged with a warning.
+
+Rewiring is a generated transform applied after the patch series, so it never appears in `inrepo diff` and never lands in a patch captured by `inrepo patch`.

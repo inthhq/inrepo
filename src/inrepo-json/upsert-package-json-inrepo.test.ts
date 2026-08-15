@@ -69,6 +69,53 @@ describe('upsertPackageJsonInrepo', () => {
     });
   });
 
+  test('preserves root rewireImports when present', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'host',
+          inrepo: { packages: [{ name: 'a' }], rewireImports: true },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    );
+    await upsertPackageJsonInrepo(cwd, { name: 'b', git: 'https://example.com/b.git' });
+    const pkg = await readPkg(cwd);
+    expect(pkg.inrepo).toEqual({
+      packages: [{ name: 'a' }, { name: 'b', git: 'https://example.com/b.git' }],
+      rewireImports: true,
+    });
+  });
+
+  test('preserves unknown extra root keys when present', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify(
+        {
+          name: 'host',
+          inrepo: {
+            packages: [{ name: 'a' }],
+            somethingCustom: { hello: 'world' },
+            extraFlag: true,
+          },
+        },
+        null,
+        2,
+      ) + '\n',
+      'utf8',
+    );
+    await upsertPackageJsonInrepo(cwd, { name: 'b' });
+    const pkg = await readPkg(cwd);
+    expect(pkg.inrepo).toEqual({
+      packages: [{ name: 'a' }, { name: 'b' }],
+      somethingCustom: { hello: 'world' },
+      extraFlag: true,
+    });
+  });
+
   test('updates existing entry and toggles dev off when omitted', async () => {
     await writeFile(
       join(cwd, 'package.json'),
@@ -79,6 +126,55 @@ describe('upsertPackageJsonInrepo', () => {
     const pkg = await readPkg(cwd);
     expect((pkg.inrepo as Record<string, unknown>).packages).toEqual([
       { name: 'a', git: 'https://x/a.git' },
+    ]);
+  });
+
+  test('keys duplicate source packages by their module identity', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ name: 'host', inrepo: { packages: [] } }) + '\n',
+      'utf8',
+    );
+    await upsertPackageJsonInrepo(cwd, {
+      name: 'shared',
+      module: 'shared@1.0.0',
+      ref: 'v1.0.0',
+    });
+    await upsertPackageJsonInrepo(cwd, {
+      name: 'shared',
+      module: 'shared@2.0.0',
+      ref: 'v2.0.0',
+    });
+    const pkg = await readPkg(cwd);
+    expect((pkg.inrepo as Record<string, unknown>).packages).toEqual([
+      { name: 'shared', module: 'shared@1.0.0', ref: 'v1.0.0' },
+      { name: 'shared', module: 'shared@2.0.0', ref: 'v2.0.0' },
+    ]);
+  });
+
+  test('records, preserves, and explicitly clears repositoryDirectory', async () => {
+    await writeFile(
+      join(cwd, 'package.json'),
+      JSON.stringify({ name: 'host', inrepo: { packages: [] } }) + '\n',
+      'utf8',
+    );
+    await upsertPackageJsonInrepo(cwd, {
+      name: '@scope/cli',
+      repositoryDirectory: './packages/cli/',
+    });
+    await upsertPackageJsonInrepo(cwd, { name: '@scope/cli', ref: 'v1' });
+    let pkg = await readPkg(cwd);
+    expect((pkg.inrepo as Record<string, unknown>).packages).toEqual([
+      { name: '@scope/cli', repositoryDirectory: 'packages/cli', ref: 'v1' },
+    ]);
+
+    await upsertPackageJsonInrepo(cwd, {
+      name: '@scope/cli',
+      repositoryDirectory: null,
+    });
+    pkg = await readPkg(cwd);
+    expect((pkg.inrepo as Record<string, unknown>).packages).toEqual([
+      { name: '@scope/cli', ref: 'v1' },
     ]);
   });
 

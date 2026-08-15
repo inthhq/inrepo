@@ -1,0 +1,291 @@
+From aef182fa17069e9b48e327fc5d46b2d73a9a3f69 Mon Sep 17 00:00:00 2001
+From: Kaylee <65376239+KayleeWilliams@users.noreply.github.com>
+Date: Tue, 11 Aug 2026 20:46:16 +0100
+Subject: [PATCH] Restate operations scriptc has no lowering for yet
+
+---
+ lib/command.js        | 64 ++++++++++++++++++++++---------------------
+ lib/help.js           | 47 ++++++++++++++++++++++++-------
+ lib/suggestSimilar.js | 34 ++++++++++++++++-------
+ 3 files changed, 94 insertions(+), 51 deletions(-)
+
+diff --git a/lib/command.js b/lib/command.js
+index ca4bf377e9f41f3d940ffa4914f03f9b0f022d15..4336ce7c1e8f9d4d24ca555312a1b9e129985eb5 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -1,10 +1,19 @@
+ import childProcess from 'node:child_process';
+ import path from 'node:path';
+ import fs from 'node:fs';
+-import process from 'node:process';
+-import { stripVTControlCharacters } from 'node:util';
+ 
+ import { Argument, humanReadableArgName } from './argument.js';
++
++// scriptc: node:util stripVTControlCharacters has no lowering; local SGR-safe fallback.
++const ANSI_ESCAPE_PATTERN = /\x1b\[[0-9;]*m/g;
++/**
++ * @param {string} str
++ * @return {string}
++ */
++function stripVTControlCharacters(str) {
++  return str.replace(ANSI_ESCAPE_PATTERN, '');
++}
++
+ import { CommanderError } from './error.js';
+ import { Help } from './help.js';
+ import { Option, DualOptions } from './option.js';
+@@ -431,7 +440,10 @@ export class Command {
+    * @return {Command} `this` command for chaining
+    */
+   addArgument(argument) {
+-    const previousArgument = this.registeredArguments.slice(-1)[0];
++    const previousArgument =
++      this.registeredArguments.length > 0
++        ? this.registeredArguments[this.registeredArguments.length - 1]
++        : undefined;
+     if (previousArgument?.variadic) {
+       throw new Error(
+         `only the last argument can be variadic '${previousArgument.name()}'`,
+@@ -612,18 +624,12 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    */
+ 
+   action(fn) {
++    // Static build: `fn.apply(this, actionArgs)` has no scriptc lowering, so the
++    // callback takes no parameters; read positional args via .processedArgs and
++    // options via .opts() / .getOptionValue() inside the callback instead.
++    /** @type {(args: Array<string | Array<string>>) => void} */
+     const listener = (args) => {
+-      // The .action callback takes an extra parameter which is the command or options.
+-      const expectedArgsCount = this.registeredArguments.length;
+-      const actionArgs = args.slice(0, expectedArgsCount);
+-      if (this._storeOptionsAsProperties) {
+-        actionArgs[expectedArgsCount] = this; // backwards compatible "options"
+-      } else {
+-        actionArgs[expectedArgsCount] = this.opts();
+-      }
+-      actionArgs.push(this);
+-
+-      return fn.apply(this, actionArgs);
++      fn();
+     };
+     this._actionHandler = listener;
+     return this;
+@@ -1045,9 +1051,8 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    */
+ 
+   _prepareUserArgs(argv, parseOptions) {
+-    if (argv !== undefined && !Array.isArray(argv)) {
+-      throw new Error('first parameter to parse must be array or undefined');
+-    }
++    // (runtime Array.isArray guard removed: argv is typed string[] | undefined,
++    // and scriptc does not lower Array.isArray on a typed value)
+     parseOptions = parseOptions || {};
+ 
+     // auto-detect argument conventions if nothing supplied
+@@ -1430,7 +1435,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     );
+     promiseChain = this._chainOrCall(promiseChain, () => {
+       if (subCommand._executableHandler) {
+-        this._executeSubCommand(subCommand, operands.concat(unknown));
++        this._executeSubCommand(subCommand, [...operands, ...unknown]);
+       } else {
+         return subCommand._parseCommand(operands, unknown);
+       }
+@@ -1626,9 +1631,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     const parsed = this.parseOptions(unknown);
+     this._parseOptionsEnv(); // after cli, so parseArg not called on both cli and env
+     this._parseOptionsImplied();
+-    operands = operands.concat(parsed.operands);
++    operands = [...operands, ...parsed.operands];
+     unknown = parsed.unknown;
+-    this.args = operands.concat(unknown);
++    this.args = [...operands, ...unknown];
+ 
+     if (operands && this._findCommand(operands[0])) {
+       return this._dispatchSubcommand(operands[0], operands.slice(1), unknown);
+@@ -2201,12 +2206,13 @@ Expecting one of '${allowedValues.join("', '")}'`);
+       /** @type {(Command | null)} */
+       let command = this;
+       do {
+-        const moreFlags = command
++        command
+           .createHelp()
+           .visibleOptions(command)
+-          .filter((option) => option.long)
+-          .map((option) => option.long);
+-        candidateFlags = candidateFlags.concat(moreFlags);
++          .forEach((option) => {
++            const longFlag = option.long;
++            if (longFlag) candidateFlags.push(longFlag);
++          });
+         command = command.parent;
+       } while (command && !command._enablePositionalOptions);
+       suggestion = suggestSimilar(flag, candidateFlags);
+@@ -2691,13 +2697,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
+ 
+   help(contextOptions) {
+     this.outputHelp(contextOptions);
+-    let exitCode = Number(process.exitCode ?? 0); // process.exitCode does allow a string or an integer, but we prefer just a number
+-    if (
+-      exitCode === 0 &&
+-      contextOptions &&
+-      typeof contextOptions !== 'function' &&
+-      contextOptions.error
+-    ) {
++    // (process.exitCode has no scriptc lowering; the static build assumes 0)
++    let exitCode = 0;
++    if (exitCode === 0 && contextOptions && contextOptions.error) {
+       exitCode = 1;
+     }
+     // message: do not have all displayed text available so only passing placeholder.
+diff --git a/lib/help.js b/lib/help.js
+index 3c1df7c053d1a30ba5f28aa3d7b1fbc6eb504719..5881f176ea017f627599b3b1d0585955b8558d8d 100644
+--- a/lib/help.js
++++ b/lib/help.js
+@@ -1,5 +1,15 @@
+ import { humanReadableArgName } from './argument.js';
+-import { stripVTControlCharacters } from 'node:util';
++
++// scriptc: node:util stripVTControlCharacters has no lowering; local SGR-safe fallback.
++const ANSI_ESCAPE_PATTERN = /\x1b\[[0-9;]*m/g;
++/**
++ * @param {string} str
++ * @return {string}
++ */
++function stripVTControlCharacters(str) {
++  return str.replace(ANSI_ESCAPE_PATTERN, '');
++}
++
+ 
+ /**
+  * TypeScript import types for JSDoc, used by Visual Studio Code IntelliSense and `npm run typescript-checkJS`
+@@ -566,7 +576,7 @@ export class Help {
+       .map((word) => {
+         if (word === '[options]') return this.styleOptionText(word);
+         if (word === '[command]') return this.styleSubcommandText(word);
+-        if (word[0] === '[' || word[0] === '<')
++        if (word.startsWith('[') || word.startsWith('<'))
+           return this.styleArgumentText(word);
+         return this.styleCommandText(word); // Restrict to initial words?
+       })
+@@ -625,7 +635,7 @@ export class Help {
+       .split(' ')
+       .map((word) => {
+         if (word === '[options]') return this.styleOptionText(word);
+-        if (word[0] === '[' || word[0] === '<')
++        if (word.startsWith('[') || word.startsWith('<'))
+           return this.styleArgumentText(word);
+         return this.styleSubcommandText(word); // Restrict to initial words?
+       })
+@@ -756,19 +766,36 @@ export class Help {
+     if (width < this.minWidthToWrap) return str;
+ 
+     const rawLines = str.split(/\r\n|\n/);
+-    // split up text by whitespace
+-    const chunkPattern = /[\s]*[^\s]+/g;
++    // split up text by whitespace: each chunk is optional leading whitespace
++    // plus a word (restated as a scanner — scriptc does not support g-flag match())
++    /** @type {(line: string) => string[]} */
++    const splitChunks = (line) => {
++      /** @type {string[]} */
++      const lineChunks = [];
++      const whitespace = /\s/;
++      let i = 0;
++      while (i < line.length) {
++        const start = i;
++        while (i < line.length && whitespace.test(line.charAt(i))) i++;
++        if (i >= line.length) break; // trailing whitespace: no chunk, as with match()
++        while (i < line.length && !whitespace.test(line.charAt(i))) i++;
++        lineChunks.push(line.slice(start, i));
++      }
++      return lineChunks;
++    };
++    /** @type {string[]} */
+     const wrappedLines = [];
+     rawLines.forEach((line) => {
+-      const chunks = line.match(chunkPattern);
+-      if (chunks === null) {
++      const chunks = splitChunks(line);
++      if (chunks.length === 0) {
+         wrappedLines.push('');
+         return;
+       }
+ 
+-      let sumChunks = [chunks.shift()];
+-      let sumWidth = this.displayWidth(sumChunks[0]);
+-      chunks.forEach((chunk) => {
++      /** @type {string[]} */
++      let sumChunks = [chunks[0]];
++      let sumWidth = this.displayWidth(chunks[0]);
++      chunks.slice(1).forEach((chunk) => {
+         const visibleWidth = this.displayWidth(chunk);
+         // Accumulate chunks while they fit into width.
+         if (sumWidth + visibleWidth <= width) {
+diff --git a/lib/suggestSimilar.js b/lib/suggestSimilar.js
+index 26b2fec9ca281eed4aa3cc5fad387a69425cee0f..277afb41a32e6bd48fd9844712c94946f2cea540 100644
+--- a/lib/suggestSimilar.js
++++ b/lib/suggestSimilar.js
+@@ -15,22 +15,26 @@ function editDistance(a, b) {
+     return Math.max(a.length, b.length);
+ 
+   // distance between prefix substrings of a and b
++  // (built with push rather than sparse writes: scriptc arrays do not auto-grow)
++  /** @type {number[][]} */
+   const d = [];
+-
+-  // pure deletions turn a into empty string
+   for (let i = 0; i <= a.length; i++) {
+-    d[i] = [i];
+-  }
+-  // pure insertions turn empty string into b
+-  for (let j = 0; j <= b.length; j++) {
+-    d[0][j] = j;
++    /** @type {number[]} */
++    const row = [];
++    // pure deletions turn a into empty string
++    row.push(i);
++    // pure insertions turn empty string into b
++    for (let j = 1; j <= b.length; j++) {
++      row.push(i === 0 ? j : 0);
++    }
++    d.push(row);
+   }
+ 
+   // fill matrix
+   for (let j = 1; j <= b.length; j++) {
+     for (let i = 1; i <= a.length; i++) {
+       let cost;
+-      if (a[i - 1] === b[j - 1]) {
++      if (a.charAt(i - 1) === b.charAt(j - 1)) {
+         cost = 0;
+       } else {
+         cost = 1;
+@@ -41,7 +45,7 @@ function editDistance(a, b) {
+         d[i - 1][j - 1] + cost, // substitution
+       );
+       // transposition
+-      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
++      if (i > 1 && j > 1 && a.charAt(i - 1) === b.charAt(j - 2) && a.charAt(i - 2) === b.charAt(j - 1)) {
+         d[i][j] = Math.min(d[i][j], d[i - 2][j - 2] + 1);
+       }
+     }
+@@ -61,7 +65,17 @@ function editDistance(a, b) {
+ export function suggestSimilar(word, candidates) {
+   if (!candidates || candidates.length === 0) return '';
+   // remove possible duplicates
+-  candidates = Array.from(new Set(candidates));
++  /** @type {string[]} */
++  const dedupedCandidates = [];
++  /** @type {Set<string>} */
++  const seenCandidates = new Set();
++  candidates.forEach((candidate) => {
++    if (!seenCandidates.has(candidate)) {
++      seenCandidates.add(candidate);
++      dedupedCandidates.push(candidate);
++    }
++  });
++  candidates = dedupedCandidates;
+ 
+   const searchingOptions = word.startsWith('--');
+   if (searchingOptions) {

@@ -1,0 +1,81 @@
+From 7a487c298abe6f2fcc4c0cd279ec7c2555b1019a Mon Sep 17 00:00:00 2001
+From: Kaylee <65376239+KayleeWilliams@users.noreply.github.com>
+Date: Tue, 11 Aug 2026 20:46:44 +0100
+Subject: [PATCH] Drop the CommonJS type declarations that no longer describe
+ the restated module
+
+---
+ picocolors.d.ts |  5 -----
+ types.d.ts      | 51 -------------------------------------------------
+ 2 files changed, 56 deletions(-)
+ delete mode 100644 picocolors.d.ts
+ delete mode 100644 types.d.ts
+
+diff --git a/picocolors.d.ts b/picocolors.d.ts
+deleted file mode 100644
+index 94e146a82221e527be835656549ddfb1b41fd0c9..0000000000000000000000000000000000000000
+--- a/picocolors.d.ts
++++ /dev/null
+@@ -1,5 +0,0 @@
+-import { Colors } from "./types"
+-
+-declare const picocolors: Colors & { createColors: (enabled?: boolean) => Colors }
+-
+-export = picocolors
+diff --git a/types.d.ts b/types.d.ts
+deleted file mode 100644
+index cd1aec46792f4bdb4fd06aeabf1fd93c8b3f11ea..0000000000000000000000000000000000000000
+--- a/types.d.ts
++++ /dev/null
+@@ -1,51 +0,0 @@
+-export type Formatter = (input: string | number | null | undefined) => string
+-
+-export interface Colors {
+-	isColorSupported: boolean
+-
+-	reset: Formatter
+-	bold: Formatter
+-	dim: Formatter
+-	italic: Formatter
+-	underline: Formatter
+-	inverse: Formatter
+-	hidden: Formatter
+-	strikethrough: Formatter
+-
+-	black: Formatter
+-	red: Formatter
+-	green: Formatter
+-	yellow: Formatter
+-	blue: Formatter
+-	magenta: Formatter
+-	cyan: Formatter
+-	white: Formatter
+-	gray: Formatter
+-
+-	bgBlack: Formatter
+-	bgRed: Formatter
+-	bgGreen: Formatter
+-	bgYellow: Formatter
+-	bgBlue: Formatter
+-	bgMagenta: Formatter
+-	bgCyan: Formatter
+-	bgWhite: Formatter
+-
+-	blackBright: Formatter
+-	redBright: Formatter
+-	greenBright: Formatter
+-	yellowBright: Formatter
+-	blueBright: Formatter
+-	magentaBright: Formatter
+-	cyanBright: Formatter
+-	whiteBright: Formatter
+-
+-	bgBlackBright: Formatter
+-	bgRedBright: Formatter
+-	bgGreenBright: Formatter
+-	bgYellowBright: Formatter
+-	bgBlueBright: Formatter
+-	bgMagentaBright: Formatter
+-	bgCyanBright: Formatter
+-	bgWhiteBright: Formatter
+-}

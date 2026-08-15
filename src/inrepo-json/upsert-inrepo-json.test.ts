@@ -48,11 +48,44 @@ describe('upsertInrepoJson', () => {
     ]);
   });
 
+  test('keeps distinct version-qualified modules for the same source package', async () => {
+    await upsertInrepoJson(cwd, { name: 'shared', module: 'shared@1.0.0', ref: 'v1.0.0' });
+    await upsertInrepoJson(cwd, { name: 'shared', module: 'shared@2.0.0', ref: 'v2.0.0' });
+    await upsertInrepoJson(cwd, { name: 'shared', module: 'shared@1.0.0', git: 'https://x/shared.git' });
+    expect((await readJson(path)).packages).toEqual([
+      {
+        name: 'shared',
+        module: 'shared@1.0.0',
+        git: 'https://x/shared.git',
+        ref: 'v1.0.0',
+      },
+      { name: 'shared', module: 'shared@2.0.0', ref: 'v2.0.0' },
+    ]);
+  });
+
   test('toggles dev: true on, then off when omitted', async () => {
     await upsertInrepoJson(cwd, { name: 'a', dev: true });
     expect((await readJson(path)).packages).toEqual([{ name: 'a', dev: true }]);
     await upsertInrepoJson(cwd, { name: 'a' });
     expect((await readJson(path)).packages).toEqual([{ name: 'a' }]);
+  });
+
+  test('records, preserves, and explicitly clears repositoryDirectory', async () => {
+    await upsertInrepoJson(cwd, {
+      name: '@scope/cli',
+      repositoryDirectory: './packages/cli/',
+    });
+    expect((await readJson(path)).packages).toEqual([
+      { name: '@scope/cli', repositoryDirectory: 'packages/cli' },
+    ]);
+
+    await upsertInrepoJson(cwd, { name: '@scope/cli', ref: 'v1' });
+    expect((await readJson(path)).packages).toEqual([
+      { name: '@scope/cli', repositoryDirectory: 'packages/cli', ref: 'v1' },
+    ]);
+
+    await upsertInrepoJson(cwd, { name: '@scope/cli', repositoryDirectory: null });
+    expect((await readJson(path)).packages).toEqual([{ name: '@scope/cli', ref: 'v1' }]);
   });
 
   test('preserves existing $schema and other top-level keys / order', async () => {

@@ -1,0 +1,537 @@
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { cp } from 'node:fs/promises';
+import { join } from 'node:path';
+import { bootstrapHostPackageJson, envFor, readJson } from '../test-utils/e2e-harness.js';
+import {
+  makePackageGraphFixture,
+  type PackageGraphFixture,
+} from '../test-utils/package-graph-fixture.js';
+import { runCli } from '../test-utils/run-cli.js';
+import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
+
+type ConfigPackage = { name: string; module?: string; git?: string; ref?: string };
+
+/** Points at a closed port: proves sync and verify never reach the registry. */
+const OFFLINE_REGISTRY = 'http://127.0.0.1:9';
+
+describe('CLI: add --with-deps (e2e)', () => {
+  let fx: PackageGraphFixture;
+  let cwd: string;
+  let env: Record<string, string>;
+
+  beforeAll(async () => {
+    fx = await makePackageGraphFixture([
+      {
+        name: 'alpha',
+        versions: { '1.0.0': { dependencies: { beta: '^1.0.0', gamma: '^2.0.0' } } },
+      },
+      {
+        name: 'beta',
+        versions: {
+          '1.0.0': { dependencies: { gamma: '^2.0.0' } },
+          '1.2.0': { dependencies: { gamma: '^2.0.0' } },
+        },
+      },
+      { name: 'gamma', versions: { '2.0.0': {}, '2.1.0': {} } },
+    ]);
+  });
+
+  afterAll(async () => {
+    await fx.cleanup();
+  });
+
+  beforeEach(async () => {
+    cwd = await makeTmpDir('inrepo-e2e-withdeps-');
+    await bootstrapHostPackageJson(cwd);
+    env = { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl };
+  });
+
+  afterEach(async () => {
+    await cleanupTmpDir(cwd);
+  });
+
+  test('vendors the whole runtime closure, deduping a shared dependency', async () => {
+    const add = await runCli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha'], {
+      cwd,
+      env,
+    });
+    expect(add.exitCode).toBe(0);
+    expect(add.stdout).toContain('beta ^1.0.0 → 1.2.0');
+    expect(add.stdout).toContain('gamma ^2.0.0 → 2.1.0');
+    expect(add.stdout).toMatch(/Vendored 3 package\(s\) for "alpha"/);
+
+    for (const module of ['alpha', 'beta@1.2.0', 'gamma@2.1.0']) {
+      expect(existsSync(join(cwd, 'inrepo_modules', module, 'package.json'))).toBe(true);
+    }
+
+    const cfg = await readJson(join(cwd, 'inrepo.json'));
+    const packages = cfg.packages as ConfigPackage[];
+    expect(packages.map((p) => p.name)).toEqual(['alpha', 'beta', 'gamma']);
+    // Dependency entries pin an exact tag so sync never needs the registry.
+    expect(packages.find((p) => p.name === 'beta')?.ref).toBe('v1.2.0');
+    expect(packages.find((p) => p.name === 'gamma')?.ref).toBe('v2.1.0');
+
+    const lock = await readJson(join(cwd, 'inrepo.lock.json'));
+    expect(lock.lockfileVersion).toBe(4);
+    expect(lock.graph).toEqual({
+      alpha: {
+        version: '1.0.0',
+        root: true,
+        dependencies: {
+          beta: { range: '^1.0.0', version: '1.2.0', module: 'beta@1.2.0' },
+          gamma: { range: '^2.0.0', version: '2.1.0', module: 'gamma@2.1.0' },
+        },
+      },
+      'beta@1.2.0': {
+        version: '1.2.0',
+        dependencies: {
+          gamma: { range: '^2.0.0', version: '2.1.0', module: 'gamma@2.1.0' },
+        },
+      },
+      'gamma@2.1.0': { version: '2.1.0' },
+    });
+
+    const pkg = await readJson(join(cwd, 'package.json'));
+    expect(pkg.dependencies).toEqual({
+      alpha: 'file:inrepo_modules/alpha',
+    });
+  });
+
+  test('sync and verify replay a committed graph with no registry access', async () => {
+    expect(
+      (await runCli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha'], { cwd, env }))
+        .exitCode,
+    ).toBe(0);
+
+    const offline = { ...envFor('inrepo.json'), INREPO_REGISTRY: OFFLINE_REGISTRY };
+    const sync = await runCli(['sync'], { cwd, env: offline });
+    expect(sync.exitCode).toBe(0);
+    expect(sync.stdout).toMatch(/Done\. 3 package\(s\) synced/);
+
+    const verify = await runCli(['verify'], { cwd, env: offline });
+    expect(verify.exitCode).toBe(0);
+    expect(verify.stdout).toMatch(/all lockfile entries match checkouts/);
+  });
+
+  test('verify fails when the committed graph disagrees with the lockfile', async () => {
+    expect(
+      (await runCli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha'], { cwd, env }))
+        .exitCode,
+    ).toBe(0);
+
+    const lockPath = join(cwd, 'inrepo.lock.json');
+    const lock = await readJson(lockPath);
+    const graph = lock.graph as Record<string, { dependencies?: Record<string, { range: string }> }>;
+    graph.alpha.dependencies!.gamma.range = '^9.0.0';
+    await Bun.write(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+
+    const verify = await runCli(['verify'], {
+      cwd,
+      env: { ...envFor('inrepo.json'), INREPO_REGISTRY: OFFLINE_REGISTRY },
+    });
+    expect(verify.exitCode).toBe(1);
+    expect(verify.stderr).toMatch(/depends on "gamma" \^9\.0\.0, which 2\.1\.0 does not satisfy/);
+  });
+
+  test('reuses an already vendored dependency instead of re-pinning it', async () => {
+    expect(
+      (
+        await runCli(['add', '--git', fx.gitUrl('gamma'), '--ref', 'v2.0.0', 'gamma'], {
+          cwd,
+          env,
+        })
+      ).exitCode,
+    ).toBe(0);
+    const before = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+      modules: Record<string, { commit: string }>;
+    };
+
+    const add = await runCli(['add', '--git', fx.gitUrl('alpha'), '--with-deps', 'alpha'], {
+      cwd,
+      env,
+    });
+    expect(add.exitCode).toBe(0);
+    expect(add.stdout).toContain('gamma ^2.0.0 → 2.0.0');
+    expect(add.stdout).toContain('already vendored');
+    expect(add.stdout).toMatch(/Vendored 2 package\(s\) for "alpha"; 1 already vendored/);
+
+    const after = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+      modules: Record<string, { commit: string }>;
+      graph: Record<string, { version?: string }>;
+    };
+    expect(after.modules.gamma.commit).toBe(before.modules.gamma.commit);
+    expect(after.graph.gamma.version).toBe('2.0.0');
+  });
+
+  test('completes the graph when the root is already vendored', async () => {
+    expect(
+      (await runCli(['add', '--git', fx.gitUrl('alpha'), 'alpha'], { cwd, env })).exitCode,
+    ).toBe(0);
+    expect(existsSync(join(cwd, 'inrepo_modules', 'beta'))).toBe(false);
+
+    const before = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+      modules: Record<string, { commit: string; gitUrl: string }>;
+    };
+    const movedTip = await fx.commitUpstream(
+      'alpha',
+      { 'MOVED.txt': 'default branch moved\n' },
+      'move alpha HEAD',
+    );
+    expect(movedTip).not.toBe(before.modules.alpha.commit);
+
+    const add = await runCli(['add', '--with-deps', 'alpha'], { cwd, env });
+    expect(add.exitCode).toBe(0);
+    expect(existsSync(join(cwd, 'inrepo_modules', 'beta@1.2.0', 'package.json'))).toBe(true);
+    expect(existsSync(join(cwd, 'inrepo_modules', 'gamma@2.1.0', 'package.json'))).toBe(true);
+
+    const after = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+      modules: Record<string, { commit: string; gitUrl: string }>;
+    };
+    expect(after.modules.alpha.commit).toBe(before.modules.alpha.commit);
+    expect(after.modules.alpha.gitUrl).toBe(before.modules.alpha.gitUrl);
+    expect(after.modules.alpha.commit).not.toBe(movedTip);
+  });
+
+  test('reuses a custom git URL from the lock when --git is omitted', async () => {
+    const privateDir = await makeTmpDir('inrepo-e2e-private-alpha-');
+    try {
+      const privateUrl = join(privateDir, 'alpha.git');
+      await cp(fx.gitUrl('alpha'), privateUrl, { recursive: true });
+      expect(privateUrl).not.toBe(fx.gitUrl('alpha'));
+
+      expect(
+        (await runCli(['add', '--git', privateUrl, 'alpha'], { cwd, env })).exitCode,
+      ).toBe(0);
+      const before = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+        modules: Record<string, { gitUrl: string; commit: string }>;
+      };
+      expect(before.modules.alpha.gitUrl).toBe(privateUrl);
+
+      const add = await runCli(['add', '--with-deps', 'alpha'], { cwd, env });
+      expect(add.exitCode).toBe(0);
+      expect(existsSync(join(cwd, 'inrepo_modules', 'beta@1.2.0', 'package.json'))).toBe(true);
+
+      const after = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+        modules: Record<string, { gitUrl: string; commit: string }>;
+      };
+      expect(after.modules.alpha.gitUrl).toBe(before.modules.alpha.gitUrl);
+      expect(after.modules.alpha.gitUrl).not.toBe(fx.gitUrl('alpha'));
+      expect(after.modules.alpha.commit).toBe(before.modules.alpha.commit);
+    } finally {
+      await cleanupTmpDir(privateDir);
+    }
+  });
+
+  test('plans an extra dependency from the patched module package.json', async () => {
+    const patched = await makePackageGraphFixture([
+      {
+        name: 'root-pkg',
+        versions: { '1.0.0': { dependencies: { leaf: '^1.0.0' } } },
+      },
+      { name: 'leaf', versions: { '1.0.0': {} } },
+      { name: 'extra', versions: { '1.0.0': {} } },
+    ]);
+    try {
+      const patchedEnv = { ...envFor('inrepo.json'), INREPO_REGISTRY: patched.registryUrl };
+      expect(
+        (
+          await runCli(['add', '--git', patched.gitUrl('root-pkg'), 'root-pkg'], {
+            cwd,
+            env: patchedEnv,
+          })
+        ).exitCode,
+      ).toBe(0);
+
+      const manifestPath = join(cwd, 'inrepo_modules', 'root-pkg', 'package.json');
+      const manifest = await readJson(manifestPath);
+      manifest.dependencies = {
+        ...((manifest.dependencies as Record<string, string> | undefined) ?? {}),
+        extra: '^1.0.0',
+      };
+      await Bun.write(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+      const patch = await runCli(['patch', 'root-pkg', '-m', 'Add extra runtime dependency'], {
+        cwd,
+        env: patchedEnv,
+      });
+      expect(patch.exitCode).toBe(0);
+
+      const add = await runCli(['add', '--with-deps', 'root-pkg'], { cwd, env: patchedEnv });
+      expect(add.exitCode).toBe(0);
+      expect(existsSync(join(cwd, 'inrepo_modules', 'extra@1.0.0', 'package.json'))).toBe(true);
+      expect(add.stdout).toContain('extra ^1.0.0 → 1.0.0');
+
+      const lock = await readJson(join(cwd, 'inrepo.lock.json'));
+      expect(lock.graph).toEqual({
+        'root-pkg': {
+          version: '1.0.0',
+          root: true,
+          dependencies: {
+            leaf: { range: '^1.0.0', version: '1.0.0', module: 'leaf@1.0.0' },
+            extra: { range: '^1.0.0', version: '1.0.0', module: 'extra@1.0.0' },
+          },
+        },
+        'leaf@1.0.0': { version: '1.0.0' },
+        'extra@1.0.0': { version: '1.0.0' },
+      });
+    } finally {
+      await patched.cleanup();
+    }
+  });
+
+  test('plain add is unchanged: one package, lockfileVersion 1, no graph', async () => {
+    const add = await runCli(['add', '--git', fx.gitUrl('alpha'), 'alpha'], { cwd, env });
+    expect(add.exitCode).toBe(0);
+    expect(add.stdout).toMatch(/Recorded "alpha" in inrepo config/);
+
+    expect(existsSync(join(cwd, 'inrepo_modules', 'beta'))).toBe(false);
+    const cfg = await readJson(join(cwd, 'inrepo.json'));
+    expect((cfg.packages as ConfigPackage[]).map((p) => p.name)).toEqual(['alpha']);
+
+    const lock = await readJson(join(cwd, 'inrepo.lock.json'));
+    expect(lock.lockfileVersion).toBe(1);
+    expect('graph' in lock).toBe(false);
+  });
+
+  test('vendors and replays a scoped package graph', async () => {
+    const scoped = await makePackageGraphFixture([
+      {
+        name: '@scope/root',
+        versions: { '1.0.0': { dependencies: { '@scope/leaf': '^1.0.0' } } },
+      },
+      { name: '@scope/leaf', versions: { '1.1.0': {} } },
+    ]);
+    try {
+      const scopedEnv = { ...envFor('inrepo.json'), INREPO_REGISTRY: scoped.registryUrl };
+      const add = await runCli(
+        ['add', '--git', scoped.gitUrl('@scope/root'), '--with-deps', '@scope/root'],
+        { cwd, env: scopedEnv },
+      );
+      expect(add.exitCode).toBe(0);
+      expect(existsSync(join(cwd, 'inrepo_modules', '@scope', 'root', 'package.json'))).toBe(true);
+      expect(
+        existsSync(join(cwd, 'inrepo_modules', '@scope', 'leaf@1.1.0', 'package.json')),
+      ).toBe(true);
+
+      const lock = await readJson(join(cwd, 'inrepo.lock.json'));
+      expect(lock.graph).toEqual({
+        '@scope/root': {
+          version: '1.0.0',
+          root: true,
+          dependencies: {
+            '@scope/leaf': {
+              range: '^1.0.0',
+              version: '1.1.0',
+              module: '@scope/leaf@1.1.0',
+            },
+          },
+        },
+        '@scope/leaf@1.1.0': { version: '1.1.0' },
+      });
+
+      const offline = { ...envFor('inrepo.json'), INREPO_REGISTRY: OFFLINE_REGISTRY };
+      expect((await runCli(['sync'], { cwd, env: offline })).exitCode).toBe(0);
+      expect((await runCli(['verify'], { cwd, env: offline })).exitCode).toBe(0);
+    } finally {
+      await scoped.cleanup();
+    }
+  });
+
+  test('--with-deps cannot be combined with --no-save', async () => {
+    const r = await runCli(['add', '--with-deps', '--no-save', 'alpha'], { cwd, env });
+    expect(r.exitCode).toBe(1);
+    expect(r.stderr).toMatch(/--with-deps cannot be combined with --no-save/);
+  });
+});
+
+describe('CLI: add --with-deps failure modes (e2e)', () => {
+  let cwd: string;
+
+  beforeEach(async () => {
+    cwd = await makeTmpDir('inrepo-e2e-withdeps-fail-');
+    await bootstrapHostPackageJson(cwd);
+  });
+
+  afterEach(async () => {
+    await cleanupTmpDir(cwd);
+  });
+
+  async function expectNothingVendored(): Promise<void> {
+    expect(existsSync(join(cwd, 'inrepo_modules'))).toBe(false);
+    expect(existsSync(join(cwd, 'inrepo.lock.json'))).toBe(false);
+    const cfg = await readJson(join(cwd, 'inrepo.json'));
+    expect(cfg.packages).toEqual([]);
+  }
+
+  test('non-overlapping ranges materialize separate exact module instances', async () => {
+    const fx = await makePackageGraphFixture([
+      {
+        name: 'root-pkg',
+        versions: { '1.0.0': { dependencies: { left: '^1.0.0', right: '^1.0.0' } } },
+      },
+      { name: 'left', versions: { '1.0.0': { dependencies: { shared: '^1.0.0' } } } },
+      { name: 'right', versions: { '1.0.0': { dependencies: { shared: '^2.0.0' } } } },
+      { name: 'shared', versions: { '1.0.0': {}, '2.0.0': {} } },
+    ]);
+    try {
+      const r = await runCli(['add', '--git', fx.gitUrl('root-pkg'), '--with-deps', 'root-pkg'], {
+        cwd,
+        env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl },
+      });
+      expect(r.exitCode).toBe(0);
+      for (const module of [
+        'root-pkg',
+        'left@1.0.0',
+        'right@1.0.0',
+        'shared@1.0.0',
+        'shared@2.0.0',
+      ]) {
+        expect(existsSync(join(cwd, 'inrepo_modules', module, 'package.json'))).toBe(true);
+      }
+
+      const config = await readJson(join(cwd, 'inrepo.json'));
+      const packages = config.packages as ConfigPackage[];
+      expect(
+        packages
+          .filter((pkg) => pkg.name === 'shared')
+          .map((pkg) => pkg.module)
+          .sort(),
+      ).toEqual(['shared@1.0.0', 'shared@2.0.0']);
+
+      const lock = (await readJson(join(cwd, 'inrepo.lock.json'))) as {
+        lockfileVersion: number;
+        modules: Record<string, { source: string }>;
+        graph: Record<string, { dependencies?: Record<string, { module: string; version: string }> }>;
+      };
+      expect(lock.lockfileVersion).toBe(4);
+      expect(lock.modules['shared@1.0.0']?.source).toBe('shared');
+      expect(lock.modules['shared@2.0.0']?.source).toBe('shared');
+      expect(lock.graph['left@1.0.0']?.dependencies?.shared).toMatchObject({
+        module: 'shared@1.0.0',
+        version: '1.0.0',
+      });
+      expect(lock.graph['right@1.0.0']?.dependencies?.shared).toMatchObject({
+        module: 'shared@2.0.0',
+        version: '2.0.0',
+      });
+      expect(
+        (
+          await runCli(['verify'], {
+            cwd,
+            env: { ...envFor('inrepo.json'), INREPO_REGISTRY: OFFLINE_REGISTRY },
+          })
+        ).exitCode,
+      ).toBe(0);
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  test('an unsupported dependency source fails before anything is vendored', async () => {
+    const fx = await makePackageGraphFixture([
+      {
+        name: 'root-pkg',
+        versions: { '1.0.0': { dependencies: { 'internal-tool': 'workspace:^' } } },
+      },
+    ]);
+    try {
+      const r = await runCli(['add', '--git', fx.gitUrl('root-pkg'), '--with-deps', 'root-pkg'], {
+        cwd,
+        env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl },
+      });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(
+        /"root-pkg" depends on "internal-tool" as "workspace:\^" \(workspace protocol/,
+      );
+      await expectNothingVendored();
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  test('a monorepo package fails instead of reading the workspace root as the package', async () => {
+    const fx = await makePackageGraphFixture([
+      {
+        name: '@scope/cli',
+        checkoutName: 'workspace-root',
+        versions: { '1.0.0': { dependencies: { leaf: '^1.0.0' } } },
+      },
+      { name: 'leaf', versions: { '1.0.0': {} } },
+    ]);
+    try {
+      const r = await runCli(
+        ['add', '--git', fx.gitUrl('@scope/cli'), '--with-deps', '@scope/cli'],
+        { cwd, env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl } },
+      );
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toContain(
+        'the repository root declares package "workspace-root". Monorepo package subdirectories are not supported yet.',
+      );
+      await expectNothingVendored();
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  test('a dependency with no published tag fails with the package named', async () => {
+    const fx = await makePackageGraphFixture([
+      { name: 'root-pkg', versions: { '1.0.0': { dependencies: { loose: '^1.0.0' } } } },
+      { name: 'loose', versions: { '1.0.0': {} }, untagged: true },
+    ]);
+    try {
+      const r = await runCli(['add', '--git', fx.gitUrl('root-pkg'), '--with-deps', 'root-pkg'], {
+        cwd,
+        env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl },
+      });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/no tag for "loose@1\.0\.0"/);
+      await expectNothingVendored();
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  test('a dependency with no repository metadata fails with the package named', async () => {
+    const fx = await makePackageGraphFixture([
+      { name: 'root-pkg', versions: { '1.0.0': { dependencies: { hidden: '^1.0.0' } } } },
+      { name: 'hidden', versions: { '1.0.0': {} }, noRepository: true },
+    ]);
+    try {
+      const r = await runCli(['add', '--git', fx.gitUrl('root-pkg'), '--with-deps', 'root-pkg'], {
+        cwd,
+        env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl },
+      });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/"hidden@1\.0\.0".*no usable "repository" clone URL/s);
+      await expectNothingVendored();
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  test('an invalid dependency subtree fails before config, graph, or modules are written', async () => {
+    const fx = await makePackageGraphFixture([
+      {
+        name: 'root-pkg',
+        versions: { '1.0.0': { dependencies: { broken: '^1.0.0' } } },
+      },
+      {
+        name: 'broken',
+        versions: { '1.0.0': {} },
+        repositoryDirectory: 'packages/missing',
+      },
+    ]);
+    try {
+      const r = await runCli(['add', '--git', fx.gitUrl('root-pkg'), '--with-deps', 'root-pkg'], {
+        cwd,
+        env: { ...envFor('inrepo.json'), INREPO_REGISTRY: fx.registryUrl },
+      });
+      expect(r.exitCode).toBe(1);
+      expect(r.stderr).toMatch(/Repository directory "packages\/missing" for "broken" does not exist/);
+      await expectNothingVendored();
+    } finally {
+      await fx.cleanup();
+    }
+  });
+});

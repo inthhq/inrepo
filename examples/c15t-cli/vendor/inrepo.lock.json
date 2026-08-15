@@ -1,0 +1,13 @@
+{
+  "lockfileVersion": 3,
+  "modules": {
+    "@c15t/cli": {
+      "source": "@c15t/cli",
+      "gitUrl": "https://github.com/c15t/c15t.git",
+      "repositoryDirectory": "packages/cli",
+      "commit": "017433b2ca27e29177c320f51b973e4a78b6851e",
+      "ref": "@c15t/cli@2.2.0",
+      "updatedAt": "2026-08-12T00:00:00.000Z"
+    }
+  }
+}

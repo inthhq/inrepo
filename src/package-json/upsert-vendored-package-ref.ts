@@ -4,8 +4,8 @@ import { relative, sep } from 'node:path';
 import { moduleDestPath } from '../paths/module-dest-path.js';
 import { packageJsonPath } from '../paths/package-json-path.js';
 
-function localFilePackageSpecifier(cwd: string, packageName: string): string {
-  const dest = moduleDestPath(cwd, packageName);
+function localFilePackageSpecifier(cwd: string, module: string): string {
+  const dest = moduleDestPath(cwd, module);
   const rel = relative(cwd, dest);
   const normalized = rel.split(sep).join('/');
   return `file:${normalized}`;
@@ -48,6 +48,7 @@ export async function upsertRootPackageJsonDependency(
   cwd: string,
   packageName: string,
   dev: boolean,
+  module: string = packageName,
 ): Promise<void> {
   const path = packageJsonPath(cwd);
   if (!existsSync(path)) return;
@@ -68,7 +69,7 @@ export async function upsertRootPackageJsonDependency(
   const otherKey = dev ? 'dependencies' : 'devDependencies';
 
   const primary = ensureDepObject(data, primaryKey);
-  const specifier = localFilePackageSpecifier(cwd, packageName);
+  const specifier = localFilePackageSpecifier(cwd, module);
   primary[packageName] = specifier;
 
   if (data[otherKey] != null) {

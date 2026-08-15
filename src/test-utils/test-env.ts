@@ -1,5 +1,5 @@
 /** Environment variables that influence inrepo's CLI / setup behavior. */
-export const ENV_KEYS = ['INREPO_CONFIG', 'INREPO_NONINTERACTIVE', 'CI'] as const;
+export const ENV_KEYS = ['INREPO_CONFIG', 'INREPO_NONINTERACTIVE', 'INREPO_REGISTRY', 'CI'] as const;
 
 export type EnvSnapshot = Record<string, string | undefined>;
 

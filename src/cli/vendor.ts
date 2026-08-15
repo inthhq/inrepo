@@ -9,11 +9,13 @@ import { backupDirPath, overlayDirPath } from '../overlay/overlay-paths.js';
 import { hashTree } from '../overlay/tree-hash.js';
 import { copyTree } from '../overlay/tree-utils.js';
 import { upsertRootPackageJsonDependency } from '../package-json/upsert-vendored-package-ref.js';
+import { readPackageManifest } from '../package-json/read-package-manifest.js';
 import { moduleDestPath } from '../paths/module-dest-path.js';
-import { normalizeGithubHttpsUrl } from '../registry/normalize-github-https-url.js';
-import { resolveGitUrlFromNpm } from '../registry/resolve-git-url-from-npm.js';
+import { normalizeRepositoryUrlIdentity } from '../registry/normalize-repository-url-identity.js';
+import { resolvePackageSourceFromNpm } from '../registry/resolve-git-url-from-npm.js';
 import { upsertLockModule } from '../lockfile/upsert-lock-module.js';
 import { readModuleState, writeModuleState } from '../overlay/module-state.js';
+import type { RewireReport } from '../rewire/rewire-tree.js';
 import { spinner, warn } from './ui.js';
 import type { MaterializeOptions, PackageSpec } from './types.js';
 
@@ -35,44 +37,31 @@ function normalizedRef(ref?: string | null): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
-function normalizeGitUrlForComparison(raw: string | undefined | null): string | null {
-  if (!raw?.trim()) return null;
-
-  const trimmed = raw.trim().replace(/^git\+/i, '');
-  const github = normalizeGithubHttpsUrl(trimmed);
-  if (github) return github;
-
-  const hasUrlScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed);
-  const scpLike = hasUrlScheme
-    ? null
-    : /^(?<user>[^@]+@)?(?<host>[^:/]+):(?<path>.+)$/.exec(trimmed);
-  if (scpLike?.groups) {
-    const user = scpLike.groups.user ?? '';
-    const host = scpLike.groups.host.toLowerCase();
-    const path = scpLike.groups.path.replace(/\.git$/i, '');
-    return `${user}${host}:${path}`;
-  }
-
-  try {
-    const parsed = new URL(trimmed);
-    parsed.hostname = parsed.hostname.toLowerCase();
-    parsed.pathname = parsed.pathname.replace(/\.git$/i, '');
-    const normalized = parsed.toString();
-    return normalized.endsWith('/') ? normalized.slice(0, -1) : normalized;
-  } catch {
-    return trimmed.replace(/\.git$/i, '');
-  }
-}
-
-async function resolvePackageGitUrl(
+async function resolvePackageSource(
   pkg: PackageSpec,
-  fallbackGitUrl: string | undefined,
+  fallback: { gitUrl: string; repositoryDirectory?: string } | undefined,
   s: ReturnType<typeof spinner>,
-): Promise<string> {
-  if (pkg.git?.trim()) return pkg.git.trim();
-  if (fallbackGitUrl) return fallbackGitUrl;
+): Promise<{ gitUrl: string; repositoryDirectory: string | null }> {
+  if (pkg.git?.trim()) {
+    const gitUrl = pkg.git.trim();
+    const sameRepository =
+      fallback != null &&
+      normalizeRepositoryUrlIdentity(gitUrl) ===
+        normalizeRepositoryUrlIdentity(fallback.gitUrl);
+    return {
+      gitUrl,
+      repositoryDirectory:
+        pkg.repositoryDirectory ?? (sameRepository ? fallback.repositoryDirectory : undefined) ?? null,
+    };
+  }
+  if (fallback) {
+    return {
+      gitUrl: fallback.gitUrl,
+      repositoryDirectory: pkg.repositoryDirectory ?? fallback.repositoryDirectory ?? null,
+    };
+  }
   s.message(`Resolving "${pkg.name}" from npm registry`);
-  return resolveGitUrlFromNpm(pkg.name);
+  return resolvePackageSourceFromNpm(pkg.name);
 }
 
 export async function makeSiblingStage(dest: string, prefix: string): Promise<string> {
@@ -99,6 +88,39 @@ export function overlayConflictMessage(name: string): string {
   return `both "inrepo_patches/${name}" and "inrepo_modules/${name}" changed since the last sync; run "inrepo sync" to rebuild or reconcile them manually`;
 }
 
+function countLabel(count: number, singular: string): string {
+  return `${count} ${singular}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Report the generated import rewiring for one package: what it rewrote, and
+ * every specifier that named a vendored dependency but resolved to no file.
+ * Unresolved specifiers are a warning rather than a failure — they are left
+ * exactly as upstream wrote them, so the tree stays deterministic either way.
+ */
+function reportRewire(name: string, report: RewireReport | null): void {
+  if (report == null) return;
+  if (report.specifiers > 0) {
+    console.log(
+      `  Rewired ${countLabel(report.specifiers, 'import specifier')} in ` +
+        `${countLabel(report.files, 'file')} of "${name}"`,
+    );
+  }
+  if (report.unresolved.length > 0) {
+    const shown = report.unresolved.slice(0, 5);
+    const suffix =
+      report.unresolved.length > shown.length
+        ? `, … (+${report.unresolved.length - shown.length} more)`
+        : '';
+    warn(
+      `Warning: could not rewire ${countLabel(report.unresolved.length, 'specifier')} in "${name}" ` +
+        `(left unchanged): ` +
+        shown.map((entry) => `${entry.specifier} in ${entry.file}`).join(', ') +
+        suffix,
+    );
+  }
+}
+
 export function hasTreeDrift(result: Awaited<ReturnType<typeof compareTrees>>): boolean {
   return (
     result.added.length > 0 ||
@@ -115,7 +137,8 @@ export async function materializePackage(
   globalKeep: string[],
   opts: MaterializeOptions,
 ): Promise<void> {
-  const dest = moduleDestPath(cwd, pkg.name);
+  const module = pkg.module ?? pkg.name;
+  const dest = moduleDestPath(cwd, module);
   const ref = normalizedRef(pkg.ref);
 
   // Pre-checkout warning needs to be on stderr (e2e contract). We emit it
@@ -130,46 +153,82 @@ export async function materializePackage(
   try {
     const keepList = mergedVendorKeeps(globalKeep, pkg);
     const excludeList = mergedVendorExcludes(globalExclude, pkg);
-    let gitUrl = await resolvePackageGitUrl(pkg, opts.lockEntry?.gitUrl, s);
-    const resolvedLockGitUrl = normalizeGitUrlForComparison(opts.lockEntry?.gitUrl);
+    const source = await resolvePackageSource(
+      pkg,
+      opts.lockEntry
+        ? {
+            gitUrl: opts.lockEntry.gitUrl,
+            repositoryDirectory: opts.lockEntry.repositoryDirectory,
+          }
+        : undefined,
+      s,
+    );
+    let gitUrl = source.gitUrl;
+    const repositoryDirectory = source.repositoryDirectory;
+    const resolvedLockGitUrl = normalizeRepositoryUrlIdentity(opts.lockEntry?.gitUrl);
     const usePinnedLock =
       opts.mode === 'sync' &&
       opts.lockEntry != null &&
-      resolvedLockGitUrl === normalizeGitUrlForComparison(gitUrl) &&
+      resolvedLockGitUrl === normalizeRepositoryUrlIdentity(gitUrl) &&
       opts.lockEntry.ref === (ref ?? null);
+    const pinnedCommit =
+      pkg.commit?.trim() ||
+      (usePinnedLock ? opts.lockEntry?.commit : null) ||
+      (opts.mode === 'add' ? (opts.resolvedCommit ?? null) : null) ||
+      null;
 
     s.message(
-      usePinnedLock
-        ? `Preparing upstream cache @ ${opts.lockEntry?.commit.slice(0, 7)}`
+      pinnedCommit
+        ? `Preparing upstream cache @ ${pinnedCommit.slice(0, 7)}`
         : `Preparing upstream cache${ref ? ` @ ${ref}` : ''}`,
     );
     const pristine = await ensurePristine({
       cwd,
-      name: pkg.name,
+      name: module,
       gitUrl,
+      repositoryDirectory,
       ref: ref ?? null,
-      commit: usePinnedLock ? opts.lockEntry?.commit ?? null : null,
+      commit: pinnedCommit,
       keep: keepList,
       exclude: excludeList,
+      artifact: pkg.artifact ?? opts.lockEntry?.artifact,
     });
     gitUrl = pristine.gitUrl;
+    if (opts.mode === 'add' && repositoryDirectory != null) {
+      const manifest = await readPackageManifest(pristine.dir);
+      if (manifest == null) {
+        throw new Error(`Cannot vendor "${pkg.name}": its selected repository directory has no package.json.`);
+      }
+      if (manifest.name !== pkg.name) {
+        throw new Error(
+          manifest.name == null
+            ? `Cannot vendor "${pkg.name}": its selected repository directory package.json has no name.`
+            : `Cannot vendor "${pkg.name}": its selected repository directory declares package "${manifest.name}".`,
+        );
+      }
+    }
 
-    const overlayHash = await hashTree(overlayDirPath(cwd, pkg.name));
+    const overlayHash = await hashTree(overlayDirPath(cwd, module));
     const stage = await makeSiblingStage(dest, '.inrepo-next-');
+    let rewire: RewireReport | null = null;
 
     try {
       s.message('Assembling generated vendor tree');
       await assembleModuleTree({
         cwd,
-        name: pkg.name,
+        name: module,
         pristineRoot: pristine.dir,
         commit: pristine.commit,
         gitUrl,
+        repositoryDirectory,
         targetRoot: stage,
+        onRewire: (report) => {
+          rewire = report;
+        },
       });
 
       const stageHash = await hashTree(stage);
-      const state = await readModuleState(cwd, pkg.name);
+      const state = await readModuleState(cwd, module);
       const currentModuleHash = existsSync(dest) ? await hashTree(dest) : EMPTY_TREE_HASH;
 
       if (existsSync(dest)) {
@@ -177,21 +236,21 @@ export async function materializePackage(
           const overlayChanged = overlayHash !== state.overlayHash;
           const moduleChanged = currentModuleHash !== state.moduleHash;
           if (!opts.force && overlayChanged && moduleChanged) {
-            throw new Error(overlayConflictMessage(pkg.name));
+            throw new Error(overlayConflictMessage(module));
           }
           if (!opts.force && !overlayChanged && moduleChanged) {
-            throw new Error(uncapturedEditsMessage(pkg.name));
+            throw new Error(uncapturedEditsMessage(module));
           }
         } else {
           const drift = await compareTrees(stage, dest);
           if (!opts.force && hasTreeDrift(drift)) {
-            throw new Error(uncapturedEditsMessage(pkg.name));
+            throw new Error(uncapturedEditsMessage(module));
           }
         }
 
         if (opts.force && currentModuleHash !== stageHash) {
           s.message('Saving working tree backup');
-          const backup = await snapshotModuleBackup(cwd, pkg.name, dest);
+          const backup = await snapshotModuleBackup(cwd, module, dest);
           warn(`Saved checkout backup: ${backup}`);
         }
 
@@ -200,7 +259,7 @@ export async function materializePackage(
       }
 
       await rename(stage, dest);
-      await writeModuleState(cwd, pkg.name, {
+      await writeModuleState(cwd, module, {
         overlayHash,
         moduleHash: stageHash,
       });
@@ -214,23 +273,34 @@ export async function materializePackage(
       !opts.lockEntry ||
       opts.lockEntry.commit !== pristine.commit ||
       opts.lockEntry.gitUrl !== gitUrl ||
+      (opts.lockEntry.repositoryDirectory ?? null) !== repositoryDirectory ||
       opts.lockEntry.ref !== (ref ?? null)
     ) {
       s.message('Updating lockfile');
-      await upsertLockModule(cwd, pkg.name, {
+      await upsertLockModule(cwd, module, {
         source: pkg.name,
         gitUrl,
+        ...(repositoryDirectory == null ? {} : { repositoryDirectory }),
         commit: pristine.commit,
         ref: ref ?? null,
+        ...((pkg.artifact ?? opts.lockEntry?.artifact) == null
+          ? {}
+          : { artifact: pkg.artifact ?? opts.lockEntry?.artifact }),
         updatedAt: new Date().toISOString(),
       });
     }
 
-    s.message('Updating package.json');
-    await upsertRootPackageJsonDependency(cwd, pkg.name, pkg.dev === true);
+    // Graph-managed dependency instances are reached through each dependent's
+    // recorded/re-written edge. Linking them all into the host package.json
+    // would collapse incompatible versions back to one package-name key.
+    if (module === pkg.name) {
+      s.message('Updating package.json');
+      await upsertRootPackageJsonDependency(cwd, pkg.name, pkg.dev === true, module);
+    }
 
     // Final stop message preserves the e2e contract: `Synced "<name>" @ <sha7>` on stdout.
     s.stop(`Synced "${pkg.name}" @ ${pristine.commit.slice(0, 7)} → ${dest}`);
+    reportRewire(pkg.name, rewire);
   } catch (e) {
     // Keep the spinner failure terse; the full error is printed by main() so we
     // do not duplicate the message.

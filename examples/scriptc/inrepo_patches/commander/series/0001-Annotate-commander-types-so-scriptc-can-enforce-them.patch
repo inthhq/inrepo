@@ -1,0 +1,459 @@
+From 4c0ba3c8a0b66a3c02c50d4f4afae82c00ca7742 Mon Sep 17 00:00:00 2001
+From: Kaylee <65376239+KayleeWilliams@users.noreply.github.com>
+Date: Tue, 11 Aug 2026 20:46:12 +0100
+Subject: [PATCH] Annotate commander types so scriptc can enforce them at
+ runtime
+
+---
+ lib/command.js        | 55 ++++++++++++++++++++++++-----------
+ lib/help.js           | 67 ++++++++++++++++++++++++++++++++++++++++---
+ lib/option.js         |  3 ++
+ lib/suggestSimilar.js |  6 ++++
+ 4 files changed, 111 insertions(+), 20 deletions(-)
+
+diff --git a/lib/command.js b/lib/command.js
+index 9a3d03e7d9d9e01fb8ca55b7bf7b1fe6522696d5..a87caa1bd547a25107807360c1da8b17240e6b52 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -24,6 +24,7 @@ export class Command extends EventEmitter {
+     this.commands = [];
+     /** @type {Option[]} */
+     this.options = [];
++    /** @type {(Command | null)} */
+     this.parent = null;
+     this._allowUnknownOption = false;
+     this._allowExcessArguments = false;
+@@ -33,18 +34,23 @@ export class Command extends EventEmitter {
+     /** @type {string[]} */
+     this.args = []; // cli args with options removed
+     this.rawArgs = [];
++    /** @type {Array<string | Array<string>>} */
+     this.processedArgs = []; // like .args but after custom processing and collecting variadic
+     this._scriptPath = null;
+     this._name = name || '';
++    /** @type {Record<string, string | boolean | number | Array<string> | null | undefined>} */
+     this._optionValues = {};
++    /** @type {Record<string, string>} */
+     this._optionValueSources = {}; // default, env, cli etc
+     this._storeOptionsAsProperties = false;
++    /** @type {((args: Array<string | Array<string>>) => void) | null} */
+     this._actionHandler = null;
+     this._executableHandler = false;
+     this._executableFile = null; // custom name for executable
+     this._executableDir = null; // custom search directory for subcommands
+     this._defaultCommandName = null;
+     this._exitCallback = null;
++    /** @type {string[]} */
+     this._aliases = [];
+     this._combineFlagAndOptionalValue = true;
+     this._description = '';
+@@ -52,6 +58,7 @@ export class Command extends EventEmitter {
+     this._argsDescription = undefined; // legacy
+     this._enablePositionalOptions = false;
+     this._passThroughOptions = false;
++    /** @type {Record<string, Array<(thisCommand: Command, actionCommand: Command) => (Promise<void> | undefined)> | undefined>} */
+     this._lifeCycleHooks = {}; // a hash of arrays
+     /** @type {(boolean | string)} */
+     this._showHelpAfterError = false;
+@@ -76,9 +83,10 @@ export class Command extends EventEmitter {
+ 
+     this._hidden = false;
+     /** @type {(Option | null | undefined)} */
++    /** @type {(Option | null | undefined)} */
+     this._helpOption = undefined; // Lazy created on demand. May be null if help option is disabled.
+     this._addImplicitHelpCommand = undefined; // undecided whether true or false yet, not inherited
+-    /** @type {Command} */
++    /** @type {(Command | undefined)} */
+     this._helpCommand = undefined; // lazy initialised, inherited
+     this._helpConfiguration = {};
+     /** @type {string | undefined} */
+@@ -120,6 +128,7 @@ export class Command extends EventEmitter {
+    */
+ 
+   _getCommandAndAncestors() {
++    /** @type {Command[]} */
+     const result = [];
+     // eslint-disable-next-line @typescript-eslint/no-this-alias
+     for (let command = this; command; command = command.parent) {
+@@ -402,7 +411,7 @@ export class Command extends EventEmitter {
+    *    program.helpCommand(false); // suppress default help command
+    *    program.helpCommand(true); // add help command even if no subcommands
+    *
+-   * @param {string|boolean} enableOrNameAndArgs - enable with custom name and/or arguments, or boolean to override whether added
++   * @param {(string|boolean)} [enableOrNameAndArgs] - enable with custom name and/or arguments, or boolean to override whether added
+    * @param {string} [description] - custom description
+    * @return {Command} `this` command for chaining
+    */
+@@ -643,6 +652,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    */
+ 
+   _registerCommand(command) {
++    /** @type {(cmd: Command) => Array<string>} */
+     const knownBy = (cmd) => {
+       return [cmd.name()].concat(cmd.aliases());
+     };
+@@ -986,6 +996,8 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    * Get user arguments from implied or explicit arguments.
+    * Side-effects: set _scriptPath if args included script. Used for default program name, and subcommand searches.
+    *
++   * @param {string[]} [argv]
++   * @param {{ from?: string }} [parseOptions]
+    * @private
+    */
+ 
+@@ -1104,7 +1116,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    * @param {string[]} [argv]
+    * @param {object} [parseOptions]
+    * @param {string} parseOptions.from - where the args are from: 'node', 'user', 'electron'
+-   * @return {Promise}
++   * @return {Promise<unknown>}
+    */
+ 
+   async parseAsync(argv, parseOptions) {
+@@ -1366,6 +1378,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     if (!subCommand) this.help({ error: true });
+ 
+     subCommand._prepareForParse();
++    /** @type {Promise<unknown> | undefined} */
+     let promiseChain;
+     promiseChain = this._chainOrCallSubCommandHook(
+       promiseChain,
+@@ -1455,6 +1468,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+ 
+     this._checkNumberOfArguments();
+ 
++    /** @type {Array<string | Array<string>>} */
+     const processedArgs = [];
+     this.registeredArguments.forEach((declaredArg, index) => {
+       let value = declaredArg.defaultValue;
+@@ -1484,9 +1498,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
+   /**
+    * Once we have a promise we chain, but call synchronously until then.
+    *
+-   * @param {(Promise|undefined)} promise
+-   * @param {Function} fn
+-   * @return {(Promise|undefined)}
++   * @param {(Promise<unknown>|undefined)} promise
++   * @param {() => (Promise<unknown> | undefined)} fn
++   * @return {(Promise<unknown>|undefined)}
+    * @private
+    */
+ 
+@@ -1502,14 +1516,15 @@ Expecting one of '${allowedValues.join("', '")}'`);
+ 
+   /**
+    *
+-   * @param {(Promise|undefined)} promise
++   * @param {(Promise<unknown>|undefined)} promise
+    * @param {string} event
+-   * @return {(Promise|undefined)}
++   * @return {(Promise<unknown>|undefined)}
+    * @private
+    */
+ 
+   _chainOrCallHooks(promise, event) {
+     let result = promise;
++    /** @type {Array<{hookedCommand: Command, callback: (thisCommand: Command, actionCommand: Command) => (Promise<void> | undefined)}>} */
+     const hooks = [];
+     this._getCommandAndAncestors()
+       .reverse()
+@@ -1533,10 +1548,10 @@ Expecting one of '${allowedValues.join("', '")}'`);
+ 
+   /**
+    *
+-   * @param {(Promise|undefined)} promise
++   * @param {(Promise<unknown>|undefined)} promise
+    * @param {Command} subCommand
+    * @param {string} event
+-   * @return {(Promise|undefined)}
++   * @return {(Promise<unknown>|undefined)}
+    * @private
+    */
+ 
+@@ -1556,6 +1571,8 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    * Process arguments in context of this command.
+    * Returns action result, in case it is a promise.
+    *
++   * @param {string[]} operands
++   * @param {string[]} unknown
+    * @private
+    */
+ 
+@@ -1610,6 +1627,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+       checkForUnknownOptions();
+       this._processArguments();
+ 
++      /** @type {Promise<unknown> | undefined} */
+       let promiseChain;
+       promiseChain = this._chainOrCallHooks(promiseChain, 'preAction');
+       promiseChain = this._chainOrCall(promiseChain, () =>
+@@ -1656,6 +1674,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    * Find matching command.
+    *
+    * @private
++   * @param {string} [name]
+    * @return {Command | undefined}
+    */
+   _findCommand(name) {
+@@ -1669,7 +1688,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    * Return an option matching `arg` if any.
+    *
+    * @param {string} arg
+-   * @return {Option}
++   * @return {(Option|undefined)}
+    * @package
+    */
+ 
+@@ -1778,6 +1797,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     };
+ 
+     // parse options
++    /** @type {(Option | null)} */
+     let activeVariadicOption = null;
+     let activeGroup = null; // working through group of short options, like -abc
+     let i = 0;
+@@ -1909,7 +1929,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+   /**
+    * Return an object containing local option values as key-value pairs.
+    *
+-   * @return {object}
++   * @return {Record<string, string | boolean | number | Array<string> | null | undefined>}
+    */
+   opts() {
+     if (this._storeOptionsAsProperties) {
+@@ -2129,8 +2149,10 @@ Expecting one of '${allowedValues.join("', '")}'`);
+ 
+     if (flag.startsWith('--') && this._showSuggestionAfterError) {
+       // Looping to pick up the global options too
++      /** @type {string[]} */
+       let candidateFlags = [];
+       // eslint-disable-next-line @typescript-eslint/no-this-alias
++      /** @type {(Command | null)} */
+       let command = this;
+       do {
+         const moreFlags = command
+@@ -2178,6 +2200,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     let suggestion = '';
+ 
+     if (this._showSuggestionAfterError) {
++      /** @type {string[]} */
+       const candidateNames = [];
+       this.createHelp()
+         .visibleCommands(this)
+@@ -2478,7 +2501,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    * @typedef HelpContext
+    * @type {object}
+    * @property {boolean} error
+-   * @property {number} helpWidth
++   * @property {(number | undefined)} helpWidth
+    * @property {boolean} hasColors
+    * @property {function} write - includes stripColor if needed
+    *
+@@ -2565,7 +2588,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    * program.helpOption('-?, --help' 'show help'); // customise
+    * program.helpOption(false); // disable
+    *
+-   * @param {(string | boolean)} flags
++   * @param {(string | boolean)} [flags]
+    * @param {string} [description]
+    * @return {Command} `this` command for chaining
+    */
+@@ -2653,7 +2676,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    * @type {object}
+    * @property {boolean} error
+    * @property {Command} command
+-   * @property {function} write
++   * @property {(str: string) => void} write
+    */
+ 
+   /**
+@@ -2693,7 +2716,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+   /**
+    * Output help information if help flags specified
+    *
+-   * @param {Array} args - array of options to search for help flags
++   * @param {Array<string>} args - array of options to search for help flags
+    * @private
+    */
+ 
+diff --git a/lib/help.js b/lib/help.js
+index 6afac74a14053eeafdb9b5e110ccfcecd62ffc01..3c1df7c053d1a30ba5f28aa3d7b1fbc6eb504719 100644
+--- a/lib/help.js
++++ b/lib/help.js
+@@ -12,6 +12,7 @@ import { stripVTControlCharacters } from 'node:util';
+ // Although this is a class, methods are static in style to allow override using subclass or just functions.
+ export class Help {
+   constructor() {
++    /** @type {(number | undefined)} */
+     this.helpWidth = undefined;
+     this.minWidthToWrap = 40;
+     this.sortSubcommands = false;
+@@ -410,12 +411,14 @@ export class Help {
+   /**
+    * Group items by their help group heading.
+    *
+-   * @param {Command[] | Option[]} unsortedItems
+-   * @param {Command[] | Option[]} visibleItems
+-   * @param {Function} getGroup
+-   * @returns {Map<string, Command[] | Option[]>}
++   * @template T
++   * @param {T[]} unsortedItems
++   * @param {T[]} visibleItems
++   * @param {(item: T) => string} getGroup
++   * @returns {Map<string, T[]>}
+    */
+   groupItems(unsortedItems, visibleItems, getGroup) {
++    /** @type {Map<string, T[]>} */
+     const result = new Map();
+     // Add groups in order of appearance in unsortedItems.
+     unsortedItems.forEach((item) => {
+@@ -543,10 +546,18 @@ export class Help {
+    * @param {string} str
+    * @returns {string}
+    */
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleTitle(str) {
+     return str;
+   }
+ 
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleUsage(str) {
+     // Usage has lots of parts the user might like to color separately! Assume default usage string which is formed like:
+     //    command subcommand [options] [command] <foo> [bar]
+@@ -561,24 +572,52 @@ export class Help {
+       })
+       .join(' ');
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleCommandDescription(str) {
+     return this.styleDescriptionText(str);
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleOptionDescription(str) {
+     return this.styleDescriptionText(str);
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleSubcommandDescription(str) {
+     return this.styleDescriptionText(str);
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleArgumentDescription(str) {
+     return this.styleDescriptionText(str);
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleDescriptionText(str) {
+     return str;
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleOptionTerm(str) {
+     return this.styleOptionText(str);
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleSubcommandTerm(str) {
+     // This is very like usage with lots of parts! Assume default string which is formed like:
+     //    subcommand [options] <foo> [bar]
+@@ -592,18 +631,38 @@ export class Help {
+       })
+       .join(' ');
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleArgumentTerm(str) {
+     return this.styleArgumentText(str);
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleOptionText(str) {
+     return str;
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleArgumentText(str) {
+     return str;
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleSubcommandText(str) {
+     return str;
+   }
++  /**
++   * @param {string} str
++   * @returns {string}
++   */
+   styleCommandText(str) {
+     return str;
+   }
+diff --git a/lib/option.js b/lib/option.js
+index 4b4daafd980df717019dfe8a5838acd089cb12ce..6e172759828b05f4f38f0a6dbf717078524d75f9 100644
+--- a/lib/option.js
++++ b/lib/option.js
+@@ -270,8 +270,11 @@ export class DualOptions {
+    * @param {Option[]} options
+    */
+   constructor(options) {
++    /** @type {Map<string, Option>} */
+     this.positiveOptions = new Map();
++    /** @type {Map<string, Option>} */
+     this.negativeOptions = new Map();
++    /** @type {Set<string>} */
+     this.dualOptions = new Set();
+     options.forEach((option) => {
+       if (option.negate) {
+diff --git a/lib/suggestSimilar.js b/lib/suggestSimilar.js
+index 19930064dcc6e12e4ecdb648b098a687a6087f62..26b2fec9ca281eed4aa3cc5fad387a69425cee0f 100644
+--- a/lib/suggestSimilar.js
++++ b/lib/suggestSimilar.js
+@@ -1,5 +1,10 @@
+ const maxDistance = 3;
+ 
++/**
++ * @param {string} a
++ * @param {string} b
++ * @return {number}
++ */
+ function editDistance(a, b) {
+   // https://en.wikipedia.org/wiki/Damerau–Levenshtein_distance
+   // Calculating optimal string alignment distance, no substring is edited more than once.
+@@ -64,6 +69,7 @@ export function suggestSimilar(word, candidates) {
+     candidates = candidates.map((candidate) => candidate.slice(2));
+   }
+ 
++  /** @type {string[]} */
+   let similar = [];
+   let bestDistance = maxDistance;
+   const minSimilarity = 0.4;

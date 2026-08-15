@@ -2,13 +2,16 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { isLoadConfigNotFoundError, loadConfig } from '../config/load-config.js';
+import { verifyLockGraph } from '../deps/verify-lock-graph.js';
 import { readLockfile } from '../lockfile/read-lockfile.js';
+import { readPackageManifest } from '../package-json/read-package-manifest.js';
 import { assembleModuleTree } from '../overlay/assemble-module.js';
 import { ensurePristine } from '../overlay/cache.js';
 import { compareTrees, type CompareTreesResult } from '../overlay/compare-trees.js';
 import { moduleDestPath } from '../paths/module-dest-path.js';
 import { runGitCapture } from '../git/run-git-capture.js';
 import { normalizeGithubHttpsUrl } from '../registry/normalize-github-https-url.js';
+import type { LockGraph } from '../types/lock-graph.js';
 import type { VerifyResult } from '../types/verify-result.js';
 
 const VENDOR_MARKER = '.inrepo-vendor.json';
@@ -19,7 +22,11 @@ function remotesEquivalent(a: string, b: string): boolean {
   return na === nb;
 }
 
-function parseVendorMarker(raw: string): { commit: string; gitUrl: string } | null {
+function parseVendorMarker(raw: string): {
+  commit: string;
+  gitUrl: string;
+  repositoryDirectory: string | null;
+} | null {
   let data: unknown;
   try {
     data = JSON.parse(raw) as unknown;
@@ -31,7 +38,12 @@ function parseVendorMarker(raw: string): { commit: string; gitUrl: string } | nu
   const commit = rec.commit;
   const gitUrl = rec.gitUrl;
   if (typeof commit !== 'string' || typeof gitUrl !== 'string') return null;
-  return { commit: commit.toLowerCase(), gitUrl };
+  return {
+    commit: commit.toLowerCase(),
+    gitUrl,
+    repositoryDirectory:
+      typeof rec.repositoryDirectory === 'string' ? rec.repositoryDirectory : null,
+  };
 }
 
 function mergedVendorExcludes(globalExclude: string[], pkg: { exclude?: string[] }): string[] {
@@ -66,8 +78,38 @@ function formatTreeDrift(name: string, result: CompareTreesResult): string {
   return `"${name}": vendored tree does not match lockfile + overlay (${parts.join('; ')})`;
 }
 
-export async function verifyLock(cwd: string): Promise<VerifyResult> {
+/**
+ * Replay the recorded dependency graph offline: every input comes from
+ * committed files (`inrepo.lock.json` plus the vendored checkouts), so the
+ * graph check never reaches the npm registry.
+ */
+async function collectGraphErrors(
+  cwd: string,
+  graph: LockGraph,
+  moduleNames: Set<string>,
+): Promise<string[]> {
+  if (Object.keys(graph).length === 0) return [];
+  const vendoredVersions = new Map<string, string | null>();
+  for (const name of Object.keys(graph)) {
+    const dest = moduleDestPath(cwd, name);
+    if (!existsSync(dest)) continue;
+    try {
+      vendoredVersions.set(name, (await readPackageManifest(dest))?.version ?? null);
+    } catch {
+      vendoredVersions.set(name, null);
+    }
+  }
   const { modules } = await readLockfile(cwd);
+  return verifyLockGraph({
+    graph,
+    moduleNames,
+    vendoredVersions,
+    moduleSources: new Map(Object.entries(modules).map(([module, entry]) => [module, entry.source])),
+  });
+}
+
+export async function verifyLock(cwd: string): Promise<VerifyResult> {
+  const { modules, graph } = await readLockfile(cwd);
   const names = Object.keys(modules);
   if (names.length === 0) {
     return { ok: false, errors: ['No modules in inrepo.lock.json (nothing to verify).'] };
@@ -75,6 +117,7 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
 
   let configPackages: Array<{
     name: string;
+    module?: string;
     exclude?: string[];
     keep?: string[];
   }> = [];
@@ -88,7 +131,9 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
   } catch (e) {
     if (!isLoadConfigNotFoundError(e)) throw e;
   }
-  const configByName = new Map(configPackages.map((pkg) => [pkg.name, pkg] as const));
+  const configByName = new Map(
+    configPackages.map((pkg) => [pkg.module ?? pkg.name, pkg] as const),
+  );
 
   const errors: string[] = [];
   const verifyTmpRoot = join(cwd, '.inrepo', 'verify');
@@ -118,10 +163,12 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
         cwd,
         name,
         gitUrl: entry.gitUrl,
+        repositoryDirectory: entry.repositoryDirectory,
         ref: entry.ref,
         commit: entry.commit,
         keep: keepList,
         exclude: excludeList,
+        artifact: entry.artifact,
       });
       pristineDir = pristine.dir;
     } catch (e) {
@@ -138,6 +185,7 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
         pristineRoot: pristineDir,
         commit: entry.commit,
         gitUrl: entry.gitUrl,
+        repositoryDirectory: entry.repositoryDirectory,
         targetRoot: stage,
       });
     } catch (e) {
@@ -173,7 +221,11 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
         errors.push(`"${name}" remote check: ${err.message}`);
       }
     } else if (existsSync(markerPath)) {
-      let marker: { commit: string; gitUrl: string } | null;
+      let marker: {
+        commit: string;
+        gitUrl: string;
+        repositoryDirectory: string | null;
+      } | null;
       try {
         marker = parseVendorMarker(await readFile(markerPath, 'utf8'));
       } catch (e) {
@@ -197,6 +249,11 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
           `"${name}": vendor marker gitUrl does not match lock (marker=${marker.gitUrl}, lock=${entry.gitUrl})`,
         );
       }
+      if (marker.repositoryDirectory !== (entry.repositoryDirectory ?? null)) {
+        errors.push(
+          `"${name}": vendor marker repositoryDirectory does not match lock (marker=${marker.repositoryDirectory ?? '(root)'}, lock=${entry.repositoryDirectory ?? '(root)'})`,
+        );
+      }
     } else {
       errors.push(
         `"${name}" has no .git and no ${VENDOR_MARKER} (re-run inrepo sync): ${dest}`,
@@ -214,6 +271,8 @@ export async function verifyLock(cwd: string): Promise<VerifyResult> {
       await rm(stage, { recursive: true, force: true });
     }
   }
+
+  errors.push(...(await collectGraphErrors(cwd, graph, new Set(names))));
 
   if (errors.length) return { ok: false, errors };
   return { ok: true };

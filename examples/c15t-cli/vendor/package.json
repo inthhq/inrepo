@@ -1,0 +1,7 @@
+{
+  "name": "c15t-help-selected-source",
+  "private": true,
+  "dependencies": {
+    "@c15t/cli": "file:inrepo_modules/@c15t/cli"
+  }
+}

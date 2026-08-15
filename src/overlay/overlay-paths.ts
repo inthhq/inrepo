@@ -45,12 +45,60 @@ export function overlayDeletionsPath(cwd: string, name: string): string {
   return join(overlayDirPath(cwd, name), '.inrepo-deletions');
 }
 
+/** Directory name holding a package's ordered git patch series. */
+export const SERIES_DIR_NAME = 'series';
+
+export function seriesDirPath(cwd: string, name: string): string {
+  return join(overlayDirPath(cwd, name), SERIES_DIR_NAME);
+}
+
 export function cacheDirPath(cwd: string, name: string): string {
   return packageTreePath(join(cwd, '.inrepo', 'cache'), name);
 }
 
 export function cacheMetaPath(cwd: string, name: string): string {
   return join(cacheDirPath(cwd, name), '.cache-meta.json');
+}
+
+/** Content-addressed, unfiltered repository snapshots shared by package views. */
+export function repositoryCacheRootPath(cwd: string): string {
+  return join(cwd, '.inrepo', 'repositories');
+}
+
+export function repositoryCacheDirPath(cwd: string, key: string): string {
+  return join(repositoryCacheRootPath(cwd), key);
+}
+
+/** Content-addressed npm package payloads used to restore publish-only files. */
+export function artifactCacheRootPath(cwd: string): string {
+  return join(cwd, '.inrepo', 'artifacts');
+}
+
+export function artifactCacheDirPath(cwd: string, key: string): string {
+  return join(artifactCacheRootPath(cwd), key);
+}
+
+/**
+ * Root of an in-progress `inrepo update` for one package. Everything the
+ * command needs to resume or discard a conflicted rebase lives under here, and
+ * nothing outside it changes until the update succeeds.
+ */
+export function updateDirPath(cwd: string, name: string): string {
+  return packageTreePath(join(cwd, '.inrepo', 'updates'), name);
+}
+
+/** Scratch repository the user edits to resolve update conflicts. */
+export function updateRepoPath(cwd: string, name: string): string {
+  return join(updateDirPath(cwd, name), 'repo');
+}
+
+export function updateStatePath(cwd: string, name: string): string {
+  return join(updateDirPath(cwd, name), 'state.json');
+}
+
+/** Copy of `series/` taken before an update replaces the committed patches. */
+export function updateSeriesSnapshotPath(cwd: string, name: string): string {
+  return join(updateDirPath(cwd, name), 'series');
 }
 
 export function moduleStatePath(cwd: string, name: string): string {

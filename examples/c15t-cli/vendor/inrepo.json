@@ -1,0 +1,11 @@
+{
+  "packages": [
+    {
+      "name": "@c15t/cli",
+      "git": "https://github.com/c15t/c15t.git",
+      "repositoryDirectory": "packages/cli",
+      "ref": "@c15t/cli@2.2.0",
+      "keep": ["package.json", "src/actions/show-help-menu.ts"]
+    }
+  ]
+}

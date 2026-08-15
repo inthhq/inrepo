@@ -1,0 +1,9 @@
+node_modules/
+generated/
+inrepo_modules/
+.inrepo/
+demo-npm
+demo-static
+*.ll
+*.o
+full/.runtime-path

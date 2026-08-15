@@ -1,9 +1,18 @@
 import { readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { packageJsonPath } from '../paths/package-json-path.js';
+import { normalizeRepositoryDirectory } from '../registry/normalize-repository-directory.js';
 import type { InrepoJsonEntry } from './upsert-inrepo-json.js';
 
-type InrepoData = { packages: Record<string, unknown>[]; exclude?: unknown; keep?: unknown };
+type InrepoData = {
+  packages: Record<string, unknown>[];
+  exclude?: unknown;
+  keep?: unknown;
+  /** Object.keys order from object-shaped config (stable round-trip, includes unknown keys). */
+  fullKeyOrder?: string[];
+  /** Shallow snapshot of the parsed root object (object form only); preserves unknown top-level keys. */
+  rootSnapshot?: Record<string, unknown>;
+};
 
 function parseExistingInrepo(existing: unknown): InrepoData {
   if (existing == null) {
@@ -18,7 +27,11 @@ function parseExistingInrepo(existing: unknown): InrepoData {
       exclude?: unknown;
       keep?: unknown;
     };
-    const data: InrepoData = { packages: obj.packages };
+    const data: InrepoData = {
+      packages: obj.packages,
+      fullKeyOrder: Object.keys(obj),
+      rootSnapshot: { ...obj },
+    };
     if ('exclude' in obj) data.exclude = obj.exclude;
     if ('keep' in obj) data.keep = obj.keep;
     return data;
@@ -46,15 +59,29 @@ export async function upsertPackageJsonInrepo(cwd: string, entry: InrepoJsonEntr
 
   const data = parseExistingInrepo(pkg.inrepo);
 
-  const ix = data.packages.findIndex(
-    (p) => p && typeof p === 'object' && p.name === entry.name,
-  );
+  const identity = entry.module ?? entry.name;
+  const ix = data.packages.findIndex((p) => {
+    if (!p || typeof p !== 'object') return false;
+    return (typeof p.module === 'string' ? p.module : p.name) === identity;
+  });
   const next: Record<string, unknown> = { name: entry.name };
+  if (entry.module) next.module = entry.module;
   if (entry.git) next.git = entry.git;
   if (entry.ref) next.ref = entry.ref;
+  const repositoryDirectory =
+    typeof entry.repositoryDirectory === 'string'
+      ? normalizeRepositoryDirectory(
+          entry.repositoryDirectory,
+          'repositoryDirectory',
+        )
+      : entry.repositoryDirectory;
+  if (repositoryDirectory != null) next.repositoryDirectory = repositoryDirectory;
 
   if (ix >= 0) {
     const merged = { ...data.packages[ix], ...next };
+    if (entry.repositoryDirectory === null || repositoryDirectory === null) {
+      delete merged.repositoryDirectory;
+    }
     if (entry.dev === true) merged.dev = true;
     else delete merged.dev;
     data.packages[ix] = merged;
@@ -63,9 +90,20 @@ export async function upsertPackageJsonInrepo(cwd: string, entry: InrepoJsonEntr
     data.packages.push(next);
   }
 
-  const out: Record<string, unknown> = { packages: data.packages };
-  if ('exclude' in data) out.exclude = data.exclude;
-  if ('keep' in data) out.keep = data.keep;
+  let out: Record<string, unknown>;
+  if (data.fullKeyOrder && data.rootSnapshot) {
+    out = {};
+    for (const k of data.fullKeyOrder) {
+      if (k === 'packages') out.packages = data.packages;
+      else if (k === 'exclude' && 'exclude' in data) out.exclude = data.exclude;
+      else if (k === 'keep' && 'keep' in data) out.keep = data.keep;
+      else out[k] = data.rootSnapshot[k];
+    }
+  } else {
+    out = { packages: data.packages };
+    if ('exclude' in data) out.exclude = data.exclude;
+    if ('keep' in data) out.keep = data.keep;
+  }
   pkg.inrepo = out;
 
   await writeFile(path, `${JSON.stringify(pkg, null, 2)}\n`, 'utf8');

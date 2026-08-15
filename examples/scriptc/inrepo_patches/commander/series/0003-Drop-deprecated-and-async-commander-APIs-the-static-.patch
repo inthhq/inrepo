@@ -1,0 +1,97 @@
+From b40341e89435088f2ec27b4a11060219b6002fe5 Mon Sep 17 00:00:00 2001
+From: Kaylee <65376239+KayleeWilliams@users.noreply.github.com>
+Date: Tue, 11 Aug 2026 20:46:15 +0100
+Subject: [PATCH] Drop deprecated and async commander APIs the static build
+ cannot support
+
+---
+ lib/command.js | 44 +++++++++++++++-----------------------------
+ 1 file changed, 15 insertions(+), 29 deletions(-)
+
+diff --git a/lib/command.js b/lib/command.js
+index 881f92c37c269b7fec1793b0f5d95fee628c8dd6..ca4bf377e9f41f3d940ffa4914f03f9b0f022d15 100644
+--- a/lib/command.js
++++ b/lib/command.js
+@@ -257,7 +257,9 @@ export class Command {
+    */
+ 
+   createHelp() {
+-    return Object.assign(new Help(), this.configureHelp());
++    // Object.assign has no scriptc lowering; configureHelp() overrides are not
++    // supported in this static vendored build.
++    return new Help();
+   }
+ 
+   /**
+@@ -797,15 +799,8 @@ Expecting one of '${allowedValues.join("', '")}'`);
+     option.makeOptionMandatory(!!config.mandatory);
+     if (typeof fn === 'function') {
+       option.default(defaultValue).argParser(fn);
+-    } else if (fn instanceof RegExp) {
+-      // deprecated
+-      const regex = fn;
+-      fn = (val, def) => {
+-        const m = regex.exec(val);
+-        return m ? m[0] : def;
+-      };
+-      option.default(defaultValue).argParser(fn);
+     } else {
++      // (deprecated RegExp form of `fn` is not supported in this vendored build)
+       option.default(fn);
+     }
+ 
+@@ -1553,10 +1548,13 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    */
+ 
+   _chainOrCall(promise, fn) {
+-    // thenable
+-    if (promise?.then && typeof promise.then === 'function') {
+-      // already have a promise, chain callback
+-      return promise.then(() => fn());
++    // scriptc has no lowering for Promise.then; commander only chains here when
++    // an earlier hook or action handler returned a promise, which this static
++    // vendored build does not support.
++    if (promise) {
++      throw new Error(
++        'async hooks/actions are not supported in this static build',
++      );
+     }
+     // callback might return a promise
+     return fn();
+@@ -2584,15 +2582,12 @@ Expecting one of '${allowedValues.join("', '")}'`);
+    *
+    * Outputs built-in help, and custom text added using `.addHelpText()`.
+    *
+-   * @param {{ error: boolean } | Function} [contextOptions] - pass {error:true} to write to stderr instead of stdout
++   * @param {{ error: boolean }} [contextOptions] - pass {error:true} to write to stderr instead of stdout
+    */
+ 
+   outputHelp(contextOptions) {
+-    let deprecatedCallback;
+-    if (typeof contextOptions === 'function') {
+-      deprecatedCallback = contextOptions;
+-      contextOptions = undefined;
+-    }
++    // (deprecated callback form of contextOptions is not supported in this
++    // static vendored build)
+ 
+     const outputContext = this._getOutputContext(contextOptions);
+     /** @type {HelpTextEventContext} */
+@@ -2607,16 +2602,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
+       .forEach((command) => command.emit('beforeAllHelp', eventContext));
+     this.emit('beforeHelp', eventContext);
+ 
+-    let helpInformation = this.helpInformation({ error: outputContext.error });
+-    if (deprecatedCallback) {
+-      helpInformation = deprecatedCallback(helpInformation);
+-      if (
+-        typeof helpInformation !== 'string' &&
+-        !Buffer.isBuffer(helpInformation)
+-      ) {
+-        throw new Error('outputHelp callback must return a string or a Buffer');
+-      }
+-    }
++    const helpInformation = this.helpInformation({ error: outputContext.error });
+     outputContext.write(helpInformation);
+ 
+     if (this._getHelpOption()?.long) {
