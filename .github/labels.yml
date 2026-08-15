@@ -1,0 +1,59 @@
+# Source of truth for inrepo GitHub labels.
+# Kind (one) and state (maintainer-applied).
+# Unlabeled means untriaged — there is no needs-triage label.
+# No area:* labels: inrepo is one CLI, not a multi-surface monorepo.
+# Compatible with crazy-max/ghaction-github-labeler (`from_name` renames).
+
+# --- Kind ---
+
+- name: bug
+  color: "d73a4a"
+  description: Something isn't working
+
+- name: feature
+  color: "0e8a16"
+  description: New feature or enhancement
+  from_name: enhancement
+
+- name: docs
+  color: "0075ca"
+  description: Documentation updates or improvements
+  from_name: documentation
+
+# --- State ---
+
+- name: needs-repro
+  color: "fbca04"
+  description: Waiting on a minimal reproduction
+
+- name: needs-info
+  color: "fbca04"
+  description: Waiting on versions, environment, or clarification
+
+- name: needs-approval
+  color: "e4e669"
+  description: Feature or refactor needs maintainer approval before work starts
+
+- name: blocked
+  color: "b60205"
+  description: Blocked by other work or an upstream dependency
+
+- name: help wanted
+  color: "008672"
+  description: Community contributions welcome
+
+- name: good first issue
+  color: "7057ff"
+  description: Good for newcomers
+
+- name: duplicate
+  color: "cfd3d7"
+  description: This issue or pull request already exists
+
+- name: wontfix
+  color: "ffffff"
+  description: This will not be worked on
+
+- name: upstream
+  color: "e99695"
+  description: Belongs to a dependency or external tool
