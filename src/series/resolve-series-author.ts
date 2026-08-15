@@ -1,5 +1,6 @@
-import { runGitCapture } from '../git/run-git-capture.js';
-import { DEFAULT_SERIES_AUTHOR, type SeriesAuthor } from './series-git.js';
+import { runGitCapture } from "../git/run-git-capture.js";
+import { DEFAULT_SERIES_AUTHOR } from "./series-git.js";
+import type { SeriesAuthor } from "./series-git.js";
 
 /**
  * Identity recorded in the `From:` header of generated patches.
@@ -9,17 +10,22 @@ import { DEFAULT_SERIES_AUTHOR, type SeriesAuthor } from './series-git.js';
  * best available answer; {@link DEFAULT_SERIES_AUTHOR} is the fallback when git
  * has no identity configured.
  */
-export async function resolveSeriesAuthor(cwd: string): Promise<SeriesAuthor> {
+export const resolveSeriesAuthor = async function resolveSeriesAuthor(
+  cwd: string
+): Promise<SeriesAuthor> {
   const read = async (key: string): Promise<string> => {
     try {
-      return await runGitCapture(['config', '--get', key], { cwd });
+      return await runGitCapture(["config", "--get", key], { cwd });
     } catch {
-      return '';
+      return "";
     }
   };
-  const [name, email] = await Promise.all([read('user.name'), read('user.email')]);
+  const [name, email] = await Promise.all([
+    read("user.name"),
+    read("user.email"),
+  ]);
   return {
-    name: name || DEFAULT_SERIES_AUTHOR.name,
     email: email || DEFAULT_SERIES_AUTHOR.email,
+    name: name || DEFAULT_SERIES_AUTHOR.name,
   };
-}
+};

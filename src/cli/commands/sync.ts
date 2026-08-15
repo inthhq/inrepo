@@ -1,36 +1,48 @@
-import { ensureInrepoInitialized } from '../../config/ensure-inrepo-initialized.js';
-import { loadConfig } from '../../config/load-config.js';
-import { orderByDependencies } from '../../deps/vendored-graph.js';
-import { readLockfile } from '../../lockfile/read-lockfile.js';
-import { parseSyncArgs } from '../args.js';
-import { printBanner } from '../rendering.js';
-import type { DispatchOpts } from '../types.js';
-import { intro, outro } from '../ui.js';
-import { materializePackage } from '../vendor.js';
+import { ensureInrepoInitialized } from "../../config/ensure-inrepo-initialized.js";
+import { loadConfig } from "../../config/load-config.js";
+import { orderByDependencies } from "../../deps/vendored-graph.js";
+import { readLockfile } from "../../lockfile/read-lockfile.js";
+import { parseSyncArgs } from "../args.js";
+import { printBanner } from "../rendering.js";
+import type { DispatchOpts } from "../types.js";
+import { intro, outro } from "../ui.js";
+import { materializePackage } from "../vendor.js";
 
-export async function cmdSync(
+export const cmdSync = async function cmdSync(
   cwd: string,
   argv: string[] = [],
-  opts: DispatchOpts = {},
+  opts: DispatchOpts = {}
 ): Promise<void> {
   const args = parseSyncArgs(argv, opts.force);
-  if (!opts.suppressBanners) printBanner();
-
-  await ensureInrepoInitialized(cwd);
-  const { packages, exclude: globalExclude, keep: globalKeep } = await loadConfig(cwd);
-  const { modules, graph } = await readLockfile(cwd);
-  if (packages.length === 0) {
-    throw new Error('Config has an empty "packages" array. Add at least one package.');
+  if (!opts.suppressBanners) {
+    printBanner();
   }
 
-  if (!opts.suppressBanners) intro(`inrepo sync — ${packages.length} package(s)`);
+  await ensureInrepoInitialized(cwd);
+  const {
+    packages,
+    exclude: globalExclude,
+    keep: globalKeep,
+  } = await loadConfig(cwd);
+  const { modules, graph } = await readLockfile(cwd);
+  if (packages.length === 0) {
+    throw new Error(
+      'Config has an empty "packages" array. Add at least one package.'
+    );
+  }
+
+  if (!opts.suppressBanners) {
+    intro(`inrepo sync — ${packages.length} package(s)`);
+  }
   for (const pkg of orderByDependencies(packages, graph)) {
     const module = pkg.module ?? pkg.name;
     await materializePackage(cwd, pkg, globalExclude, globalKeep, {
-      mode: 'sync',
       force: args.force,
       lockEntry: modules[module],
+      mode: "sync",
     });
   }
-  if (!opts.suppressBanners) outro(`Done. ${packages.length} package(s) synced.`);
-}
+  if (!opts.suppressBanners) {
+    outro(`Done. ${packages.length} package(s) synced.`);
+  }
+};

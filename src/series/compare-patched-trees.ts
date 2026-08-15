@@ -3,17 +3,17 @@ import {
   relPosixToAbs,
   sha256File,
   walkTree,
-  type TreeKind,
-} from '../overlay/tree-utils.js';
+} from "../overlay/tree-utils.js";
+import type { TreeKind } from "../overlay/tree-utils.js";
 
-type TreeFingerprint = {
+interface TreeFingerprint {
   kind: TreeKind;
   /** sha256 of the file bytes, the symlink target, or '' for a directory. */
   content: string;
-  mode: '644' | '755' | null;
-};
+  mode: "644" | "755" | null;
+}
 
-export type PatchedTreeComparison = {
+export interface PatchedTreeComparison {
   /** One line per byte-level difference in files or symlinks; empty means identical. */
   differences: string[];
   /**
@@ -23,47 +23,64 @@ export type PatchedTreeComparison = {
    * differences.
    */
   droppedEmptyDirectories: string[];
-};
+}
 
-async function fingerprintTree(root: string): Promise<Map<string, TreeFingerprint>> {
-  const entries = await walkTree(root, { skip: defaultSkipTreePath, treatMissingAsEmpty: true });
+const fingerprintTree = async function fingerprintTree(
+  root: string
+): Promise<Map<string, TreeFingerprint>> {
+  const entries = await walkTree(root, {
+    skip: defaultSkipTreePath,
+    treatMissingAsEmpty: true,
+  });
   const out = new Map<string, TreeFingerprint>();
   for (const [relPosix, entry] of entries) {
-    if (entry.kind === 'dir') {
-      out.set(relPosix, { kind: 'dir', content: '', mode: null });
+    if (entry.kind === "dir") {
+      out.set(relPosix, { content: "", kind: "dir", mode: null });
       continue;
     }
-    if (entry.kind === 'symlink') {
-      out.set(relPosix, { kind: 'symlink', content: entry.linkTarget ?? '', mode: null });
+    if (entry.kind === "symlink") {
+      out.set(relPosix, {
+        content: entry.linkTarget ?? "",
+        kind: "symlink",
+        mode: null,
+      });
       continue;
     }
     out.set(relPosix, {
-      kind: 'file',
       content: await sha256File(relPosixToAbs(root, relPosix)),
-      mode: entry.executable ? '755' : '644',
+      kind: "file",
+      mode: entry.executable ? "755" : "644",
     });
   }
   return out;
-}
+};
 
-function isEmptyDirectory(tree: Map<string, TreeFingerprint>, relPosix: string): boolean {
+const isEmptyDirectory = function isEmptyDirectory(
+  tree: Map<string, TreeFingerprint>,
+  relPosix: string
+): boolean {
   for (const candidate of tree.keys()) {
-    if (candidate.startsWith(`${relPosix}/`)) return false;
+    if (candidate.startsWith(`${relPosix}/`)) {
+      return false;
+    }
   }
   return true;
-}
+};
 
 /**
  * Compare two patched trees byte for byte, including executable bits and
  * symlink targets. Directories only matter when they are empty, because every
  * other directory is implied by the paths it contains.
  */
-export async function comparePatchedTrees(
+export const comparePatchedTrees = async function comparePatchedTrees(
   leftRoot: string,
-  rightRoot: string,
+  rightRoot: string
 ): Promise<PatchedTreeComparison> {
-  const [left, right] = await Promise.all([fingerprintTree(leftRoot), fingerprintTree(rightRoot)]);
-  const paths = [...new Set([...left.keys(), ...right.keys()])].sort();
+  const [left, right] = await Promise.all([
+    fingerprintTree(leftRoot),
+    fingerprintTree(rightRoot),
+  ]);
+  const paths = [...new Set([...left.keys(), ...right.keys()])].toSorted();
   const differences: string[] = [];
   const droppedEmptyDirectories: string[] = [];
 
@@ -73,16 +90,19 @@ export async function comparePatchedTrees(
 
     if (!a || !b) {
       const present = a ?? b;
-      if (present == null) continue;
-      if (present.kind === 'dir') {
+      if (present == null) {
+        continue;
+      }
+      if (present.kind === "dir") {
         // Non-empty directories are already described by their contents.
-        if (a && isEmptyDirectory(left, relPosix)) droppedEmptyDirectories.push(relPosix);
-        else if (b && isEmptyDirectory(right, relPosix)) {
+        if (a && isEmptyDirectory(left, relPosix)) {
+          droppedEmptyDirectories.push(relPosix);
+        } else if (b && isEmptyDirectory(right, relPosix)) {
           differences.push(`unexpected empty directory: ${relPosix}`);
         }
         continue;
       }
-      differences.push(`${a ? 'missing' : 'unexpected'}: ${relPosix}`);
+      differences.push(`${a ? "missing" : "unexpected"}: ${relPosix}`);
       continue;
     }
 
@@ -90,10 +110,14 @@ export async function comparePatchedTrees(
       differences.push(`type changed: ${relPosix} (${a.kind} -> ${b.kind})`);
       continue;
     }
-    if (a.kind === 'dir') continue;
+    if (a.kind === "dir") {
+      continue;
+    }
     if (a.content !== b.content) {
       differences.push(
-        a.kind === 'symlink' ? `symlink target changed: ${relPosix}` : `content changed: ${relPosix}`,
+        a.kind === "symlink"
+          ? `symlink target changed: ${relPosix}`
+          : `content changed: ${relPosix}`
       );
       continue;
     }
@@ -103,4 +127,4 @@ export async function comparePatchedTrees(
   }
 
   return { differences, droppedEmptyDirectories };
-}
+};

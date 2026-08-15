@@ -9,9 +9,9 @@
  * of regular expressions.
  */
 
-export type SpecifierKind = 'import' | 'export' | 'dynamic-import' | 'require';
+export type SpecifierKind = "import" | "export" | "dynamic-import" | "require";
 
-export type ModuleSpecifier = {
+export interface ModuleSpecifier {
   kind: SpecifierKind;
   /** Specifier text exactly as written between the quotes. */
   value: string;
@@ -19,11 +19,11 @@ export type ModuleSpecifier = {
   start: number;
   /** Offset of the closing quote. */
   end: number;
-};
+}
 
-type TokenType = 'ident' | 'punct' | 'string' | 'number' | 'template' | 'regex';
+type TokenType = "ident" | "punct" | "string" | "number" | "template" | "regex";
 
-type Token = {
+interface Token {
   type: TokenType;
   /** Token text; for a string this is the text between the quotes. */
   value: string;
@@ -31,45 +31,53 @@ type Token = {
   start: number;
   /** Offset one past the last character; for a string, the offset of the closing quote. */
   end: number;
-};
+}
 
 /** Keywords after which a `/` starts a regular expression rather than a division. */
 const REGEX_PRECEDING_KEYWORDS = new Set([
-  'await',
-  'case',
-  'delete',
-  'do',
-  'else',
-  'in',
-  'instanceof',
-  'new',
-  'of',
-  'return',
-  'throw',
-  'typeof',
-  'void',
-  'yield',
+  "await",
+  "case",
+  "delete",
+  "do",
+  "else",
+  "in",
+  "instanceof",
+  "new",
+  "of",
+  "return",
+  "throw",
+  "typeof",
+  "void",
+  "yield",
 ]);
 
-function isIdentifierStart(code: number): boolean {
+const isIdentifierStart = function isIdentifierStart(code: number): boolean {
   return (
-    (code >= 0x41 && code <= 0x5a) || // A-Z
-    (code >= 0x61 && code <= 0x7a) || // a-z
-    code === 0x24 || // $
-    code === 0x5f || // _
+    // A-Z
+    (code >= 0x41 && code <= 0x5a) ||
+    // a-z
+    (code >= 0x61 && code <= 0x7a) ||
+    // $
+    code === 0x24 ||
+    // _
+    code === 0x5f ||
     code > 0x7f
   );
-}
+};
 
-function isIdentifierPart(code: number): boolean {
+const codeAt = function codeAt(source: string, index: number): number {
+  return source.codePointAt(index) ?? -1;
+};
+
+const isIdentifierPart = function isIdentifierPart(code: number): boolean {
   return isIdentifierStart(code) || (code >= 0x30 && code <= 0x39);
-}
+};
 
-function isDigit(code: number): boolean {
+const isDigit = function isDigit(code: number): boolean {
   return code >= 0x30 && code <= 0x39;
-}
+};
 
-function isWhitespace(code: number): boolean {
+const isWhitespace = function isWhitespace(code: number): boolean {
   return (
     code === 0x20 ||
     code === 0x09 ||
@@ -78,71 +86,100 @@ function isWhitespace(code: number): boolean {
     code === 0x0b ||
     code === 0x0c ||
     code === 0xa0 ||
-    code === 0xfeff
+    code === 0xfe_ff
   );
-}
+};
 
 /**
  * Whether a `/` at this point opens a regular expression, decided from the last
  * significant token. `}` is treated as the end of a block rather than of an
  * object literal, which is the far more common case in published sources.
  */
-function regexAllowed(previous: Token | undefined): boolean {
-  if (previous == null) return true;
-  if (previous.type === 'ident') return REGEX_PRECEDING_KEYWORDS.has(previous.value);
-  if (previous.type === 'punct') return previous.value !== ')' && previous.value !== ']';
+const regexAllowed = function regexAllowed(
+  previous: Token | undefined
+): boolean {
+  if (previous == null) {
+    return true;
+  }
+  if (previous.type === "ident") {
+    return REGEX_PRECEDING_KEYWORDS.has(previous.value);
+  }
+  if (previous.type === "punct") {
+    return previous.value !== ")" && previous.value !== "]";
+  }
   return false;
-}
+};
 
-function scanLineComment(source: string, index: number): number {
+const scanLineComment = function scanLineComment(
+  source: string,
+  index: number
+): number {
   let i = index + 2;
-  while (i < source.length && source.charCodeAt(i) !== 0x0a) i++;
+  while (i < source.length && codeAt(source, i) !== 0x0a) {
+    i += 1;
+  }
   return i;
-}
+};
 
-function scanBlockComment(source: string, index: number): number {
-  const end = source.indexOf('*/', index + 2);
+const scanBlockComment = function scanBlockComment(
+  source: string,
+  index: number
+): number {
+  const end = source.indexOf("*/", index + 2);
   return end === -1 ? source.length : end + 2;
-}
+};
 
-function scanRegex(source: string, index: number): number {
+const scanRegex = function scanRegex(source: string, index: number): number {
   let i = index + 1;
   let inClass = false;
   while (i < source.length) {
     const ch = source[i];
-    if (ch === '\\') {
+    if (ch === "\\") {
       i += 2;
       continue;
     }
-    if (ch === '\n') break;
-    if (ch === '[') inClass = true;
-    else if (ch === ']') inClass = false;
-    else if (ch === '/' && !inClass) {
-      i++;
-      while (i < source.length && isIdentifierPart(source.charCodeAt(i))) i++;
+    if (ch === "\n") {
+      break;
+    }
+    if (ch === "[") {
+      inClass = true;
+    } else if (ch === "]") {
+      inClass = false;
+    } else if (ch === "/" && !inClass) {
+      i += 1;
+      while (i < source.length && isIdentifierPart(codeAt(source, i))) {
+        i += 1;
+      }
       return i;
     }
-    i++;
+    i += 1;
   }
   return i;
-}
+};
 
 /** End offset of the quote character closing a string that starts at `index`. */
-function scanStringEnd(source: string, index: number): number {
+const scanStringEnd = function scanStringEnd(
+  source: string,
+  index: number
+): number {
   const quote = source[index];
   let i = index + 1;
   while (i < source.length) {
     const ch = source[i];
-    if (ch === '\\') {
+    if (ch === "\\") {
       i += 2;
       continue;
     }
-    if (ch === quote) return i;
-    if (ch === '\n') return i;
-    i++;
+    if (ch === quote) {
+      return i;
+    }
+    if (ch === "\n") {
+      return i;
+    }
+    i += 1;
   }
   return i;
-}
+};
 
 /**
  * Split `source` into the tokens that matter for finding module specifiers.
@@ -150,49 +187,53 @@ function scanStringEnd(source: string, index: number): number {
  * Template literals are tracked with a brace stack so that `${...}` holes are
  * lexed as ordinary code while the literal text around them is not.
  */
-function tokenize(source: string): Token[] {
+const tokenize = function tokenize(source: string): Token[] {
   const tokens: Token[] = [];
-  const braces: Array<'block' | 'template'> = [];
+  const braces: ("block" | "template")[] = [];
   let i = 0;
 
   /** Consume template text from `index`, returning where it stopped and why. */
-  const scanTemplate = (index: number): { end: number; hole: boolean } => {
+  const scanTemplate = (index: number) => {
     let j = index;
     while (j < source.length) {
       const ch = source[j];
-      if (ch === '\\') {
+      if (ch === "\\") {
         j += 2;
         continue;
       }
-      if (ch === '`') return { end: j + 1, hole: false };
-      if (ch === '$' && source[j + 1] === '{') return { end: j + 2, hole: true };
-      j++;
+      if (ch === "`") {
+        return { end: j + 1, hole: false };
+      }
+      if (ch === "$" && source[j + 1] === "{") {
+        return { end: j + 2, hole: true };
+      }
+      j += 1;
     }
     return { end: j, hole: false };
   };
 
   while (i < source.length) {
-    const code = source.charCodeAt(i);
+    const code = codeAt(source, i);
 
     if (isWhitespace(code)) {
-      i++;
+      i += 1;
       continue;
     }
-    if (code === 0x2f && source[i + 1] === '/') {
+    if (code === 0x2f && source[i + 1] === "/") {
       i = scanLineComment(source, i);
       continue;
     }
-    if (code === 0x2f && source[i + 1] === '*') {
+    if (code === 0x2f && source[i + 1] === "*") {
       i = scanBlockComment(source, i);
       continue;
     }
     if (code === 0x22 || code === 0x27) {
       const closing = scanStringEnd(source, i);
       tokens.push({
-        type: 'string',
-        value: source.slice(i + 1, closing),
-        start: i + 1,
         end: closing,
+        start: i + 1,
+        type: "string",
+        value: source.slice(i + 1, closing),
       });
       i = closing + 1;
       continue;
@@ -200,78 +241,106 @@ function tokenize(source: string): Token[] {
     if (code === 0x60) {
       const start = i;
       const scanned = scanTemplate(i + 1);
-      tokens.push({ type: 'template', value: '', start, end: scanned.end });
-      if (scanned.hole) braces.push('template');
+      tokens.push({ end: scanned.end, start, type: "template", value: "" });
+      if (scanned.hole) {
+        braces.push("template");
+      }
       i = scanned.end;
       continue;
     }
-    if (code === 0x7d && braces[braces.length - 1] === 'template') {
+    if (code === 0x7d && braces.at(-1) === "template") {
       braces.pop();
       const scanned = scanTemplate(i + 1);
-      tokens.push({ type: 'template', value: '', start: i, end: scanned.end });
-      if (scanned.hole) braces.push('template');
+      tokens.push({ end: scanned.end, start: i, type: "template", value: "" });
+      if (scanned.hole) {
+        braces.push("template");
+      }
       i = scanned.end;
       continue;
     }
     if (code === 0x7b) {
-      braces.push('block');
-      tokens.push({ type: 'punct', value: '{', start: i, end: i + 1 });
-      i++;
+      braces.push("block");
+      tokens.push({ end: i + 1, start: i, type: "punct", value: "{" });
+      i += 1;
       continue;
     }
     if (code === 0x7d) {
       braces.pop();
-      tokens.push({ type: 'punct', value: '}', start: i, end: i + 1 });
-      i++;
+      tokens.push({ end: i + 1, start: i, type: "punct", value: "}" });
+      i += 1;
       continue;
     }
-    if (code === 0x2f && regexAllowed(tokens[tokens.length - 1])) {
+    if (code === 0x2f && regexAllowed(tokens.at(-1))) {
       const end = scanRegex(source, i);
-      tokens.push({ type: 'regex', value: '', start: i, end });
+      tokens.push({ end, start: i, type: "regex", value: "" });
       i = end;
       continue;
     }
     if (isIdentifierStart(code)) {
       const start = i;
-      while (i < source.length && isIdentifierPart(source.charCodeAt(i))) i++;
-      tokens.push({ type: 'ident', value: source.slice(start, i), start, end: i });
+      while (i < source.length && isIdentifierPart(codeAt(source, i))) {
+        i += 1;
+      }
+      tokens.push({
+        end: i,
+        start,
+        type: "ident",
+        value: source.slice(start, i),
+      });
       continue;
     }
-    if (isDigit(code) || (code === 0x2e && isDigit(source.charCodeAt(i + 1)))) {
+    if (isDigit(code) || (code === 0x2e && isDigit(codeAt(source, i + 1)))) {
       const start = i;
       while (
         i < source.length &&
-        (isIdentifierPart(source.charCodeAt(i)) ||
-          source[i] === '.' ||
-          ((source[i] === '+' || source[i] === '-') &&
-            (source[i - 1] === 'e' || source[i - 1] === 'E')))
+        (isIdentifierPart(codeAt(source, i)) ||
+          source[i] === "." ||
+          ((source[i] === "+" || source[i] === "-") &&
+            (source[i - 1] === "e" || source[i - 1] === "E")))
       ) {
-        i++;
+        i += 1;
       }
-      tokens.push({ type: 'number', value: source.slice(start, i), start, end: i });
+      tokens.push({
+        end: i,
+        start,
+        type: "number",
+        value: source.slice(start, i),
+      });
       continue;
     }
 
-    tokens.push({ type: 'punct', value: source[i], start: i, end: i + 1 });
-    i++;
+    tokens.push({ end: i + 1, start: i, type: "punct", value: source[i] });
+    i += 1;
   }
 
   return tokens;
-}
+};
 
-function isPunct(token: Token | undefined, value: string): boolean {
-  return token?.type === 'punct' && token.value === value;
-}
+const isPunct = function isPunct(
+  token: Token | undefined,
+  value: string
+): boolean {
+  return token?.type === "punct" && token.value === value;
+};
 
 /** `f(<string>` followed by `)` or `,`, i.e. a call whose first argument is a literal. */
-function callArgument(tokens: Token[], calleeIndex: number): Token | null {
-  if (!isPunct(tokens[calleeIndex + 1], '(')) return null;
+const callArgument = function callArgument(
+  tokens: Token[],
+  calleeIndex: number
+): Token | null {
+  if (!isPunct(tokens[calleeIndex + 1], "(")) {
+    return null;
+  }
   const argument = tokens[calleeIndex + 2];
-  if (argument?.type !== 'string') return null;
+  if (argument?.type !== "string") {
+    return null;
+  }
   const after = tokens[calleeIndex + 3];
-  if (!isPunct(after, ')') && !isPunct(after, ',')) return null;
+  if (!isPunct(after, ")") && !isPunct(after, ",")) {
+    return null;
+  }
   return argument;
-}
+};
 
 /**
  * Every module specifier in `source`, in source order, with exact spans.
@@ -281,67 +350,73 @@ function callArgument(tokens: Token[], calleeIndex: number): Token | null {
  * computed expressions are deliberately not reported, because they cannot be
  * rewritten without changing behavior.
  */
-export function scanModuleSpecifiers(source: string): ModuleSpecifier[] {
+export const scanModuleSpecifiers = function scanModuleSpecifiers(
+  source: string
+): ModuleSpecifier[] {
   const tokens = tokenize(source);
   const out: ModuleSpecifier[] = [];
-  let pending: 'import' | 'export' | null = null;
+  let pending: "import" | "export" | null = null;
 
   const emit = (kind: SpecifierKind, token: Token): void => {
-    out.push({ kind, value: token.value, start: token.start, end: token.end });
+    out.push({ end: token.end, kind, start: token.start, value: token.value });
   };
 
-  for (let i = 0; i < tokens.length; i++) {
+  for (let i = 0; i < tokens.length; i += 1) {
     const token = tokens[i];
-    if (token.type === 'punct' && token.value === ';') {
+    if (token.type === "punct" && token.value === ";") {
       pending = null;
       continue;
     }
-    if (token.type !== 'ident') continue;
+    if (token.type !== "ident") {
+      continue;
+    }
     // `obj.import(…)` / `obj.require(…)` are ordinary property calls.
-    if (isPunct(tokens[i - 1], '.')) continue;
+    if (isPunct(tokens[i - 1], ".")) {
+      continue;
+    }
 
-    if (token.value === 'import') {
+    if (token.value === "import") {
       const next = tokens[i + 1];
-      if (next?.type === 'string') {
-        emit('import', next);
+      if (next?.type === "string") {
+        emit("import", next);
         pending = null;
-        i++;
+        i += 1;
         continue;
       }
       const dynamic = callArgument(tokens, i);
       if (dynamic) {
-        emit('dynamic-import', dynamic);
+        emit("dynamic-import", dynamic);
         pending = null;
         i += 2;
         continue;
       }
-      pending = 'import';
+      pending = "import";
       continue;
     }
 
-    if (token.value === 'export') {
-      pending = 'export';
+    if (token.value === "export") {
+      pending = "export";
       continue;
     }
 
-    if (token.value === 'require') {
+    if (token.value === "require") {
       const argument = callArgument(tokens, i);
       if (argument) {
-        emit('require', argument);
+        emit("require", argument);
         i += 2;
       }
       continue;
     }
 
-    if (token.value === 'from' && pending != null) {
+    if (token.value === "from" && pending != null) {
       const next = tokens[i + 1];
-      if (next?.type === 'string') {
+      if (next?.type === "string") {
         emit(pending, next);
         pending = null;
-        i++;
+        i += 1;
       }
     }
   }
 
   return out;
-}
+};

@@ -1,56 +1,59 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { upsertLockModule } from '../lockfile/upsert-lock-module.js';
-import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
-import { selectPackages } from './package-selection.js';
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
+import nodePath from "node:path";
 
-describe('selectPackages repository source', () => {
+import { upsertLockModule } from "../lockfile/upsert-lock-module.js";
+import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
+import { selectPackages } from "./package-selection.js";
+
+describe("selectPackages repository source", () => {
   let cwd: string;
 
   beforeEach(async () => {
-    cwd = await makeTmpDir('inrepo-package-selection-');
+    cwd = await makeTmpDir("inrepo-package-selection-");
   });
 
   afterEach(async () => {
     await cleanupTmpDir(cwd);
   });
 
-  test('does not merge a locked directory into a configured different repository', async () => {
+  test("does not merge a locked directory into a configured different repository", async () => {
     await writeFile(
-      join(cwd, 'inrepo.json'),
-      `${JSON.stringify({ packages: [{ name: 'pkg', git: 'https://new.example/pkg.git' }] })}\n`,
-      'utf8',
+      nodePath.join(cwd, "inrepo.json"),
+      `${JSON.stringify({ packages: [{ git: "https://new.example/pkg.git", name: "pkg" }] })}\n`,
+      "utf-8"
     );
-    await upsertLockModule(cwd, 'pkg', {
-      source: 'pkg',
-      gitUrl: 'https://old.example/monorepo.git',
-      repositoryDirectory: 'packages/pkg',
-      commit: 'a'.repeat(40),
+    await upsertLockModule(cwd, "pkg", {
+      commit: "a".repeat(40),
+      gitUrl: "https://old.example/monorepo.git",
       ref: null,
-      updatedAt: '2026-01-01T00:00:00.000Z',
+      repositoryDirectory: "packages/pkg",
+      source: "pkg",
+      updatedAt: "2026-01-01T00:00:00.000Z",
     });
 
-    const selected = await selectPackages(cwd, 'pkg', 'sync');
-    expect(selected.packages).toEqual([{ name: 'pkg', git: 'https://new.example/pkg.git' }]);
+    const selected = await selectPackages(cwd, "pkg", "sync");
+    expect(selected.packages).toEqual([
+      { git: "https://new.example/pkg.git", name: "pkg" },
+    ]);
   });
 
-  test('inherits a locked directory when configured and locked URLs normalize equally', async () => {
+  test("inherits a locked directory when configured and locked URLs normalize equally", async () => {
     await writeFile(
-      join(cwd, 'inrepo.json'),
-      `${JSON.stringify({ packages: [{ name: 'pkg', git: 'git+https://EXAMPLE.com/mono.git' }] })}\n`,
-      'utf8',
+      nodePath.join(cwd, "inrepo.json"),
+      `${JSON.stringify({ packages: [{ git: "git+https://EXAMPLE.com/mono.git", name: "pkg" }] })}\n`,
+      "utf-8"
     );
-    await upsertLockModule(cwd, 'pkg', {
-      source: 'pkg',
-      gitUrl: 'https://example.com/mono',
-      repositoryDirectory: 'packages/pkg',
-      commit: 'a'.repeat(40),
+    await upsertLockModule(cwd, "pkg", {
+      commit: "a".repeat(40),
+      gitUrl: "https://example.com/mono",
       ref: null,
-      updatedAt: '2026-01-01T00:00:00.000Z',
+      repositoryDirectory: "packages/pkg",
+      source: "pkg",
+      updatedAt: "2026-01-01T00:00:00.000Z",
     });
 
-    const selected = await selectPackages(cwd, 'pkg', 'sync');
-    expect(selected.packages[0]?.repositoryDirectory).toBe('packages/pkg');
+    const selected = await selectPackages(cwd, "pkg", "sync");
+    expect(selected.packages[0]?.repositoryDirectory).toBe("packages/pkg");
   });
 });

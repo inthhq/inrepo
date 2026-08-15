@@ -1,7 +1,7 @@
-import type { LockModule } from '../types/lock-module.js';
-import type { PublishedArtifact } from '../types/published-artifact.js';
+import type { LockModule } from "../types/lock-module.js";
+import type { PublishedArtifact } from "../types/published-artifact.js";
 
-export type AddArgs = {
+export interface AddArgs {
   name: string;
   git?: string;
   /** Package root within a manually supplied git repository. */
@@ -11,29 +11,29 @@ export type AddArgs = {
   dev: boolean;
   /** Also vendor the package's transitive runtime dependency closure. */
   withDeps: boolean;
-};
+}
 
-export type SyncArgs = {
+export interface SyncArgs {
   force: boolean;
-};
+}
 
-export type PatchArgs = {
+export interface PatchArgs {
   name?: string;
   /** Reason recorded as the patch subject; required for patch-series capture. */
   message?: string;
-};
+}
 
-export type DiffArgs = {
+export interface DiffArgs {
   name?: string;
   /** Show a per-file `+/-` summary instead of the full unified diff. */
   stat: boolean;
-};
+}
 
-export type MigrateArgs = {
+export interface MigrateArgs {
   name: string;
-};
+}
 
-export type UpdateArgs = {
+export interface UpdateArgs {
   name: string;
   /** New branch, tag, or commit to pin; persisted to config on success. */
   ref?: string;
@@ -41,9 +41,9 @@ export type UpdateArgs = {
   continue: boolean;
   /** Throw away an in-progress update and leave the project untouched. */
   abort: boolean;
-};
+}
 
-export type PackageSpec = {
+export interface PackageSpec {
   name: string;
   /** Storage identity under inrepo_modules; defaults to name. */
   module?: string;
@@ -58,17 +58,17 @@ export type PackageSpec = {
   keep?: string[];
   /** Registry payload used only to fill files absent from the git checkout. */
   artifact?: PublishedArtifact;
-};
+}
 
-export type MaterializeOptions = {
-  mode: 'sync' | 'add';
+export interface MaterializeOptions {
+  mode: "sync" | "add";
   force: boolean;
   lockEntry?: LockModule;
   /** Exact graph commit already resolved and preflighted by `add --with-deps`. */
   resolvedCommit?: string;
-};
+}
 
-export type DispatchOpts = {
+export interface DispatchOpts {
   force?: boolean;
   suppressBanners?: boolean;
-};
+}

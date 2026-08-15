@@ -1,31 +1,40 @@
-import { finalizeVendorCheckout } from '../git/finalize-vendor-checkout.js';
-import { loadRewirePlan } from '../rewire/load-rewire-plan.js';
-import { rewireTree, type RewirePlan, type RewireReport } from '../rewire/rewire-tree.js';
-import { applySeries } from '../series/apply-series.js';
-import { readSeries } from '../series/read-series.js';
-import { applyOverlay } from './apply-overlay.js';
-import { readDeletionsFile } from './deletions-file.js';
-import { overlayDeletionsPath, overlayDirPath, seriesDirPath } from './overlay-paths.js';
+import { finalizeVendorCheckout } from "../git/finalize-vendor-checkout.js";
+import { loadRewirePlan } from "../rewire/load-rewire-plan.js";
+import { rewireTree } from "../rewire/rewire-tree.js";
+import type { RewirePlan, RewireReport } from "../rewire/rewire-tree.js";
+import { applySeries } from "../series/apply-series.js";
+import { readSeries } from "../series/read-series.js";
+import { applyOverlay } from "./apply-overlay.js";
+import { readDeletionsFile } from "./deletions-file.js";
+import {
+  overlayDeletionsPath,
+  overlayDirPath,
+  seriesDirPath,
+} from "./overlay-paths.js";
 
-export type PatchedTreeOptions = {
+export interface PatchedTreeOptions {
   cwd: string;
   name: string;
   pristineRoot: string;
   targetRoot: string;
-};
+}
 
 /** Apply the legacy whole-file overlay (snapshot files plus `.inrepo-deletions`). */
-export async function applyLegacyOverlayTree(opts: PatchedTreeOptions): Promise<string> {
+export const applyLegacyOverlayTree = async function applyLegacyOverlayTree(
+  opts: PatchedTreeOptions
+): Promise<string> {
   const overlayRoot = overlayDirPath(opts.cwd, opts.name);
-  const deletions = await readDeletionsFile(overlayDeletionsPath(opts.cwd, opts.name));
+  const deletions = await readDeletionsFile(
+    overlayDeletionsPath(opts.cwd, opts.name)
+  );
   await applyOverlay({
-    pristineRoot: opts.pristineRoot,
-    overlayRoot,
     deletions,
+    overlayRoot,
+    pristineRoot: opts.pristineRoot,
     targetRoot: opts.targetRoot,
   });
   return opts.targetRoot;
-}
+};
 
 /**
  * Build the patched tree stage (upstream tree + committed changes).
@@ -33,7 +42,9 @@ export async function applyLegacyOverlayTree(opts: PatchedTreeOptions): Promise<
  * Packages with `inrepo_patches/<name>/series/` use the ordered git patch
  * series; everything else keeps using the legacy whole-file overlay.
  */
-export async function assemblePatchedTree(opts: PatchedTreeOptions): Promise<string> {
+export const assemblePatchedTree = async function assemblePatchedTree(
+  opts: PatchedTreeOptions
+): Promise<string> {
   const seriesDir = seriesDirPath(opts.cwd, opts.name);
   const patches = await readSeries(seriesDir);
   if (patches.length > 0) {
@@ -45,7 +56,7 @@ export async function assemblePatchedTree(opts: PatchedTreeOptions): Promise<str
     return opts.targetRoot;
   }
   return applyLegacyOverlayTree(opts);
-}
+};
 
 /**
  * Patched tree plus the generated transforms: import rewiring, when the package
@@ -55,7 +66,7 @@ export async function assemblePatchedTree(opts: PatchedTreeOptions): Promise<str
  * reach `inrepo diff`, which renders the patched tree, nor a captured patch,
  * which is expressed against it.
  */
-export async function assembleModuleTree(opts: {
+export const assembleModuleTree = async function assembleModuleTree(opts: {
   cwd: string;
   name: string;
   pristineRoot: string;
@@ -74,7 +85,9 @@ export async function assembleModuleTree(opts: {
     targetRoot: opts.targetRoot,
   });
   const plan =
-    opts.rewire === undefined ? await loadRewirePlan(opts.cwd, opts.name) : opts.rewire;
+    opts.rewire === undefined
+      ? await loadRewirePlan(opts.cwd, opts.name)
+      : opts.rewire;
   if (plan != null) {
     const report = await rewireTree(opts.targetRoot, plan);
     opts.onRewire?.(report);
@@ -85,4 +98,4 @@ export async function assembleModuleTree(opts: {
     repositoryDirectory: opts.repositoryDirectory,
   });
   return opts.targetRoot;
-}
+};

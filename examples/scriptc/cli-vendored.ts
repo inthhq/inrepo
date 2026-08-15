@@ -1,3 +1,4 @@
+import { isString } from "../../src/json/unknown.js";
 // Variant B: dependencies vendored into the repo with inrepo.
 // The imports point at the pinned upstream source in inrepo_modules/ —
 // no node_modules involved. scriptc compiles this source like any other
@@ -20,16 +21,17 @@ greet.argument("[name]", "who to greet", "world");
 greet.option("-u, --upper", "shout the name");
 greet.option("-r, --repeat <count>", "repeat the greeting", "1");
 greet.action(() => {
-  const rawName = greet.processedArgs.length > 0 ? greet.processedArgs[0] : "world";
+  const rawName =
+    greet.processedArgs.length > 0 ? greet.processedArgs[0] : "world";
   const opts = greet.opts();
   const upper = opts.upper === true;
   const repeatRaw = opts.repeat;
 
-  const name = typeof rawName === "string" ? rawName : "world";
-  const repeat = typeof repeatRaw === "string" ? repeatRaw : "1";
+  const name = isString(rawName) ? rawName : "world";
+  const repeat = isString(repeatRaw) ? repeatRaw : "1";
   const who = upper ? name.toUpperCase() : name;
-  const count = parseInt(repeat, 10) || 1;
-  for (let i = 0; i < count; i++) {
+  const count = Math.trunc(Number(repeat)) || 1;
+  for (let i = 0; i < count; i += 1) {
     console.log(`${bold(green("✔"))} hello, ${cyan(who)}!`);
   }
 });

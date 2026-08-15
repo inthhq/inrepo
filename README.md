@@ -8,12 +8,7 @@
 
 &nbsp;
 
-[![GitHub stars](https://img.shields.io/github/stars/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://github.com/inthhq/inrepo/blob/main/LICENSE)
-[![npm version](https://img.shields.io/npm/v/inrepo?style=flat-square)](https://www.npmjs.com/package/inrepo)
-[![Top Language](https://img.shields.io/github/languages/top/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo)
-[![Last Commit](https://img.shields.io/github/last-commit/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo/commits/main)
-[![Open Issues](https://img.shields.io/github/issues/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo/issues)
+[![GitHub stars](https://img.shields.io/github/stars/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo) [![License](https://img.shields.io/badge/license-MIT-blue.svg?style=flat-square)](https://github.com/inthhq/inrepo/blob/main/LICENSE) [![npm version](https://img.shields.io/npm/v/inrepo?style=flat-square)](https://www.npmjs.com/package/inrepo) [![Top Language](https://img.shields.io/github/languages/top/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo) [![Last Commit](https://img.shields.io/github/last-commit/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo/commits/main) [![Open Issues](https://img.shields.io/github/issues/inthhq/inrepo?style=flat-square)](https://github.com/inthhq/inrepo/issues)
 
 ## What is inrepo?
 
@@ -282,7 +277,11 @@ The edges themselves are recorded under `graph` in `inrepo.lock.json`. Published
       "version": "12.1.0",
       "root": true,
       "dependencies": {
-        "picocolors": { "range": "^1.0.0", "version": "1.1.1", "module": "picocolors@1.1.1" }
+        "picocolors": {
+          "range": "^1.0.0",
+          "version": "1.1.1",
+          "module": "picocolors@1.1.1"
+        }
       }
     },
     "picocolors@1.1.1": { "version": "1.1.1" }
@@ -321,7 +320,7 @@ Vendoring the graph does not, on its own, make it self-contained: the source sti
 `inrepo_modules/commander/lib/help.js` then reads:
 
 ```js
-import pc from '../../picocolors/picocolors.js';
+import pc from "../../picocolors/picocolors.js";
 ```
 
 The setting is off by default, so existing projects are unchanged. Set it at the root to cover every package, or per package to opt one in or out:
@@ -416,7 +415,6 @@ Our preference is that you make use of GitHub's private vulnerability reporting 
 ## License
 
 [MIT License](https://github.com/inthhq/inrepo/blob/main/LICENSE)
-
 
 ---
 

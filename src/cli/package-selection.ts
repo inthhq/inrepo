@@ -3,19 +3,19 @@ import {
   loadConfig,
   loadGlobalExclude,
   loadGlobalKeep,
-} from '../config/load-config.js';
-import { readLockfile } from '../lockfile/read-lockfile.js';
-import { normalizeRepositoryUrlIdentity } from '../registry/normalize-repository-url-identity.js';
-import type { LockModule } from '../types/lock-module.js';
-import type { PackageSpec } from './types.js';
+} from "../config/load-config.js";
+import { readLockfile } from "../lockfile/read-lockfile.js";
+import { normalizeRepositoryUrlIdentity } from "../registry/normalize-repository-url-identity.js";
+import type { LockModule } from "../types/lock-module.js";
+import type { PackageSpec } from "./types.js";
 
-export type PackageSelection = {
+export interface PackageSelection {
   /** Packages the command should act on, in order. */
   packages: PackageSpec[];
   modules: Record<string, LockModule>;
   globalExclude: string[];
   globalKeep: string[];
-};
+}
 
 /**
  * Resolve which vendored packages a per-package command should act on.
@@ -24,10 +24,10 @@ export type PackageSelection = {
  * back to whatever the lockfile knows about so the command still works in a
  * checkout without a config file.
  */
-export async function selectPackages(
+export const selectPackages = async function selectPackages(
   cwd: string,
   name: string | undefined,
-  verb: string,
+  verb: string
 ): Promise<PackageSelection> {
   let configPackages: PackageSpec[] = [];
   let globalExclude: string[] = [];
@@ -37,29 +37,39 @@ export async function selectPackages(
     configPackages = cfg.packages;
     globalExclude = cfg.exclude;
     globalKeep = cfg.keep;
-  } catch (e) {
-    if (!isLoadConfigNotFoundError(e)) throw e;
+  } catch (error) {
+    if (!isLoadConfigNotFoundError(error)) {
+      throw error;
+    }
     globalExclude = await loadGlobalExclude(cwd);
     globalKeep = await loadGlobalKeep(cwd);
   }
 
   const { modules } = await readLockfile(cwd);
   const configByName = new Map(
-    configPackages.map((pkg) => [pkg.module ?? pkg.name, pkg] as const),
+    configPackages.map((pkg) => [pkg.module ?? pkg.name, pkg] as const)
   );
 
-  const fromLock = (module: string): PackageSpec => ({
-    name: modules[module]?.source ?? module,
-    ...(module === (modules[module]?.source ?? module) ? {} : { module }),
-    git: modules[module]?.gitUrl,
-    repositoryDirectory: modules[module]?.repositoryDirectory,
-    ref: modules[module]?.ref ?? undefined,
-    artifact: modules[module]?.artifact,
-  });
+  const fromLock = (module: string): PackageSpec => {
+    const source = modules[module]?.source ?? module;
+    const spec: PackageSpec = {
+      artifact: modules[module]?.artifact,
+      git: modules[module]?.gitUrl,
+      name: source,
+      ref: modules[module]?.ref ?? undefined,
+      repositoryDirectory: modules[module]?.repositoryDirectory,
+    };
+    if (module !== source) {
+      spec.module = module;
+    }
+    return spec;
+  };
 
   const withLockedSource = (pkg: PackageSpec): PackageSpec => {
     const locked = modules[pkg.module ?? pkg.name];
-    if (!locked) return pkg;
+    if (!locked) {
+      return pkg;
+    }
     const configGit = pkg.git?.trim();
     const sameRepository =
       !configGit ||
@@ -67,17 +77,21 @@ export async function selectPackages(
         normalizeRepositoryUrlIdentity(locked.gitUrl);
     return {
       ...pkg,
-      repositoryDirectory:
-        pkg.repositoryDirectory ?? (sameRepository ? locked.repositoryDirectory : undefined),
       artifact: locked.artifact,
+      repositoryDirectory:
+        pkg.repositoryDirectory ??
+        (sameRepository ? locked.repositoryDirectory : undefined),
     };
   };
 
-  const packages: PackageSpec[] = name
-    ? [withLockedSource(configByName.get(name) ?? fromLock(name))]
-    : configPackages.length > 0
-      ? configPackages.map(withLockedSource)
-      : Object.keys(modules).sort().map(fromLock);
+  let packages: PackageSpec[];
+  if (name) {
+    packages = [withLockedSource(configByName.get(name) ?? fromLock(name))];
+  } else if (configPackages.length > 0) {
+    packages = configPackages.map(withLockedSource);
+  } else {
+    packages = Object.keys(modules).toSorted().map(fromLock);
+  }
 
   if (packages.length === 0) {
     throw new Error(`Nothing to ${verb}: no configured or locked packages.`);
@@ -86,5 +100,5 @@ export async function selectPackages(
     throw new Error(`No configured or locked package named "${name}".`);
   }
 
-  return { packages, modules, globalExclude, globalKeep };
-}
+  return { globalExclude, globalKeep, modules, packages };
+};

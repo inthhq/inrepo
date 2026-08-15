@@ -17,8 +17,8 @@ program
   .action((name: string, opts: { upper?: boolean; repeat: string }) => {
     const { bold, green, cyan } = pc;
     const who = opts.upper ? name.toUpperCase() : name;
-    const count = parseInt(opts.repeat, 10) || 1;
-    for (let i = 0; i < count; i++) {
+    const count = Math.trunc(Number(opts.repeat)) || 1;
+    for (let i = 0; i < count; i += 1) {
       console.log(`${bold(green("✔"))} hello, ${cyan(who)}!`);
     }
   });

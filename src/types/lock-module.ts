@@ -1,6 +1,6 @@
-import type { PublishedArtifact } from './published-artifact.js';
+import type { PublishedArtifact } from "./published-artifact.js";
 
-export type LockModule = {
+export interface LockModule {
   source: string;
   gitUrl: string;
   /** Package root within the repository; omitted for the repository root. */
@@ -10,4 +10,4 @@ export type LockModule = {
   /** Published npm payload paired with this git pin, when registry metadata supplied one. */
   artifact?: PublishedArtifact;
   updatedAt: string;
-};
+}

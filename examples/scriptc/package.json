@@ -1,9 +1,9 @@
 {
   "name": "inrepo-example-scriptc",
-  "private": true,
   "version": "0.0.0",
-  "type": "module",
+  "private": true,
   "description": "Benchmark: scriptc with npm deps vs deps vendored into the repo with inrepo",
+  "type": "module",
   "scripts": {
     "build": "npm run build:npm && npm run build:vendored",
     "build:npm": "scriptc build cli.ts --dynamic -o demo-npm",

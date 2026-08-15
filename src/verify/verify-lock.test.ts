@@ -1,81 +1,98 @@
-import { describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-import { mkdir, readdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { verifyLock } from './verify-lock.js';
-import { writeLockfile } from '../lockfile/write-lockfile.js';
-import { moduleDestPath } from '../paths/module-dest-path.js';
-import { runGit } from '../test-utils/run-git.js';
-import {
-  makeLocalGitFixture,
-  type LocalGitFixture,
-} from '../test-utils/local-git-fixture.js';
-import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
+import { describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
 
-async function writeConfig(
+import type { JsonObject } from "../json/unknown.js";
+import { writeLockfile } from "../lockfile/write-lockfile.js";
+import { moduleDestPath } from "../paths/module-dest-path.js";
+import { makeLocalGitFixture } from "../test-utils/local-git-fixture.js";
+import type { LocalGitFixture } from "../test-utils/local-git-fixture.js";
+import { runGit } from "../test-utils/run-git.js";
+import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
+import { verifyLock } from "./verify-lock.js";
+
+const writeConfig = async function writeConfig(
   cwd: string,
-  entry: Record<string, unknown> = { name: 'upstream' },
+  entry?: JsonObject
 ): Promise<void> {
-  await writeFile(join(cwd, 'inrepo.json'), `${JSON.stringify({ packages: [entry] }, null, 2)}\n`, 'utf8');
-}
+  const packageEntry = entry ?? { name: "upstream" };
+  await writeFile(
+    nodePath.join(cwd, "inrepo.json"),
+    `${JSON.stringify({ packages: [packageEntry] }, null, 2)}\n`,
+    "utf-8"
+  );
+};
 
-async function seedGeneratedModule(
+const seedGeneratedModule = async function seedGeneratedModule(
   cwd: string,
   fx: LocalGitFixture,
   opts: {
     commit?: string;
     overlayIndex?: string;
-  } = {},
+  } = {}
 ): Promise<void> {
   const commit = opts.commit ?? fx.c1;
-  const moduleDir = moduleDestPath(cwd, 'upstream');
+  const moduleDir = moduleDestPath(cwd, "upstream");
 
-  await writeConfig(cwd, { name: 'upstream', git: fx.url });
+  await writeConfig(cwd, { git: fx.url, name: "upstream" });
   await writeLockfile(cwd, {
     upstream: {
-      source: 'upstream',
-      gitUrl: fx.url,
       commit,
+      gitUrl: fx.url,
       ref: null,
-      updatedAt: '2026-01-01T00:00:00.000Z',
+      source: "upstream",
+      updatedAt: "2026-01-01T00:00:00.000Z",
     },
   });
 
-  await runGit(['clone', fx.url, moduleDir]);
-  await runGit(['checkout', commit], moduleDir);
-  await rm(join(moduleDir, '.git'), { recursive: true, force: true });
+  await runGit(["clone", fx.url, moduleDir]);
+  await runGit(["checkout", commit], moduleDir);
+  await rm(nodePath.join(moduleDir, ".git"), { force: true, recursive: true });
   await writeFile(
-    join(moduleDir, '.inrepo-vendor.json'),
+    nodePath.join(moduleDir, ".inrepo-vendor.json"),
     `${JSON.stringify({ commit: commit.toLowerCase(), gitUrl: fx.url })}\n`,
-    'utf8',
+    "utf-8"
   );
 
   if (opts.overlayIndex != null) {
-    await mkdir(join(cwd, 'inrepo_patches', 'upstream', 'src'), { recursive: true });
-    await writeFile(join(cwd, 'inrepo_patches', 'upstream', 'src', 'index.ts'), opts.overlayIndex, 'utf8');
-    await writeFile(join(moduleDir, 'src', 'index.ts'), opts.overlayIndex, 'utf8');
+    await mkdir(nodePath.join(cwd, "inrepo_patches", "upstream", "src"), {
+      recursive: true,
+    });
+    await writeFile(
+      nodePath.join(cwd, "inrepo_patches", "upstream", "src", "index.ts"),
+      opts.overlayIndex,
+      "utf-8"
+    );
+    await writeFile(
+      nodePath.join(moduleDir, "src", "index.ts"),
+      opts.overlayIndex,
+      "utf-8"
+    );
   }
-}
+};
 
-describe('verifyLock', () => {
-  test('reports failure when lockfile has no modules', async () => {
-    const cwd = await makeTmpDir('inrepo-verify-');
+describe("verifyLock", () => {
+  test("reports failure when lockfile has no modules", async () => {
+    const cwd = await makeTmpDir("inrepo-verify-");
     try {
-    await writeLockfile(cwd, {});
-    const r = await verifyLock(cwd);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.errors[0]).toMatch(/No modules in inrepo\.lock\.json/);
+      await writeLockfile(cwd, {});
+      const r = await verifyLock(cwd);
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.errors[0]).toMatch(/No modules in inrepo\.lock\.json/u);
+      }
     } finally {
       await cleanupTmpDir(cwd);
     }
   });
 
-  test('passes for a generated module that matches lockfile plus overlay', async () => {
-    const cwd = await makeTmpDir('inrepo-verify-');
-    const fx = await makeLocalGitFixture('inrepo-verify-fixture-');
+  test("passes for a generated module that matches lockfile plus overlay", async () => {
+    const cwd = await makeTmpDir("inrepo-verify-");
+    const fx = await makeLocalGitFixture("inrepo-verify-fixture-");
     try {
       await seedGeneratedModule(cwd, fx, {
-        overlayIndex: 'export const v = 10;\n',
+        overlayIndex: "export const v = 10;\n",
       });
       expect(await verifyLock(cwd)).toEqual({ ok: true });
     } finally {
@@ -84,74 +101,96 @@ describe('verifyLock', () => {
     }
   });
 
-  test('reports missing vendor directory', async () => {
-    const cwd = await makeTmpDir('inrepo-verify-');
-    const fx = await makeLocalGitFixture('inrepo-verify-fixture-');
+  test("reports missing vendor directory", async () => {
+    const cwd = await makeTmpDir("inrepo-verify-");
+    const fx = await makeLocalGitFixture("inrepo-verify-fixture-");
     try {
-    await writeLockfile(cwd, {
-      upstream: {
-        source: 'upstream',
-        gitUrl: fx.url,
-        commit: fx.c1,
-        ref: null,
-        updatedAt: '2026-01-01T00:00:00.000Z',
-      },
-    });
-    const r = await verifyLock(cwd);
-    expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.errors[0]).toMatch(/Missing directory for "upstream"/);
+      await writeLockfile(cwd, {
+        upstream: {
+          commit: fx.c1,
+          gitUrl: fx.url,
+          ref: null,
+          source: "upstream",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      });
+      const r = await verifyLock(cwd);
+      expect(r.ok).toBe(false);
+      if (!r.ok) {
+        expect(r.errors[0]).toMatch(/Missing directory for "upstream"/u);
+      }
     } finally {
       await fx.cleanup();
       await cleanupTmpDir(cwd);
     }
   });
 
-  test('reports commit mismatch in vendor marker', async () => {
-    const cwd = await makeTmpDir('inrepo-verify-');
-    const fx = await makeLocalGitFixture('inrepo-verify-fixture-');
+  test("reports commit mismatch in vendor marker", async () => {
+    const cwd = await makeTmpDir("inrepo-verify-");
+    const fx = await makeLocalGitFixture("inrepo-verify-fixture-");
     try {
       await seedGeneratedModule(cwd, fx);
       await writeFile(
-        join(cwd, 'inrepo_modules', 'upstream', '.inrepo-vendor.json'),
-        JSON.stringify({ commit: fx.c2, gitUrl: fx.url }, null, 2) + '\n',
-        'utf8',
+        nodePath.join(cwd, "inrepo_modules", "upstream", ".inrepo-vendor.json"),
+        `${JSON.stringify({ commit: fx.c2, gitUrl: fx.url }, null, 2)}\n`,
+        "utf-8"
       );
       const r = await verifyLock(cwd);
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors[0]).toMatch(/vendor marker commit .* does not match lock/);
+      if (!r.ok) {
+        expect(r.errors[0]).toMatch(
+          /vendor marker commit .* does not match lock/u
+        );
+      }
     } finally {
       await fx.cleanup();
       await cleanupTmpDir(cwd);
     }
   });
 
-  test('reports tree drift when vendored files change after sync', async () => {
-    const cwd = await makeTmpDir('inrepo-verify-');
-    const fx = await makeLocalGitFixture('inrepo-verify-fixture-');
+  test("reports tree drift when vendored files change after sync", async () => {
+    const cwd = await makeTmpDir("inrepo-verify-");
+    const fx = await makeLocalGitFixture("inrepo-verify-fixture-");
     try {
       await seedGeneratedModule(cwd, fx);
-      await writeFile(join(cwd, 'inrepo_modules', 'upstream', 'src', 'index.ts'), 'broken\n', 'utf8');
+      await writeFile(
+        nodePath.join(cwd, "inrepo_modules", "upstream", "src", "index.ts"),
+        "broken\n",
+        "utf-8"
+      );
       const r = await verifyLock(cwd);
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors.some((line) => /vendored tree does not match lockfile \+ overlay/.test(line))).toBe(true);
+      if (!r.ok) {
+        expect(
+          r.errors.some((line) =>
+            /vendored tree does not match lockfile \+ overlay/u.test(line)
+          )
+        ).toBe(true);
+      }
     } finally {
       await fx.cleanup();
       await cleanupTmpDir(cwd);
     }
   });
 
-  test('cleans staged verify trees when the vendor marker is invalid', async () => {
-    const cwd = await makeTmpDir('inrepo-verify-');
-    const fx = await makeLocalGitFixture('inrepo-verify-fixture-');
+  test("cleans staged verify trees when the vendor marker is invalid", async () => {
+    const cwd = await makeTmpDir("inrepo-verify-");
+    const fx = await makeLocalGitFixture("inrepo-verify-fixture-");
     try {
       await seedGeneratedModule(cwd, fx);
-      await writeFile(join(cwd, 'inrepo_modules', 'upstream', '.inrepo-vendor.json'), 'null\n', 'utf8');
+      await writeFile(
+        nodePath.join(cwd, "inrepo_modules", "upstream", ".inrepo-vendor.json"),
+        "null\n",
+        "utf-8"
+      );
 
       const r = await verifyLock(cwd);
       expect(r.ok).toBe(false);
-      if (!r.ok) expect(r.errors[0]).toMatch(/invalid or empty \.inrepo-vendor\.json/);
+      if (!r.ok) {
+        expect(r.errors[0]).toMatch(/invalid or empty \.inrepo-vendor\.json/u);
+      }
 
-      const verifyRoot = join(cwd, '.inrepo', 'verify');
+      const verifyRoot = nodePath.join(cwd, ".inrepo", "verify");
       expect(existsSync(verifyRoot)).toBe(true);
       expect(await readdir(verifyRoot)).toEqual([]);
     } finally {
@@ -160,21 +199,21 @@ describe('verifyLock', () => {
     }
   });
 
-  test('passes for a real git checkout when HEAD and origin match the lock entry', async () => {
-    const cwd = await makeTmpDir('inrepo-verify-');
-    const fx = await makeLocalGitFixture('inrepo-verify-fixture-');
+  test("passes for a real git checkout when HEAD and origin match the lock entry", async () => {
+    const cwd = await makeTmpDir("inrepo-verify-");
+    const fx = await makeLocalGitFixture("inrepo-verify-fixture-");
     try {
-      const dest = moduleDestPath(cwd, 'upstream');
-      await runGit(['clone', fx.url, dest]);
-      const commit = await runGit(['rev-parse', 'HEAD'], dest);
-      await writeConfig(cwd, { name: 'upstream', git: fx.url });
+      const dest = moduleDestPath(cwd, "upstream");
+      await runGit(["clone", fx.url, dest]);
+      const commit = await runGit(["rev-parse", "HEAD"], dest);
+      await writeConfig(cwd, { git: fx.url, name: "upstream" });
       await writeLockfile(cwd, {
         upstream: {
-          source: 'upstream',
-          gitUrl: fx.url,
           commit,
+          gitUrl: fx.url,
           ref: null,
-          updatedAt: '2026-01-01T00:00:00.000Z',
+          source: "upstream",
+          updatedAt: "2026-01-01T00:00:00.000Z",
         },
       });
       expect(await verifyLock(cwd)).toEqual({ ok: true });

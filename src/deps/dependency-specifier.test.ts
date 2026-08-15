@@ -1,33 +1,47 @@
-import { describe, expect, test } from 'bun:test';
-import { classifyDependencySpecifier } from './dependency-specifier.js';
+import { describe, expect, test } from "bun:test";
 
-describe('classifyDependencySpecifier', () => {
-  test.each(['^1.0.0', '~2.3', '1.x', '*', '>=1 <2', '1.0.0 - 2.0.0', '^1 || ^2'])(
-    'accepts the semver range %p',
-    (range) => {
-      expect(classifyDependencySpecifier(range)).toEqual({ supported: true, range });
-    },
-  );
+import { classifyDependencySpecifier } from "./dependency-specifier.js";
 
-  test('treats an empty specifier as *', () => {
-    expect(classifyDependencySpecifier('  ')).toEqual({ supported: true, range: '*' });
+describe("classifyDependencySpecifier", () => {
+  test.each([
+    "^1.0.0",
+    "~2.3",
+    "1.x",
+    "*",
+    ">=1 <2",
+    "1.0.0 - 2.0.0",
+    "^1 || ^2",
+  ])("accepts the semver range %p", (range) => {
+    expect(classifyDependencySpecifier(range)).toEqual({
+      range,
+      supported: true,
+    });
+  });
+
+  test("treats an empty specifier as *", () => {
+    expect(classifyDependencySpecifier("  ")).toEqual({
+      range: "*",
+      supported: true,
+    });
   });
 
   test.each([
-    ['workspace:^', /workspace protocol/],
-    ['file:../local', /local path specifiers/],
-    ['link:../local', /local path specifiers/],
-    ['catalog:default', /catalog specifiers/],
-    ['npm:other@^1.0.0', /npm alias specifiers/],
-    ['git+https://github.com/o/r.git', /git specifiers/],
-    ['github:owner/repo', /git host shorthand/],
-    ['https://example.com/pkg.tgz', /tarball URL specifiers/],
-    ['owner/repo#semver:^1', /git host shorthand/],
-    ['latest', /not a semver range/],
-    ['next', /not a semver range/],
-  ])('rejects %p', (specifier, reason) => {
+    ["workspace:^", /workspace protocol/u],
+    ["file:../local", /local path specifiers/u],
+    ["link:../local", /local path specifiers/u],
+    ["catalog:default", /catalog specifiers/u],
+    ["npm:other@^1.0.0", /npm alias specifiers/u],
+    ["git+https://github.com/o/r.git", /git specifiers/u],
+    ["github:owner/repo", /git host shorthand/u],
+    ["https://example.com/pkg.tgz", /tarball URL specifiers/u],
+    ["owner/repo#semver:^1", /git host shorthand/u],
+    ["latest", /not a semver range/u],
+    ["next", /not a semver range/u],
+  ])("rejects %p", (specifier, reason) => {
     const result = classifyDependencySpecifier(specifier);
     expect(result.supported).toBe(false);
-    if (!result.supported) expect(result.reason).toMatch(reason);
+    if (!result.supported) {
+      expect(result.reason).toMatch(reason);
+    }
   });
 });

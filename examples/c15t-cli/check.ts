@@ -1,11 +1,11 @@
-import { existsSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { existsSync } from "node:fs";
 
-type Result = {
+interface Result {
   status: number;
   stderr: string;
   stdout: string;
-};
+}
 
 const variants = [
   { command: "bun", label: "bun npm reference", prefix: ["cli-npm.ts"] },
@@ -15,12 +15,16 @@ const variants = [
     prefix: ["--disable-warning=ExperimentalWarning", "cli-npm.ts"],
   },
   { command: "./demo-npm", label: "scriptc dynamic npm", prefix: [] },
-  { command: "./demo-static", label: "scriptc static selected source", prefix: [] },
+  {
+    command: "./demo-static",
+    label: "scriptc static selected source",
+    prefix: [],
+  },
 ] as const;
 
-function run(command: string, args: readonly string[]): Result {
+const run = function run(command: string, args: readonly string[]): Result {
   const result = spawnSync(command, [...args], {
-    encoding: "utf8",
+    encoding: "utf-8",
     env: {
       ...process.env,
       CI: "1",
@@ -28,7 +32,9 @@ function run(command: string, args: readonly string[]): Result {
       NO_COLOR: "1",
     },
   });
-  if (result.error) throw result.error;
+  if (result.error) {
+    throw result.error;
+  }
   if (result.status == null) {
     throw new Error(
       `${command} terminated without an exit status (${result.signal ?? "unknown"})`
@@ -39,7 +45,7 @@ function run(command: string, args: readonly string[]): Result {
     stderr: result.stderr,
     stdout: result.stdout,
   };
-}
+};
 
 for (const variant of variants) {
   if (variant.command.startsWith("./") && !existsSync(variant.command)) {
@@ -65,4 +71,6 @@ for (const args of [[], ["--help"]] as const) {
   }
 }
 
-console.log("Help output and exit behavior match for 2 scenarios across 4 variants.");
+console.log(
+  "Help output and exit behavior match for 2 scenarios across 4 variants."
+);

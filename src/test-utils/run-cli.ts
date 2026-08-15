@@ -1,37 +1,44 @@
-import { resolve } from 'node:path';
+import nodePath from "node:path";
 
-const CLI_PATH = resolve(import.meta.dir, '..', 'cli.ts');
+const CLI_PATH = nodePath.resolve(import.meta.dir, "..", "cli.ts");
 
-export type RunCliOptions = {
+export interface RunCliOptions {
   cwd: string;
-  env?: Record<string, string | undefined>;
+  env?: { readonly [key: string]: string | undefined };
   /** Bytes to write to the CLI's stdin (e.g. answers to interactive prompts). */
   stdin?: string;
-};
+}
 
-export type RunCliResult = {
+export interface RunCliResult {
   stdout: string;
   stderr: string;
   exitCode: number;
-};
+}
 
 /** Spawn `bun src/cli.ts ...args` and capture stdout/stderr/exit code. */
-export async function runCli(args: string[], opts: RunCliOptions): Promise<RunCliResult> {
+export const runCli = async function runCli(
+  args: string[],
+  opts: RunCliOptions
+): Promise<RunCliResult> {
+  const overrides = opts.env ?? {};
   const env: Record<string, string> = {};
   for (const [k, v] of Object.entries(process.env)) {
-    if (v !== undefined) env[k] = v;
+    if (v !== undefined && !(k in overrides)) {
+      env[k] = v;
+    }
   }
-  for (const [k, v] of Object.entries(opts.env ?? {})) {
-    if (v === undefined) delete env[k];
-    else env[k] = v;
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v !== undefined) {
+      env[k] = v;
+    }
   }
 
   const proc = Bun.spawn([process.execPath, CLI_PATH, ...args], {
     cwd: opts.cwd,
     env,
-    stdin: opts.stdin == null ? 'ignore' : 'pipe',
-    stdout: 'pipe',
-    stderr: 'pipe',
+    stderr: "pipe",
+    stdin: opts.stdin == null ? "ignore" : "pipe",
+    stdout: "pipe",
   });
 
   if (opts.stdin != null && proc.stdin != null) {
@@ -45,5 +52,5 @@ export async function runCli(args: string[], opts: RunCliOptions): Promise<RunCl
     proc.exited,
   ]);
 
-  return { stdout, stderr, exitCode };
-}
+  return { exitCode, stderr, stdout };
+};

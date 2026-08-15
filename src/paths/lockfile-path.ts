@@ -1,5 +1,5 @@
-import { join } from 'node:path';
+import nodePath from "node:path";
 
-export function lockfilePath(cwd: string): string {
-  return join(cwd, 'inrepo.lock.json');
-}
+export const lockfilePath = function lockfilePath(cwd: string): string {
+  return nodePath.join(cwd, "inrepo.lock.json");
+};

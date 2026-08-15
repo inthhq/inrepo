@@ -6,6 +6,12 @@
       "sourceType": "github",
       "skillPath": "hexbus/SKILL.md",
       "computedHash": "0bda7c23e930a868a9d8e898079312d4d32fdc3113747eabe7d360d5d844201a"
+    },
+    "leadtype": {
+      "source": "inthhq/leadtype",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/leadtype/SKILL.md",
+      "computedHash": "ed918b36b6be9316fa51b58a6f90b555fde3b4a3b1c8577f3c8875e8691ce584"
     }
   }
 }

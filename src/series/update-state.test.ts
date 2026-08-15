@@ -1,14 +1,15 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+
 import {
   seriesDirPath,
   updateDirPath,
   updateSeriesSnapshotPath,
   updateStatePath,
-} from '../overlay/overlay-paths.js';
-import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
+} from "../overlay/overlay-paths.js";
+import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
 import {
   clearUpdate,
   isUpdateInProgress,
@@ -17,110 +18,127 @@ import {
   snapshotUpdateSeries,
   updateInProgressError,
   writeUpdateState,
-  type UpdateState,
-} from './update-state.js';
+} from "./update-state.js";
+import type { UpdateState } from "./update-state.js";
 
-function sampleState(name: string): UpdateState {
+const sampleState = function sampleState(name: string): UpdateState {
   return {
+    gitUrl: "https://example.test/repo.git",
     name,
-    gitUrl: 'https://example.test/repo.git',
-    repositoryDirectory: 'packages/pkg',
-    oldCommit: 'a'.repeat(40),
-    newCommit: 'b'.repeat(40),
-    ref: 'main',
+    newBase: "c".repeat(40),
+    newCommit: "b".repeat(40),
+    oldCommit: "a".repeat(40),
     persistRef: true,
-    newBase: 'c'.repeat(40),
-    startedAt: '2026-01-01T00:00:00.000Z',
+    ref: "main",
+    repositoryDirectory: "packages/pkg",
+    startedAt: "2026-01-01T00:00:00.000Z",
   };
-}
+};
 
-describe('update state', () => {
+describe("update state", () => {
   let cwd: string;
 
   beforeEach(async () => {
-    cwd = await makeTmpDir('inrepo-update-state-');
+    cwd = await makeTmpDir("inrepo-update-state-");
   });
 
   afterEach(async () => {
     await cleanupTmpDir(cwd);
   });
 
-  test('round-trips through .inrepo/updates/<package>/state.json', async () => {
-    expect(isUpdateInProgress(cwd, 'pkg')).toBe(false);
-    expect(await readUpdateState(cwd, 'pkg')).toBeNull();
+  test("round-trips through .inrepo/updates/<package>/state.json", async () => {
+    expect(isUpdateInProgress(cwd, "pkg")).toBe(false);
+    expect(await readUpdateState(cwd, "pkg")).toBeNull();
 
-    await writeUpdateState(cwd, 'pkg', sampleState('pkg'));
+    await writeUpdateState(cwd, "pkg", sampleState("pkg"));
 
-    expect(updateStatePath(cwd, 'pkg')).toBe(join(cwd, '.inrepo', 'updates', 'pkg', 'state.json'));
-    expect(isUpdateInProgress(cwd, 'pkg')).toBe(true);
-    expect(await readUpdateState(cwd, 'pkg')).toEqual(sampleState('pkg'));
-  });
-
-  test('keeps scoped packages in their own directory', async () => {
-    await writeUpdateState(cwd, '@scope/pkg', sampleState('@scope/pkg'));
-    expect(updateDirPath(cwd, '@scope/pkg')).toBe(
-      join(cwd, '.inrepo', 'updates', '@scope', 'pkg'),
+    expect(updateStatePath(cwd, "pkg")).toBe(
+      nodePath.join(cwd, ".inrepo", "updates", "pkg", "state.json")
     );
-    expect(isUpdateInProgress(cwd, '@scope/pkg')).toBe(true);
-    expect(isUpdateInProgress(cwd, 'pkg')).toBe(false);
+    expect(isUpdateInProgress(cwd, "pkg")).toBe(true);
+    expect(await readUpdateState(cwd, "pkg")).toEqual(sampleState("pkg"));
   });
 
-  test('clearing removes the scratch repository along with the state', async () => {
-    await writeUpdateState(cwd, 'pkg', sampleState('pkg'));
-    const repoFile = join(updateDirPath(cwd, 'pkg'), 'repo', 'file.txt');
-    await mkdir(join(updateDirPath(cwd, 'pkg'), 'repo'), { recursive: true });
-    await writeFile(repoFile, 'work in progress\n', 'utf8');
-
-    await clearUpdate(cwd, 'pkg');
-
-    expect(existsSync(updateDirPath(cwd, 'pkg'))).toBe(false);
-    expect(isUpdateInProgress(cwd, 'pkg')).toBe(false);
-  });
-
-  test('rejects a state file that is missing required fields', async () => {
-    await mkdir(updateDirPath(cwd, 'pkg'), { recursive: true });
-    await writeFile(updateStatePath(cwd, 'pkg'), '{"name":"pkg"}\n', 'utf8');
-    await expect(readUpdateState(cwd, 'pkg')).rejects.toThrow(/missing required field "gitUrl"/);
-  });
-
-  test('rejects a state file that is not JSON', async () => {
-    await mkdir(updateDirPath(cwd, 'pkg'), { recursive: true });
-    await writeFile(updateStatePath(cwd, 'pkg'), '{ broken', 'utf8');
-    await expect(readUpdateState(cwd, 'pkg')).rejects.toThrow(/Invalid update state/);
-  });
-
-  test('snapshot and restore replace a rewritten series', async () => {
-    const live = seriesDirPath(cwd, 'pkg');
-    await mkdir(live, { recursive: true });
-    await writeFile(join(live, '0001-old.patch'), 'old\n', 'utf8');
-
-    await snapshotUpdateSeries(cwd, 'pkg');
-    expect(await readFile(join(updateSeriesSnapshotPath(cwd, 'pkg'), '0001-old.patch'), 'utf8')).toBe(
-      'old\n',
+  test("keeps scoped packages in their own directory", async () => {
+    await writeUpdateState(cwd, "@scope/pkg", sampleState("@scope/pkg"));
+    expect(updateDirPath(cwd, "@scope/pkg")).toBe(
+      nodePath.join(cwd, ".inrepo", "updates", "@scope", "pkg")
     );
-
-    await rm(join(live, '0001-old.patch'));
-    await writeFile(join(live, '0001-new.patch'), 'new\n', 'utf8');
-
-    await restoreUpdateSeries(cwd, 'pkg');
-    expect((await readdir(live)).sort()).toEqual(['0001-old.patch']);
-    expect(await readFile(join(live, '0001-old.patch'), 'utf8')).toBe('old\n');
+    expect(isUpdateInProgress(cwd, "@scope/pkg")).toBe(true);
+    expect(isUpdateInProgress(cwd, "pkg")).toBe(false);
   });
 
-  test('restore is a no-op when no snapshot was taken', async () => {
-    const live = seriesDirPath(cwd, 'pkg');
+  test("clearing removes the scratch repository along with the state", async () => {
+    await writeUpdateState(cwd, "pkg", sampleState("pkg"));
+    const repoFile = nodePath.join(
+      updateDirPath(cwd, "pkg"),
+      "repo",
+      "file.txt"
+    );
+    await mkdir(nodePath.join(updateDirPath(cwd, "pkg"), "repo"), {
+      recursive: true,
+    });
+    await writeFile(repoFile, "work in progress\n", "utf-8");
+
+    await clearUpdate(cwd, "pkg");
+
+    expect(existsSync(updateDirPath(cwd, "pkg"))).toBe(false);
+    expect(isUpdateInProgress(cwd, "pkg")).toBe(false);
+  });
+
+  test("rejects a state file that is missing required fields", async () => {
+    await mkdir(updateDirPath(cwd, "pkg"), { recursive: true });
+    await writeFile(updateStatePath(cwd, "pkg"), '{"name":"pkg"}\n', "utf-8");
+    await expect(readUpdateState(cwd, "pkg")).rejects.toThrow(
+      /missing required field "gitUrl"/u
+    );
+  });
+
+  test("rejects a state file that is not JSON", async () => {
+    await mkdir(updateDirPath(cwd, "pkg"), { recursive: true });
+    await writeFile(updateStatePath(cwd, "pkg"), "{ broken", "utf-8");
+    await expect(readUpdateState(cwd, "pkg")).rejects.toThrow(
+      /Invalid update state/u
+    );
+  });
+
+  test("snapshot and restore replace a rewritten series", async () => {
+    const live = seriesDirPath(cwd, "pkg");
     await mkdir(live, { recursive: true });
-    await writeFile(join(live, '0001-live.patch'), 'live\n', 'utf8');
+    await writeFile(nodePath.join(live, "0001-old.patch"), "old\n", "utf-8");
 
-    await restoreUpdateSeries(cwd, 'pkg');
-    expect(await readdir(live)).toEqual(['0001-live.patch']);
+    await snapshotUpdateSeries(cwd, "pkg");
+    expect(
+      await readFile(
+        nodePath.join(updateSeriesSnapshotPath(cwd, "pkg"), "0001-old.patch"),
+        "utf-8"
+      )
+    ).toBe("old\n");
+
+    await rm(nodePath.join(live, "0001-old.patch"));
+    await writeFile(nodePath.join(live, "0001-new.patch"), "new\n", "utf-8");
+
+    await restoreUpdateSeries(cwd, "pkg");
+    expect(await (await readdir(live)).toSorted()).toEqual(["0001-old.patch"]);
+    expect(await readFile(nodePath.join(live, "0001-old.patch"), "utf-8")).toBe(
+      "old\n"
+    );
   });
 
-  test('updateInProgressError names --continue and --abort', () => {
-    const err = updateInProgressError(cwd, 'pkg', 'patching');
-    expect(err.message).toContain('already in progress');
-    expect(err.message).toContain('inrepo update pkg --continue');
-    expect(err.message).toContain('inrepo update pkg --abort');
-    expect(err.message).toContain('before patching');
+  test("restore is a no-op when no snapshot was taken", async () => {
+    const live = seriesDirPath(cwd, "pkg");
+    await mkdir(live, { recursive: true });
+    await writeFile(nodePath.join(live, "0001-live.patch"), "live\n", "utf-8");
+
+    await restoreUpdateSeries(cwd, "pkg");
+    expect(await readdir(live)).toEqual(["0001-live.patch"]);
+  });
+
+  test("updateInProgressError names --continue and --abort", () => {
+    const err = updateInProgressError(cwd, "pkg", "patching");
+    expect(err.message).toContain("already in progress");
+    expect(err.message).toContain("inrepo update pkg --continue");
+    expect(err.message).toContain("inrepo update pkg --abort");
+    expect(err.message).toContain("before patching");
   });
 });

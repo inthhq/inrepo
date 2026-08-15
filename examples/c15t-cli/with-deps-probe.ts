@@ -1,13 +1,13 @@
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import nodePath from "node:path";
 
 const PACKAGE = "@c15t/cli";
 const VERSION = "2.2.0";
-const CLI_PATH = resolve(import.meta.dir, "..", "..", "src", "cli.ts");
+const CLI_PATH = nodePath.resolve(import.meta.dir, "..", "..", "src", "cli.ts");
 const OFFLINE_REGISTRY = "http://127.0.0.1:9";
 
-type Lock = {
+interface Lock {
   lockfileVersion: number;
   modules: Record<
     string,
@@ -15,21 +15,33 @@ type Lock = {
   >;
   graph: Record<
     string,
-    { dependencies?: Record<string, { module: string; range: string; version?: string }> }
+    {
+      dependencies?: Record<
+        string,
+        { module: string; range: string; version?: string }
+      >;
+    }
   >;
-};
+}
 
-async function run(cwd: string, args: string[], registry?: string): Promise<void> {
+const run = async function run(
+  cwd: string,
+  args: string[],
+  registry?: string
+): Promise<void> {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    CI: "1",
+    INREPO_CONFIG: "inrepo.json",
+    INREPO_NONINTERACTIVE: "1",
+    NO_COLOR: "1",
+  };
+  if (registry != null) {
+    env.INREPO_REGISTRY = registry;
+  }
   const proc = Bun.spawn([process.execPath, CLI_PATH, ...args], {
     cwd,
-    env: {
-      ...process.env,
-      CI: "1",
-      INREPO_CONFIG: "inrepo.json",
-      INREPO_NONINTERACTIVE: "1",
-      NO_COLOR: "1",
-      ...(registry == null ? {} : { INREPO_REGISTRY: registry }),
-    },
+    env,
     stderr: "pipe",
     stdout: "pipe",
   });
@@ -39,65 +51,102 @@ async function run(cwd: string, args: string[], registry?: string): Promise<void
     proc.exited,
   ]);
   if (exitCode !== 0) {
-    throw new Error(`inrepo ${args.join(" ")} failed with exit ${exitCode}\n${stdout}${stderr}`);
+    throw new Error(
+      `inrepo ${args.join(" ")} failed with exit ${exitCode}\n${stdout}${stderr}`
+    );
   }
-}
+};
 
-function edge(lock: Lock, parent: string, dependency: string): string {
+const edge = function edge(
+  lock: Lock,
+  parent: string,
+  dependency: string
+): string {
   const module = lock.graph[parent]?.dependencies?.[dependency]?.module;
-  if (module == null) throw new Error(`Missing ${parent} -> ${dependency} graph edge`);
+  if (module == null) {
+    throw new Error(`Missing ${parent} -> ${dependency} graph edge`);
+  }
   return module;
-}
+};
 
-function assertIncompatibleInstances(lock: Lock): void {
+const assertIncompatibleInstances = function assertIncompatibleInstances(
+  lock: Lock
+): void {
   const cittyFromGiget = edge(lock, "giget@2.0.0", "citty");
   const cittyFromNypm = edge(lock, "nypm@0.6.9", "citty");
   if (cittyFromGiget === cittyFromNypm) {
-    throw new Error(`Expected separate citty instances, both edges target ${cittyFromGiget}`);
+    throw new Error(
+      `Expected separate citty instances, both edges target ${cittyFromGiget}`
+    );
   }
 
   for (const source of ["citty", "content-type", "hono"]) {
-    const instances = Object.entries(lock.modules).filter(([, entry]) => entry.source === source);
+    const instances = Object.entries(lock.modules).filter(
+      ([, entry]) => entry.source === source
+    );
     if (instances.length < 2) {
-      throw new Error(`Expected multiple ${source} instances, received ${instances.length}`);
+      throw new Error(
+        `Expected multiple ${source} instances, received ${instances.length}`
+      );
     }
   }
-}
+};
 
-const cwd = await mkdtemp(join(tmpdir(), "inrepo-c15t-with-deps-"));
+const cwd = await mkdtemp(nodePath.join(tmpdir(), "inrepo-c15t-with-deps-"));
 try {
   await writeFile(
-    join(cwd, "package.json"),
+    nodePath.join(cwd, "package.json"),
     `${JSON.stringify({ name: "c15t-with-deps-probe", private: true }, null, 2)}\n`,
-    "utf8",
+    "utf-8"
   );
 
-  await run(cwd, ["add", PACKAGE, "--ref", `${PACKAGE}@${VERSION}`, "--with-deps"]);
-  const lock = JSON.parse(await readFile(join(cwd, "inrepo.lock.json"), "utf8")) as Lock;
+  await run(cwd, [
+    "add",
+    PACKAGE,
+    "--ref",
+    `${PACKAGE}@${VERSION}`,
+    "--with-deps",
+  ]);
+  // SAFETY: value was parsed or constructed by the surrounding function before this assertion.
+  const lock = JSON.parse(
+    await readFile(nodePath.join(cwd, "inrepo.lock.json"), "utf-8")
+  ) as Lock;
   if (lock.lockfileVersion !== 5) {
-    throw new Error(`Expected lockfileVersion 5, received ${lock.lockfileVersion}`);
+    throw new Error(
+      `Expected lockfileVersion 5, received ${lock.lockfileVersion}`
+    );
   }
-  if (Object.keys(lock.modules).length < 180 || lock.modules[PACKAGE]?.source !== PACKAGE) {
-    throw new Error(`Unexpected ${PACKAGE} closure: ${Object.keys(lock.modules).length} modules`);
+  if (
+    Object.keys(lock.modules).length < 180 ||
+    lock.modules[PACKAGE]?.source !== PACKAGE
+  ) {
+    throw new Error(
+      `Unexpected ${PACKAGE} closure: ${Object.keys(lock.modules).length} modules`
+    );
   }
   assertIncompatibleInstances(lock);
-  const artifactModules = Object.values(lock.modules).filter((entry) => entry.artifact != null);
+  const artifactModules = Object.values(lock.modules).filter(
+    (entry) => entry.artifact != null
+  );
   if (artifactModules.length < Object.keys(lock.modules).length - 1) {
     throw new Error(
-      `Expected every registry dependency to retain its published artifact; received ${artifactModules.length}`,
+      `Expected every registry dependency to retain its published artifact; received ${artifactModules.length}`
     );
   }
 
   // Rebuild entirely from committed config/lock plus the immutable repository
   // cache. A dead registry proves sync and verify do not re-resolve npm ranges.
-  await rm(join(cwd, "inrepo_modules"), { recursive: true, force: true });
+  await rm(nodePath.join(cwd, "inrepo_modules"), {
+    force: true,
+    recursive: true,
+  });
   await run(cwd, ["sync"], OFFLINE_REGISTRY);
   await run(cwd, ["verify"], OFFLINE_REGISTRY);
 
   console.log(
     `${PACKAGE}@${VERSION}: resolved, materialized, synced, and verified ` +
-      `${Object.keys(lock.modules).length} exact runtime module instances.`,
+      `${Object.keys(lock.modules).length} exact runtime module instances.`
   );
 } finally {
-  await rm(cwd, { recursive: true, force: true });
+  await rm(cwd, { force: true, recursive: true });
 }
