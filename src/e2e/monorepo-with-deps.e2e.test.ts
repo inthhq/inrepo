@@ -3,14 +3,14 @@ import { existsSync } from 'node:fs';
 import { readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { bootstrapHostPackageJson, envFor, readJson } from '../test-utils/e2e-harness.js';
-import { makeMonorepoPackageGraphFixture, type PackageGraphFixture } from '../test-utils/package-graph-fixture.js';
+import { makeMonorepoPackageGraphFixture, type MonorepoPackageGraphFixture } from '../test-utils/package-graph-fixture.js';
 import { runCli } from '../test-utils/run-cli.js';
 import { cleanupTmpDir, makeTmpDir } from '../test-utils/tmp-dir.js';
 
 const OFFLINE_REGISTRY = 'http://127.0.0.1:9';
 
 describe('CLI: monorepo add --with-deps (e2e)', () => {
-  let fx: PackageGraphFixture & { commit: string; gitConfigPath: string };
+  let fx: MonorepoPackageGraphFixture;
   let cwd: string;
   let env: Record<string, string>;
 

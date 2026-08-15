@@ -39,6 +39,17 @@ export type PackageGraphFixture = {
   cleanup(): Promise<void>;
 };
 
+/**
+ * A monorepo fixture holds every package at one commit in one repository, so
+ * there is no per-package branch to move and `commitUpstream` does not apply.
+ */
+export type MonorepoPackageGraphFixture = Omit<PackageGraphFixture, 'commitUpstream'> & {
+  /** The single commit every package subtree was published at. */
+  commit: string;
+  /** `insteadOf` config that maps the public URL onto the local bare repository. */
+  gitConfigPath: string;
+};
+
 export type MonorepoFixturePackageSpec = {
   name: string;
   directory: string;
@@ -201,7 +212,7 @@ export async function makePackageGraphFixture(
 export async function makeMonorepoPackageGraphFixture(
   specs: MonorepoFixturePackageSpec[],
   prefix = 'inrepo-monorepo-graph-fixture-',
-): Promise<PackageGraphFixture & { commit: string; gitConfigPath: string }> {
+): Promise<MonorepoPackageGraphFixture> {
   const root = await makeTmpDir(prefix);
   const bare = join(root, 'monorepo.git');
   const work = join(root, 'monorepo-work');
