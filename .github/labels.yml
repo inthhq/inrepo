@@ -1,6 +1,7 @@
 # Source of truth for inrepo GitHub labels.
-# Kind (one), area (one or more), and state (maintainer-applied).
+# Kind (one) and state (maintainer-applied).
 # Unlabeled means untriaged — there is no needs-triage label.
+# No area:* labels: inrepo is one CLI, not a multi-surface monorepo.
 # Compatible with crazy-max/ghaction-github-labeler (`from_name` renames).
 
 # --- Kind ---
@@ -18,38 +19,6 @@
   color: "0075ca"
   description: Documentation updates or improvements
   from_name: documentation
-
-# --- Area (product surface, not a cross-cutting concern) ---
-# Name the surface a reporter is using. Do not add area:package-managers,
-# area:security, or area:performance — those belong in the title/body.
-
-- name: area:cli
-  color: "c5def5"
-  description: Commands, flags, prompts, hexbus
-
-- name: area:config
-  color: "c5def5"
-  description: inrepo.json, package.json#inrepo, schema
-
-- name: area:patches
-  color: "c5def5"
-  description: Patch series, overlays, generated-file mapping
-
-- name: area:verify
-  color: "c5def5"
-  description: verify, doctor, CI checks
-
-- name: area:integrations
-  color: "c5def5"
-  description: Library API, manifest/status JSON, tool contract
-
-- name: area:agents
-  color: "c5def5"
-  description: Generated skills and local-source agent workflows
-
-- name: area:docs
-  color: "c5def5"
-  description: docs-src, README, bundled docs
 
 # --- State ---
 
