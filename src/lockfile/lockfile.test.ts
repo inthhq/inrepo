@@ -1,5 +1,6 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { JsonObject } from "../json/unknown.js";
 import { lockfilePath } from "../paths/lockfile-path.js";
@@ -139,7 +140,7 @@ describe("lockfile read/write/upsert", () => {
         }
       ).lockfileVersion
     ).toBe(5);
-    expect(await (await readLockfile(cwd)).modules.example.artifact).toEqual(
+    expect((await readLockfile(cwd)).modules.example.artifact).toEqual(
       artifact
     );
   });
@@ -215,9 +216,7 @@ describe("lockfile read/write/upsert", () => {
       "packages/cli"
     );
     expect(
-      await (
-        await readLockfile(cwd)
-      ).modules["@scope/cli"].repositoryDirectory
+      (await readLockfile(cwd)).modules["@scope/cli"].repositoryDirectory
     ).toBe("packages/cli");
   });
 

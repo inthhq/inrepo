@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { JsonObject } from "../json/unknown.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
@@ -129,7 +130,14 @@ describe("upsertInrepoJson", () => {
     await upsertInrepoJson(cwd, { dev: true, name: "b" });
 
     const raw = await readFile(path, "utf-8");
-    const parsed = JSON.parse(raw);
+    // SAFETY: inrepo.json was just written as JSON by upsertInrepoJson.
+    const parsed = JSON.parse(raw) as {
+      $schema?: string;
+      exclude?: string[];
+      keep?: string[];
+      packages?: { dev?: boolean; name: string }[];
+      somethingCustom?: { hello: string };
+    };
     expect(Object.keys(parsed)).toEqual([
       "$schema",
       "exclude",

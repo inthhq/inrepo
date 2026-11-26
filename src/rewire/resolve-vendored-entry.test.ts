@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { JsonObject } from "../json/unknown.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
@@ -36,12 +37,18 @@ describe("resolveVendoredEntry", () => {
     }
   };
 
-  const resolve = function resolve(
+  const resolve = async function resolve(
     subpath: string,
     condition: "import" | "require" = "import"
   ) {
-    return loadEntryManifest(dep).then((manifest) =>
-      resolveVendoredEntry({ condition, depRoot: dep, manifest, subpath })
+    return await loadEntryManifest(dep).then(
+      async (manifest) =>
+        await resolveVendoredEntry({
+          condition,
+          depRoot: dep,
+          manifest,
+          subpath,
+        })
     );
   };
 

@@ -1,3 +1,9 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { readdir, readFile, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+import { text } from "node:stream/consumers";
+
 import {
   afterAll,
   afterEach,
@@ -6,9 +12,7 @@ import {
   describe,
   expect,
   test,
-} from "bun:test";
-import { readdir, readFile, writeFile } from "node:fs/promises";
-import nodePath from "node:path";
+} from "vite-plus/test";
 
 import { bootstrapHostPackageJson, envFor } from "../test-utils/e2e-harness.js";
 import { makePackageGraphFixture } from "../test-utils/package-graph-fixture.js";
@@ -143,12 +147,12 @@ describe("CLI: generated import rewiring (e2e)", () => {
     );
   };
 
-  const addAlpha = function addAlpha(): Promise<{
+  const addAlpha = async function addAlpha(): Promise<{
     stdout: string;
     stderr: string;
     exitCode: number;
   }> {
-    return runCli(
+    return await runCli(
       ["add", "--git", fx.gitUrl("alpha"), "--with-deps", "alpha"],
       { cwd, env }
     );
@@ -158,8 +162,10 @@ describe("CLI: generated import rewiring (e2e)", () => {
     return nodePath.join(cwd, "inrepo_modules", ...parts);
   };
 
-  const readModule = function readModule(...parts: string[]): Promise<string> {
-    return readFile(modulePath(...parts), "utf-8");
+  const readModule = async function readModule(
+    ...parts: string[]
+  ): Promise<string> {
+    return await readFile(modulePath(...parts), "utf-8");
   };
 
   /** Run the rewired entry point on real Node, which does no directory or main resolution. */
@@ -168,24 +174,23 @@ describe("CLI: generated import rewiring (e2e)", () => {
     stderr: string;
     exitCode: number;
   }> {
-    const proc = Bun.spawn(["node", modulePath("alpha", "src", "index.js")], {
+    const proc = spawn("node", [modulePath("alpha", "src", "index.js")], {
       cwd,
-      stderr: "pipe",
-      stdout: "pipe",
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    const [stdout, stderr, exitCode] = await Promise.all([
-      new Response(proc.stdout).text(),
-      new Response(proc.stderr).text(),
-      proc.exited,
+    const [stdout, stderr] = await Promise.all([
+      text(proc.stdout),
+      text(proc.stderr),
+      once(proc, "close"),
     ]);
-    return { exitCode, stderr, stdout };
+    return { exitCode: proc.exitCode ?? 1, stderr, stdout };
   };
 
   const seriesFiles = async function seriesFiles(
     name: string
   ): Promise<string[]> {
     try {
-      return await (
+      return (
         await readdir(nodePath.join(cwd, "inrepo_patches", name, "series"))
       ).toSorted();
     } catch {
@@ -539,7 +544,7 @@ describe("CLI: import rewiring across an update (e2e)", () => {
     );
     await writeFile(
       indexPath,
-      await (await readFile(indexPath, "utf-8")).replace(
+      (await readFile(indexPath, "utf-8")).replace(
         "const label = 'gamma';",
         "const label = 'patched';"
       ),
@@ -589,7 +594,7 @@ describe("CLI: import rewiring across an update (e2e)", () => {
 
     // The rebased patch still carries the patched tree's own specifiers.
     const seriesDir = nodePath.join(cwd, "inrepo_patches", "alpha", "series");
-    const [fileName] = await (await readdir(seriesDir)).toSorted();
+    const [fileName] = (await readdir(seriesDir)).toSorted();
     const contents = await readFile(
       nodePath.join(seriesDir, fileName),
       "utf-8"

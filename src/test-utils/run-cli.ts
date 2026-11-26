@@ -1,6 +1,10 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import nodePath from "node:path";
+import { text } from "node:stream/consumers";
 
-const CLI_PATH = nodePath.resolve(import.meta.dir, "..", "cli.ts");
+const CLI_PATH = nodePath.resolve(import.meta.dirname, "..", "cli.ts");
+const REGISTER_URL = import.meta.resolve("vite-plus/register");
 
 export interface RunCliOptions {
   cwd: string;
@@ -15,7 +19,7 @@ export interface RunCliResult {
   exitCode: number;
 }
 
-/** Spawn `bun src/cli.ts ...args` and capture stdout/stderr/exit code. */
+/** Spawn `node --import vite-plus/register src/cli.ts ...args` and capture stdout/stderr/exit code. */
 export const runCli = async function runCli(
   args: string[],
   opts: RunCliOptions
@@ -33,24 +37,29 @@ export const runCli = async function runCli(
     }
   }
 
-  const proc = Bun.spawn([process.execPath, CLI_PATH, ...args], {
-    cwd: opts.cwd,
-    env,
-    stderr: "pipe",
-    stdin: opts.stdin == null ? "ignore" : "pipe",
-    stdout: "pipe",
-  });
+  const proc = spawn(
+    process.execPath,
+    ["--import", REGISTER_URL, CLI_PATH, ...args],
+    {
+      cwd: opts.cwd,
+      env,
+      stdio: [opts.stdin == null ? "ignore" : "pipe", "pipe", "pipe"],
+    }
+  );
 
   if (opts.stdin != null && proc.stdin != null) {
-    proc.stdin.write(opts.stdin);
-    proc.stdin.end();
+    proc.stdin.end(opts.stdin);
   }
 
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    new Response(proc.stderr).text(),
-    proc.exited,
+  if (proc.stdout == null || proc.stderr == null) {
+    throw new Error("Expected piped stdout and stderr for CLI subprocess");
+  }
+
+  const [stdout, stderr] = await Promise.all([
+    text(proc.stdout),
+    text(proc.stderr),
+    once(proc, "close"),
   ]);
 
-  return { exitCode, stderr, stdout };
+  return { exitCode: proc.exitCode ?? 1, stderr, stdout };
 };

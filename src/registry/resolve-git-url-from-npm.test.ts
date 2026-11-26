@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { isString } from "../json/unknown.js";
 import {
@@ -13,7 +13,7 @@ const mockFetchOnce = function mockFetchOnce(
   const original = globalThis.fetch;
   let i = 0;
   const fetchImpl = Object.assign(
-    (input: string | URL | Request, _init?: RequestInit) => {
+    async (input: string | URL | Request, _init?: RequestInit) => {
       let url: string;
       if (isString(input)) {
         url = input;
@@ -26,12 +26,10 @@ const mockFetchOnce = function mockFetchOnce(
       const r = responses[Math.min(i, responses.length - 1)];
       i += 1;
       const status = r.status ?? 200;
-      return Promise.resolve(
-        Response.json(r.body ?? null, {
-          headers: { "content-type": "application/json" },
-          status,
-        })
-      );
+      return Response.json(r.body ?? null, {
+        headers: { "content-type": "application/json" },
+        status,
+      });
     },
     { preconnect: original.preconnect }
   );

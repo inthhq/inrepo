@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { runCli } from "../test-utils/run-cli.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
@@ -72,7 +73,9 @@ describe("CLI: help and argument validation (e2e)", () => {
     expect(r.exitCode).toBe(0);
     expect(existsSync(nodePath.join(cwd, "inrepo.json"))).toBe(true);
     const raw = await readFile(nodePath.join(cwd, "inrepo.json"), "utf-8");
-    expect(JSON.parse(raw).packages).toEqual([]);
+    // SAFETY: inrepo.json was just written as JSON by `inrepo init`.
+    const parsed = JSON.parse(raw) as { packages?: unknown[] };
+    expect(parsed.packages).toEqual([]);
     expect(await readFile(nodePath.join(cwd, ".gitignore"), "utf-8")).toBe(
       "/inrepo_modules/\n/.inrepo/\n"
     );

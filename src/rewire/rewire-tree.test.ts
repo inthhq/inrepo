@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
 import { loadEntryManifest } from "./resolve-vendored-entry.js";
@@ -104,7 +105,7 @@ describe("rewireTree", () => {
     name: string,
     dependencies: string[]
   ): Promise<RewirePlan> {
-    const map = new Map();
+    const map: RewirePlan["dependencies"] = new Map();
     for (const dependency of dependencies) {
       const root = nodePath.join(cwd, MODULES, ...dependency.split("/"));
       map.set(dependency, {
@@ -116,8 +117,8 @@ describe("rewireTree", () => {
     return { dependencies: map, modulePath: name, name };
   };
 
-  const read = function read(path: string): Promise<string> {
-    return readFile(nodePath.join(alpha, ...path.split("/")), "utf-8");
+  const read = async function read(path: string): Promise<string> {
+    return await readFile(nodePath.join(alpha, ...path.split("/")), "utf-8");
   };
 
   beforeEach(async () => {

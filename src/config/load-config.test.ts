@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { restoreEnv, snapshotEnv } from "../test-utils/test-env.js";
 import type { EnvSnapshot } from "../test-utils/test-env.js";

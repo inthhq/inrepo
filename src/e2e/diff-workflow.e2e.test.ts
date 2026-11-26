@@ -1,3 +1,6 @@
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+
 import {
   afterAll,
   afterEach,
@@ -6,9 +9,7 @@ import {
   describe,
   expect,
   test,
-} from "bun:test";
-import { mkdir, rm, writeFile } from "node:fs/promises";
-import nodePath from "node:path";
+} from "vite-plus/test";
 
 import {
   bootstrapHostPackageJson,

@@ -62,7 +62,7 @@ const statementFromBundle = function statementFromBundle(
     throw new Error("npm provenance statement is not an object");
   }
   // SAFETY: value was parsed or constructed by the surrounding function before this assertion.
-  return parsed as InTotoStatement;
+  return parsed;
 };
 
 const commitFromStatement = function commitFromStatement(

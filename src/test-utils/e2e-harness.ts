@@ -58,7 +58,7 @@ export const readConfig = async function readConfig(
   mode: ConfigMode
 ): Promise<JsonObject> {
   if (mode === "inrepo.json") {
-    return readJson(nodePath.join(cwd, "inrepo.json"));
+    return await readJson(nodePath.join(cwd, "inrepo.json"));
   }
   const pkg = await readJson(nodePath.join(cwd, "package.json"));
   // SAFETY: value was parsed or constructed by the surrounding function before this assertion.

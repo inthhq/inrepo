@@ -55,7 +55,7 @@ export const assemblePatchedTree = async function assemblePatchedTree(
     });
     return opts.targetRoot;
   }
-  return applyLegacyOverlayTree(opts);
+  return await applyLegacyOverlayTree(opts);
 };
 
 /**

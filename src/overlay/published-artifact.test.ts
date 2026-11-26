@@ -1,10 +1,15 @@
-import { afterEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
+import { once } from "node:events";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { Server } from "node:http";
 import nodePath from "node:path";
 import { gzipSync } from "node:zlib";
 
+import { afterEach, describe, expect, test } from "vite-plus/test";
+
+import { isString } from "../json/unknown.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
 import {
   ensurePublishedArtifact,
@@ -43,21 +48,35 @@ const tar = function tar(files: Record<string, string>): Buffer {
   return gzipSync(Buffer.concat(chunks));
 };
 
-const responseBody = function responseBody(buffer: Buffer): ArrayBuffer {
-  // SAFETY: value was parsed or constructed by the surrounding function before this assertion.
-  return buffer.buffer.slice(
-    buffer.byteOffset,
-    buffer.byteOffset + buffer.byteLength
-  ) as ArrayBuffer;
+const startArchiveServer = async function startArchiveServer(
+  archive: Buffer
+): Promise<{ port: number; server: Server }> {
+  const server = createServer((_req, res) => {
+    res.statusCode = 200;
+    res.end(archive);
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (address == null || isString(address)) {
+    throw new Error("Expected TCP address for artifact server");
+  }
+  return { port: address.port, server };
+};
+
+const stopServer = async function stopServer(server: Server): Promise<void> {
+  server.closeAllConnections();
+  server.close();
+  await once(server, "close");
 };
 
 describe("published npm artifacts", () => {
   let cwd: string | undefined;
-  let server: ReturnType<typeof Bun.serve> | undefined;
+  let server: Server | undefined;
 
   afterEach(async () => {
     if (server) {
-      await server.stop(true);
+      await stopServer(server);
     }
     if (cwd) {
       await cleanupTmpDir(cwd);
@@ -73,18 +92,15 @@ describe("published npm artifacts", () => {
       "package/package.json": '{"name":"example"}\n',
       "package/src/index.ts": "published source\n",
     });
-    server = Bun.serve({
-      fetch: () => new Response(responseBody(archive)),
-      hostname: "127.0.0.1",
-      port: 0,
-    });
+    const started = await startArchiveServer(archive);
+    ({ server } = started);
     const artifact = {
       integrity: `sha512-${createHash("sha512").update(archive).digest("base64")}`,
-      tarballUrl: `http://127.0.0.1:${server.port}/example.tgz`,
+      tarballUrl: `http://127.0.0.1:${started.port}/example.tgz`,
     };
 
     const artifactRoot = await ensurePublishedArtifact(cwd, artifact);
-    await server.stop(true);
+    await stopServer(server);
     server = undefined;
     expect(await ensurePublishedArtifact(cwd, artifact)).toBe(artifactRoot);
 
@@ -107,15 +123,12 @@ describe("published npm artifacts", () => {
   test("rejects bytes that do not match the lock integrity", async () => {
     cwd = await makeTmpDir("inrepo-artifact-integrity-");
     const archive = tar({ "package/index.js": "export default 1;\n" });
-    server = Bun.serve({
-      fetch: () => new Response(responseBody(archive)),
-      hostname: "127.0.0.1",
-      port: 0,
-    });
+    const started = await startArchiveServer(archive);
+    ({ server } = started);
     await expect(
       ensurePublishedArtifact(cwd, {
         integrity: `sha512-${Buffer.alloc(64).toString("base64")}`,
-        tarballUrl: `http://127.0.0.1:${server.port}/bad.tgz`,
+        tarballUrl: `http://127.0.0.1:${started.port}/bad.tgz`,
       })
     ).rejects.toThrow(/integrity mismatch/u);
   });
@@ -123,15 +136,12 @@ describe("published npm artifacts", () => {
   test("rejects tar entries outside the npm package root", async () => {
     cwd = await makeTmpDir("inrepo-artifact-path-");
     const archive = tar({ "../escape.js": "bad\n" });
-    server = Bun.serve({
-      fetch: () => new Response(responseBody(archive)),
-      hostname: "127.0.0.1",
-      port: 0,
-    });
+    const started = await startArchiveServer(archive);
+    ({ server } = started);
     await expect(
       ensurePublishedArtifact(cwd, {
         integrity: `sha512-${createHash("sha512").update(archive).digest("base64")}`,
-        tarballUrl: `http://127.0.0.1:${server.port}/unsafe.tgz`,
+        tarballUrl: `http://127.0.0.1:${started.port}/unsafe.tgz`,
       })
     ).rejects.toThrow(/outside package root/u);
     expect(existsSync(nodePath.join(cwd, "escape.js"))).toBe(false);
