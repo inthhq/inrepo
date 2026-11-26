@@ -17,8 +17,6 @@ export const MIRROR_TREE_TRAILER = "Inrepo-Mirror-Tree";
 const FALLBACK_LOCAL_ENV_VARS = [
   "GIT_ALTERNATE_OBJECT_DIRECTORIES",
   "GIT_COMMON_DIR",
-  "GIT_CONFIG",
-  "GIT_CONFIG_PARAMETERS",
   "GIT_DIR",
   "GIT_GRAFT_FILE",
   "GIT_IMPLICIT_WORK_TREE",
@@ -84,7 +82,7 @@ export const redactCredentials = function redactCredentials(
   text: string
 ): string {
   return text.replaceAll(
-    /(?<scheme>\b[a-z][\d+.a-z-]*:\/\/)[^\s/@]+@/giu,
+    /(?<scheme>\b[a-z][\d+.a-z-]*:\/\/)[^\s/]+@/giu,
     "$<scheme>***@"
   );
 };
@@ -105,8 +103,13 @@ const resolveSourceTree = async function resolveSourceTree(
   mirror: InrepoMirror,
   ref: string
 ): Promise<{ sourceCommit: string; tree: string }> {
-  const prefix = await tryCapture(["rev-parse", "--show-prefix"], cwd);
-  if (prefix == null) {
+  let prefix: string;
+  try {
+    // Keep path whitespace: strip only git's terminating newline.
+    prefix = (
+      await runGitCapture(["rev-parse", "--show-prefix"], { cwd, trim: false })
+    ).replace(/\n$/u, "");
+  } catch {
     throw new Error("inrepo mirror must run inside a git repository");
   }
   const sourceCommit = await tryCapture(
@@ -137,8 +140,9 @@ const resolveSourceTree = async function resolveSourceTree(
   return { sourceCommit, tree };
 };
 
-const utf8 = new TextDecoder("utf-8", { fatal: true });
-const lossyUtf8 = new TextDecoder("utf-8");
+// ignoreBOM: a leading U+FEFF is part of the file name, not an encoding marker.
+const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+const lossyUtf8 = new TextDecoder("utf-8", { ignoreBOM: true });
 
 /** Every entry under `tree`, read as bytes so non-UTF-8 names are detected. */
 const listTree = async function listTree(
@@ -209,8 +213,11 @@ const isolatedEnv = async function isolatedEnv(
     cwd: dir,
   }).catch(() => "");
   const strip = new Set([...FALLBACK_LOCAL_ENV_VARS, ...listed.split("\n")]);
+  // GIT_CONFIG_* carry settings (credentials, transport policy), not repository locations.
   const env: NodeJS.ProcessEnv = Object.fromEntries(
-    Object.entries(process.env).filter(([name]) => !strip.has(name))
+    Object.entries(process.env).filter(
+      ([name]) => name.startsWith("GIT_CONFIG") || !strip.has(name)
+    )
   );
   env.GIT_TERMINAL_PROMPT = "0";
   return env;
@@ -257,19 +264,23 @@ const scratchCapture = function scratchCapture(
 };
 
 /**
- * Expand the configured target the way `git push` from this repository would:
- * remote names and `url.*.insteadOf` rewrites, and relative paths against the config directory.
+ * The configured target as git should see it from the scratch repository:
+ * URLs (`scheme://`, `host:path`) as written, filesystem paths resolved
+ * against the config directory.
  */
-const resolveTargetUrl = async function resolveTargetUrl(
+const resolveTargetUrl = function resolveTargetUrl(
   cwd: string,
   git: string
-): Promise<string> {
-  const expanded =
-    (await tryCapture(["ls-remote", "--get-url", git], cwd)) ?? git;
-  if (expanded.startsWith("./") || expanded.startsWith("../")) {
-    return nodePath.resolve(cwd, expanded);
+): string {
+  if (nodePath.isAbsolute(git) || git.includes("://")) {
+    return git;
   }
-  return expanded;
+  const colon = git.indexOf(":");
+  const slash = git.indexOf("/");
+  if (colon > 0 && (slash === -1 || colon < slash)) {
+    return git;
+  }
+  return nodePath.resolve(cwd, git);
 };
 
 const readTargetTip = async function readTargetTip(
@@ -282,10 +293,26 @@ const readTargetTip = async function readTargetTip(
   if (!line) {
     return null;
   }
-  await runGit(["fetch", "-q", "--no-tags", "--depth=1", url, ref], {
-    cwd: scratch.dir,
-    env: scratch.env,
-  });
+  // Send no "have" lines: the borrowed host objects would otherwise advertise
+  // private commit IDs to the target during negotiation.
+  await runGit(
+    [
+      "-c",
+      "fetch.negotiationAlgorithm=noop",
+      "-c",
+      "core.alternateRefsCommand=true",
+      "fetch",
+      "-q",
+      "--no-tags",
+      "--depth=1",
+      url,
+      ref,
+    ],
+    {
+      cwd: scratch.dir,
+      env: scratch.env,
+    }
+  );
   return scratchCapture(scratch, ["rev-parse", "FETCH_HEAD"]);
 };
 
@@ -355,6 +382,16 @@ const assertSafeToPublish = async function assertSafeToPublish(
     cwd
   );
   if (ancestor == null) {
+    const shallow = await tryCapture(
+      ["rev-parse", "--is-shallow-repository"],
+      cwd
+    );
+    if (shallow === "true") {
+      throw new Error(
+        `Mirror "${mirror.name}": this clone is shallow, so inrepo cannot check that ${short(sourceCommit)} descends from ${short(previousSource)}, the last mirrored commit. ` +
+          "Fetch full history (for example, actions/checkout with fetch-depth: 0) or rerun with --overwrite."
+      );
+    }
     throw new Error(
       `Mirror "${mirror.name}": ${target} was last mirrored from ${short(previousSource)}, which is not an ancestor of ${short(sourceCommit)}. ` +
         "Publishing would roll the mirror back; rerun with --overwrite if that is intended."
@@ -371,10 +408,9 @@ const commitEnv = async function commitEnv(
   scratch: Scratch
 ): Promise<NodeJS.ProcessEnv> {
   const env: NodeJS.ProcessEnv = { ...scratch.env };
-  const name =
-    env.GIT_AUTHOR_NAME || (await tryCapture(["config", "user.name"], cwd));
-  const email =
-    env.GIT_AUTHOR_EMAIL || (await tryCapture(["config", "user.email"], cwd));
+  const name = await tryCapture(["config", "user.name"], cwd);
+  const email = await tryCapture(["config", "user.email"], cwd);
+  // Each role falls back to user.* on its own; neither copies the other's override.
   if (name) {
     env.GIT_AUTHOR_NAME ||= name;
     env.GIT_COMMITTER_NAME ||= name;
@@ -417,8 +453,8 @@ const writeFilteredTree = async function writeFilteredTree(
   entries: TreeEntry[],
   included: Set<string>
 ): Promise<string> {
-  const indexInfo = entries
-    .filter((e) => included.has(e.path))
+  const selected = entries.filter((e) => included.has(e.path));
+  const indexInfo = selected
     .map((e) => `${e.mode} ${e.type} ${e.oid}\t${e.path}\0`)
     .join("");
   await runGitInput(["update-index", "-z", "--index-info"], indexInfo, {
@@ -426,18 +462,22 @@ const writeFilteredTree = async function writeFilteredTree(
     env: scratch.env,
   });
   const tree = await scratchCapture(scratch, ["write-tree"]);
+  // Compare mode, type, object ID, and exact path bytes of every written entry.
+  const expected = new Set(
+    selected.map((e) => `${e.mode} ${e.type} ${e.oid}\t${e.path}`)
+  );
   const written = (
-    await scratchCapture(
-      scratch,
-      ["ls-tree", "-r", "-z", "--name-only", "--full-tree", tree],
-      false
-    )
+    await runGitBytes(["ls-tree", "-r", "-z", "--full-tree", tree], {
+      cwd: scratch.dir,
+      env: scratch.env,
+    })
   )
+    .toString("utf-8")
     .split("\0")
     .filter(Boolean);
   if (
-    written.length !== included.size ||
-    written.some((path) => !included.has(path))
+    written.length !== expected.size ||
+    written.some((record) => !expected.has(record))
   ) {
     throw new Error(
       "inrepo mirror built a tree that does not match the selected files; nothing was pushed"
@@ -446,13 +486,20 @@ const writeFilteredTree = async function writeFilteredTree(
   return tree;
 };
 
-const publish = async function publish(
+interface MirrorSource {
+  sourceCommit: string;
+  entries: TreeEntry[];
+  included: Set<string>;
+  excludedCount: number;
+}
+
+/** Resolve and filter the source tree; touches nothing outside the host repository. */
+const prepareSource = async function prepareSource(
   cwd: string,
   mirror: InrepoMirror,
-  opts: MirrorOptions,
-  scratch: Scratch
-): Promise<MirrorResult> {
-  const { sourceCommit, tree } = await resolveSourceTree(cwd, mirror, opts.ref);
+  ref: string
+): Promise<MirrorSource> {
+  const { sourceCommit, tree } = await resolveSourceTree(cwd, mirror, ref);
   const entries = await listTree(cwd, tree);
   const selection = selectMirrorPaths(
     entries.map((e) => e.path),
@@ -469,10 +516,25 @@ const publish = async function publish(
     mirror,
     entries.filter((e) => included.has(e.path))
   );
+  return {
+    entries,
+    excludedCount: selection.excluded.length,
+    included,
+    sourceCommit,
+  };
+};
 
+const publish = async function publish(
+  cwd: string,
+  mirror: InrepoMirror,
+  opts: MirrorOptions,
+  source: MirrorSource,
+  scratch: Scratch
+): Promise<MirrorResult> {
+  const { sourceCommit, entries, included } = source;
   const ref = `refs/heads/${mirror.branch}`;
   await runGit(["check-ref-format", ref], { env: scratch.env });
-  const url = await resolveTargetUrl(cwd, mirror.git);
+  const url = resolveTargetUrl(cwd, mirror.git);
   const newTree = await writeFilteredTree(scratch, entries, included);
 
   const tip = await readTargetTip(scratch, url, ref);
@@ -481,8 +543,8 @@ const publish = async function publish(
       ? null
       : await scratchCapture(scratch, ["rev-parse", `${tip}^{tree}`]);
   const base = {
-    excludedCount: selection.excluded.length,
-    includedCount: selection.included.length,
+    excludedCount: source.excludedCount,
+    includedCount: included.size,
     previousTip: tip,
     sourceCommit,
   };
@@ -541,15 +603,22 @@ export const runMirror = async function runMirror(
   mirror: InrepoMirror,
   opts: MirrorOptions
 ): Promise<MirrorResult> {
-  const dir = await mkdtemp(nodePath.join(tmpdir(), "inrepo-mirror-"));
+  let dir: string | null = null;
   try {
+    const source = await prepareSource(cwd, mirror, opts.ref);
+    dir = await mkdtemp(nodePath.join(tmpdir(), "inrepo-mirror-"));
     const scratch = await initScratchRepo(cwd, dir);
-    return await publish(cwd, mirror, opts, scratch);
+    return await publish(cwd, mirror, opts, source, scratch);
   } catch (error) {
-    // Git errors echo the target URL; keep any embedded token out of logs.
+    // Git errors echo the target URL. Rethrow a redacted copy only: the
+    // original (with any embedded token) must not travel on as `cause`,
+    // where error reporting and telemetry would read it.
     const message = error instanceof Error ? error.message : String(error);
-    throw new Error(redactCredentials(message), { cause: error });
+    // oxlint-disable-next-line preserve-caught-error -- the cause holds unredacted credentials
+    throw new Error(redactCredentials(message));
   } finally {
-    await rm(dir, { force: true, recursive: true });
+    if (dir != null) {
+      await rm(dir, { force: true, recursive: true });
+    }
   }
 };

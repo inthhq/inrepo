@@ -16,6 +16,35 @@ const requiredString = function requiredString(
   return raw.trim();
 };
 
+/**
+ * Reject path spellings that the shared keep/exclude validators would quietly
+ * rewrite (surrounding whitespace is trimmed, `\\` becomes `/` in keep), so a
+ * mirror never filters a different path than the one written in config.
+ */
+const assertExactPaths = function assertExactPaths(
+  raw: JsonValue | undefined,
+  label: string,
+  allowRegex: boolean
+): void {
+  const values = Array.isArray(raw) ? raw : [raw];
+  for (const value of values) {
+    if (!isString(value)) {
+      continue;
+    }
+    if (value !== value.trim()) {
+      throw new Error(
+        `${label} entry ${JSON.stringify(value)} must not start or end with whitespace`
+      );
+    }
+    const isRegex = allowRegex && value.startsWith("/");
+    if (!isRegex && value.includes("\\")) {
+      throw new Error(
+        `${label} entry ${JSON.stringify(value)} must use POSIX "/" separators`
+      );
+    }
+  }
+};
+
 const validateMirror = function validateMirror(
   entry: JsonValue,
   label: string
@@ -23,6 +52,9 @@ const validateMirror = function validateMirror(
   if (!isJsonObject(entry)) {
     throw new Error(`${label} must be an object`);
   }
+  assertExactPaths(entry.keep, `${label}.keep`, false);
+  assertExactPaths(entry.exclude, `${label}.exclude`, true);
+  assertExactPaths(entry.directory, `${label}.directory`, false);
   const mirror: InrepoMirror = {
     branch: "main",
     exclude: validateExcludeList(entry.exclude, `${label}.exclude`),
@@ -73,6 +105,7 @@ export const validateMirrors = function validateMirrors(
     validateMirror(entry, `${label}[${i}]`)
   );
   const seen = new Set<string>();
+  const targets = new Map<string, string>();
   for (const mirror of mirrors) {
     if (seen.has(mirror.name)) {
       throw new Error(
@@ -80,6 +113,15 @@ export const validateMirrors = function validateMirrors(
       );
     }
     seen.add(mirror.name);
+    // Two mirrors on one branch would each replace the other's files.
+    const target = `${mirror.git}\n${mirror.branch}`;
+    const other = targets.get(target);
+    if (other != null) {
+      throw new Error(
+        `${label}: mirrors "${other}" and "${mirror.name}" both publish to branch "${mirror.branch}" of the same repository`
+      );
+    }
+    targets.set(target, mirror.name);
   }
   return mirrors;
 };

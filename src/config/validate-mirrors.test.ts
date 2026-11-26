@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
+import type { JsonValue } from "../json/unknown.js";
 import { validateMirrors } from "./validate-mirrors.js";
 
 describe("validateMirrors", () => {
@@ -81,5 +82,35 @@ describe("validateMirrors", () => {
         "mirrors"
       )
     ).toThrow(/branch name/u);
+  });
+
+  test("rejects path spellings that would be silently rewritten", () => {
+    const cases: JsonValue[] = [
+      { directory: " sdk", git: "g", name: "n" },
+      { exclude: ["private "], git: "g", name: "n" },
+      { git: "g", keep: ["src\\lib"], name: "n" },
+      { exclude: ["src\\lib"], git: "g", name: "n" },
+    ];
+    for (const mirror of cases) {
+      expect(() => validateMirrors([mirror], "mirrors")).toThrow();
+    }
+    expect(
+      validateMirrors(
+        [{ exclude: [String.raw`/\.test\.ts$/`], git: "g", name: "n" }],
+        "mirrors"
+      )[0]?.exclude
+    ).toEqual([String.raw`/\.test\.ts$/`]);
+  });
+
+  test("rejects two mirrors publishing to the same branch", () => {
+    expect(() =>
+      validateMirrors(
+        [
+          { directory: "a", git: "g", name: "one" },
+          { directory: "b", git: "g", name: "two" },
+        ],
+        "mirrors"
+      )
+    ).toThrow(/both publish to branch "main"/u);
   });
 });

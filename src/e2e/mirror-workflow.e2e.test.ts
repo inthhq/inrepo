@@ -348,4 +348,120 @@ describe("CLI: mirror (e2e)", () => {
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr + r.stdout).not.toContain("sekrit-token");
   });
+
+  test("refuses a BOM-prefixed name that only looks like a kept path", async () => {
+    await runGit(["rm", "-q", "packages/sdk/README.md"], host);
+    await commitAll(
+      host,
+      { "packages/sdk/\uFEFFREADME.md": "private\n" },
+      "bom name"
+    );
+    await commitMirrorConfig(host, {
+      directory: "packages/sdk",
+      git: target,
+      keep: ["README.md"],
+    });
+    const r = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/would publish no files/u);
+  });
+
+  test("keeps whitespace in the config directory's path", async () => {
+    await commitAll(
+      host,
+      { " sdk/inner.ts": "spaced\n", "sdk/other.ts": "sibling\n" },
+      "spaced dirs"
+    );
+    await commitMirrorConfig(host, { git: target }, " sdk");
+    const cwd = nodePath.join(host, " sdk");
+    expect((await runCli(["mirror"], { cwd, env: ENV })).exitCode).toBe(0);
+    expect(await targetFiles(target)).toEqual(["inner.ts", "inrepo.json"]);
+  });
+
+  test("resolves a plain relative target path against the config directory", async () => {
+    await runGit([
+      "init",
+      "--bare",
+      "-q",
+      "-b",
+      "main",
+      nodePath.join(host, "remotes", "sdk.git"),
+    ]);
+    await commitMirrorConfig(host, {
+      directory: "packages/sdk",
+      git: "remotes/sdk.git",
+    });
+    expect((await runCli(["mirror"], { cwd: host, env: ENV })).exitCode).toBe(
+      0
+    );
+    expect(
+      await targetFiles(nodePath.join(host, "remotes", "sdk.git"))
+    ).toContain("src/index.ts");
+  });
+
+  test("honors git settings passed through GIT_CONFIG_* variables", async () => {
+    await commitMirrorConfig(host, {
+      directory: "packages/sdk",
+      git: `file://${target}`,
+    });
+    const r = await runCli(["mirror"], {
+      cwd: host,
+      env: {
+        ...ENV,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "protocol.file.allow",
+        GIT_CONFIG_VALUE_0: "never",
+      },
+    });
+    expect(r.exitCode).not.toBe(0);
+    expect(await runGit(["--git-dir", target, "branch", "--list"])).toBe("");
+  });
+
+  test("does not advertise private commits while fetching the target", async () => {
+    expect((await runCli(["mirror"], { cwd: host, env: ENV })).exitCode).toBe(
+      0
+    );
+    await runGit(["checkout", "-q", "-b", "private-work"], host);
+    const privateTip = await commitAll(
+      host,
+      { "apps/private/next.ts": "unreleased\n" },
+      "private work"
+    );
+    await runGit(["checkout", "-q", "main"], host);
+    await commitAll(host, { "packages/sdk/src/index.ts": "v2\n" }, "v2");
+
+    const trace = nodePath.join(root, "packet-trace.txt");
+    await commitMirrorConfig(host, {
+      directory: "packages/sdk",
+      git: `file://${target}`,
+    });
+    const r = await runCli(["mirror", "--overwrite"], {
+      cwd: host,
+      env: { ...ENV, GIT_TRACE_PACKET: trace },
+    });
+    expect(r.exitCode).toBe(0);
+    const packets = await Bun.file(trace).text();
+    expect(packets).toMatch(/fetch/u);
+    expect(packets).not.toContain(privateTip);
+    expect(packets).not.toMatch(/fetch> have /u);
+  });
+
+  test("refuses paths that are not valid UTF-8", async () => {
+    const blob = await runGit(
+      ["hash-object", "-w", "packages/sdk/README.md"],
+      host
+    );
+    const proc = Bun.spawn(["git", "update-index", "-z", "--index-info"], {
+      cwd: host,
+      stdin: Buffer.concat([
+        Buffer.from(`100644 blob ${blob}\tpackages/sdk/name`),
+        Buffer.from([0xff, 0]),
+      ]),
+    });
+    expect(await proc.exited).toBe(0);
+    await runGit(["commit", "-q", "-m", "raw name"], host);
+    const r = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/not valid UTF-8/u);
+  });
 });

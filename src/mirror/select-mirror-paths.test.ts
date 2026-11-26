@@ -81,7 +81,7 @@ describe("selectMirrorPaths", () => {
   });
 
   test("rejects literals that escape or name the mirror root", () => {
-    for (const bad of ["../x", "src/../../x", ".", "./", "a\\b"]) {
+    for (const bad of ["../x", "src/../../x", ".", "./"]) {
       expect(() => selectMirrorPaths([], [], [bad])).toThrow();
     }
     expect(() => selectMirrorPaths([], ["."], [])).toThrow(
