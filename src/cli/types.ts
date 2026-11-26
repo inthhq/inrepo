@@ -72,3 +72,14 @@ export interface DispatchOpts {
   force?: boolean;
   suppressBanners?: boolean;
 }
+
+export interface MirrorArgs {
+  /** Mirror to publish; omitted publishes every configured mirror. */
+  name?: string;
+  /** Source revision to publish. */
+  ref: string;
+  dryRun: boolean;
+  overwrite: boolean;
+  /** Subject line for the mirror commit. */
+  message?: string;
+}

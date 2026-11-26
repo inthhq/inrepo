@@ -32,6 +32,12 @@ export default defineDocsConfig({
             title: "Config",
             urlPath: "/docs/config",
           },
+          {
+            description:
+              "Publish a filtered copy of part of your repository to another git repository.",
+            title: "Mirrors",
+            urlPath: "/docs/mirrors",
+          },
         ],
         type: "links",
       },
@@ -41,7 +47,7 @@ export default defineDocsConfig({
     "index",
     "quickstart",
     {
-      pages: ["config"],
+      pages: ["config", "mirrors"],
       title: "Reference",
     },
   ],

@@ -1,0 +1,212 @@
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdir, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+
+import { runCli } from "../test-utils/run-cli.js";
+import { runGit } from "../test-utils/run-git.js";
+import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
+
+const ENV = { INREPO_NONINTERACTIVE: "1" };
+
+const writeFiles = async function writeFiles(
+  root: string,
+  files: Record<string, string>
+): Promise<void> {
+  for (const [rel, contents] of Object.entries(files)) {
+    const abs = nodePath.join(root, rel);
+    await mkdir(nodePath.dirname(abs), { recursive: true });
+    await writeFile(abs, contents, "utf-8");
+  }
+};
+
+const commitAll = async function commitAll(
+  cwd: string,
+  files: Record<string, string>,
+  message: string
+): Promise<string> {
+  await writeFiles(cwd, files);
+  await runGit(["add", "-A"], cwd);
+  await runGit(["commit", "-q", "-m", message], cwd);
+  return runGit(["rev-parse", "HEAD"], cwd);
+};
+
+/** Paths on `branch` of the bare `target` repository. */
+const targetFiles = async function targetFiles(
+  target: string,
+  branch = "main"
+): Promise<string[]> {
+  const out = await runGit([
+    "--git-dir",
+    target,
+    "ls-tree",
+    "-r",
+    "--name-only",
+    branch,
+  ]);
+  return out.split("\n").filter(Boolean);
+};
+
+describe("CLI: mirror (e2e)", () => {
+  let root: string;
+  let host: string;
+  let target: string;
+
+  beforeEach(async () => {
+    root = await makeTmpDir("inrepo-e2e-mirror-");
+    host = nodePath.join(root, "host");
+    target = nodePath.join(root, "public.git");
+    await runGit(["init", "--bare", "-q", "-b", "main", target]);
+    await runGit(["init", "-q", "-b", "main", host]);
+    await runGit(["config", "user.name", "Mirror Bot"], host);
+    await runGit(["config", "user.email", "mirror@example.com"], host);
+    await commitAll(
+      host,
+      {
+        "apps/private/secret.ts": "export const secret = 1;\n",
+        "inrepo.json": `${JSON.stringify({
+          mirrors: [
+            {
+              directory: "packages/sdk",
+              exclude: [
+                String.raw`/\.test\.ts$/`,
+                "/(^|/)__tests__$/",
+                "internal",
+              ],
+              git: target,
+              name: "sdk",
+            },
+          ],
+          packages: [],
+        })}\n`,
+        "packages/sdk/README.md": "# sdk\n",
+        "packages/sdk/internal/plan.md": "private plan\n",
+        "packages/sdk/src/__tests__/fixture.ts": "fixture\n",
+        "packages/sdk/src/index.test.ts": "test\n",
+        "packages/sdk/src/index.ts": "export const v = 1;\n",
+      },
+      "initial"
+    );
+  });
+
+  afterEach(async () => {
+    await cleanupTmpDir(root);
+  });
+
+  test("publishes the directory without excluded files, then is up to date", async () => {
+    const dry = await runCli(["mirror", "--dry-run"], { cwd: host, env: ENV });
+    expect(dry.exitCode).toBe(0);
+    expect(dry.stdout).toMatch(/2 file\(s\) published, 3 left out/u);
+    expect(dry.stdout).toMatch(/A {2}src\/index\.ts/u);
+    expect(dry.stdout).toMatch(/would push/u);
+    expect(await runGit(["--git-dir", target, "branch", "--list"])).toBe("");
+
+    const first = await runCli(["mirror", "sdk"], { cwd: host, env: ENV });
+    expect(first.exitCode).toBe(0);
+    expect(first.stdout).toMatch(/pushed/u);
+    expect(await targetFiles(target)).toEqual(["README.md", "src/index.ts"]);
+
+    const source = await runGit(["rev-parse", "HEAD"], host);
+    const message = await runGit([
+      "--git-dir",
+      target,
+      "log",
+      "-1",
+      "--format=%B",
+      "main",
+    ]);
+    expect(message).toContain(`Inrepo-Mirror-Source: ${source}`);
+    expect(
+      await runGit(["--git-dir", target, "log", "-1", "--format=%an", "main"])
+    ).toBe("Mirror Bot");
+
+    const again = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(again.exitCode).toBe(0);
+    expect(again.stdout).toMatch(/is up to date/u);
+  });
+
+  test("later runs fast-forward and propagate deletions", async () => {
+    expect((await runCli(["mirror"], { cwd: host, env: ENV })).exitCode).toBe(
+      0
+    );
+    const firstTip = await runGit(["--git-dir", target, "rev-parse", "main"]);
+
+    await runGit(["rm", "-q", "packages/sdk/README.md"], host);
+    await commitAll(
+      host,
+      { "packages/sdk/src/extra.ts": "export const e = 1;\n" },
+      "second"
+    );
+    const r = await runCli(["mirror", "-m", "Release 2"], {
+      cwd: host,
+      env: ENV,
+    });
+    expect(r.exitCode).toBe(0);
+    expect(await targetFiles(target)).toEqual(["src/extra.ts", "src/index.ts"]);
+    expect(await runGit(["--git-dir", target, "rev-parse", "main~1"])).toBe(
+      firstTip
+    );
+    expect(
+      await runGit(["--git-dir", target, "log", "-1", "--format=%s", "main"])
+    ).toBe("Release 2");
+  });
+
+  test("refuses to overwrite commits made directly on the target", async () => {
+    expect((await runCli(["mirror"], { cwd: host, env: ENV })).exitCode).toBe(
+      0
+    );
+    const clone = nodePath.join(root, "clone");
+    await runGit(["clone", "-q", target, clone]);
+    await commitAll(clone, { "CONTRIBUTING.md": "hi\n" }, "external fix");
+    await runGit(["push", "-q", "origin", "main"], clone);
+
+    await commitAll(host, { "packages/sdk/src/index.ts": "v2\n" }, "v2");
+    const blocked = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(blocked.exitCode).not.toBe(0);
+    expect(blocked.stderr + blocked.stdout).toMatch(
+      /was not written by inrepo mirror/u
+    );
+
+    const forced = await runCli(["mirror", "--overwrite"], {
+      cwd: host,
+      env: ENV,
+    });
+    expect(forced.exitCode).toBe(0);
+    expect(await targetFiles(target)).toEqual(["README.md", "src/index.ts"]);
+  });
+
+  test("refuses to roll the target back to an older source commit", async () => {
+    const older = await runGit(["rev-parse", "HEAD"], host);
+    await commitAll(host, { "packages/sdk/src/index.ts": "v2\n" }, "v2");
+    expect((await runCli(["mirror"], { cwd: host, env: ENV })).exitCode).toBe(
+      0
+    );
+
+    const r = await runCli(["mirror", "--ref", older], {
+      cwd: host,
+      env: ENV,
+    });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/would roll the mirror back/u);
+  });
+
+  test("errors on an unknown mirror name or missing directory", async () => {
+    const unknown = await runCli(["mirror", "nope"], { cwd: host, env: ENV });
+    expect(unknown.exitCode).not.toBe(0);
+    expect(unknown.stderr + unknown.stdout).toMatch(/No mirror named "nope"/u);
+
+    await commitAll(
+      host,
+      {
+        "inrepo.json": `${JSON.stringify({
+          mirrors: [{ directory: "missing", git: target, name: "sdk" }],
+        })}\n`,
+      },
+      "break config"
+    );
+    const missing = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(missing.exitCode).not.toBe(0);
+    expect(missing.stderr + missing.stdout).toMatch(
+      /is not a committed directory/u
+    );
+  });
+});

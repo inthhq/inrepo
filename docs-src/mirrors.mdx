@@ -1,0 +1,63 @@
+---
+title: Mirrors
+description: Publish a filtered copy of part of your repository to another git repository, such as a public SDK repo.
+group: reference
+---
+
+# Mirrors
+
+A mirror runs the other way from a vendored package. Your repository is the source of truth, and `inrepo mirror` publishes a filtered copy of one of its directories to another git repository. Use it to keep an SDK, tests and internal files together in a private monorepo while a public repository receives only the files you choose to publish.
+
+Declare mirrors in `inrepo.json` (or `package.json#inrepo`):
+
+```json
+{
+  "packages": [],
+  "mirrors": [
+    {
+      "name": "sdk",
+      "git": "https://github.com/acme/sdk.git",
+      "branch": "main",
+      "directory": "packages/sdk",
+      "exclude": [
+        "/\\.(test|spec)\\.[cm]?[jt]sx?$/",
+        "/(^|/)(__tests__|__snapshots__)$/",
+        "internal"
+      ]
+    }
+  ]
+}
+```
+
+| Field | Meaning |
+| --- | --- |
+| `name` | Label used on the command line. Required and unique. |
+| `git` | Target repository URL, anything `git push` accepts. Required. |
+| `branch` | Target branch. Defaults to `main`. |
+| `directory` | Directory in this repository, relative to the config, that becomes the target's root. Defaults to the config directory. |
+| `keep` | Path prefixes under `directory` to publish. When set, nothing else is published. |
+| `exclude` | Paths or `/regex/` patterns under `directory` that are never published. A literal drops a file or a whole directory. A regex drops any file whose path, or any parent directory's path, matches. |
+
+`keep` and `exclude` follow the same rules as they do for vendored packages: `keep` runs first, then `exclude`. Root-level `keep` and `exclude` apply only to vendored packages, not to mirrors.
+
+## Publishing
+
+```bash
+npx inrepo mirror --dry-run   # list what would change on each mirror, push nothing
+npx inrepo mirror sdk         # publish one mirror
+npx inrepo mirror             # publish every mirror
+```
+
+Each run reads the committed tree at `HEAD` (or `--ref <rev>`), never your working tree, so uncommitted files are never published. It builds one commit whose tree is exactly the filtered directory, on top of the target branch's current tip, and pushes it as a fast-forward. Files you delete or exclude in the source are deleted on the target. If the target already has exactly that content, nothing is pushed. `-m "<subject>"` sets the commit subject; the default is `Mirror <short sha>`.
+
+Every mirror commit ends with an `Inrepo-Mirror-Source: <sha>` trailer naming the source commit it was built from. The commit message contains nothing else from your repository, so private commit messages stay private.
+
+## Safety checks
+
+`inrepo mirror` never force-pushes, and it stops instead of silently replacing work:
+
+- If the target tip has no `Inrepo-Mirror-Source` trailer, someone committed to the target directly, or this is the first mirror run. Port any changes made there into your repository, then rerun with `--overwrite`. The run still adds a commit on top; history on the target is never rewritten.
+- If the target was last mirrored from a commit that is not an ancestor of the one you are publishing, publishing would roll it back, so the run stops. `--overwrite` publishes anyway.
+- The ancestor check needs the previous source commit locally. In CI, check out full history (for example, `actions/checkout` with `fetch-depth: 0`).
+
+Authentication is whatever `git push` uses for the target URL: your credential helper locally, or a token in CI.

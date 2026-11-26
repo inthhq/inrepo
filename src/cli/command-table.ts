@@ -6,6 +6,7 @@ import { cmdAdd } from "./commands/add.js";
 import { cmdDiff } from "./commands/diff.js";
 import { cmdInit } from "./commands/init.js";
 import { cmdMigrate } from "./commands/migrate.js";
+import { cmdMirror } from "./commands/mirror.js";
 import { cmdPatch } from "./commands/patch.js";
 import { cmdSync } from "./commands/sync.js";
 import { cmdUpdate } from "./commands/update.js";
@@ -102,5 +103,15 @@ export const commands: CliCommand[] = [
     hint: "Vendor a package",
     label: "Add",
     name: "add",
+  },
+  {
+    action: async (context) => {
+      await cmdMirror(nodePath.resolve(context.cwd), context.commandArgs);
+    },
+    description:
+      "Publish a filtered snapshot of this repository to a configured mirror repository as one fast-forward commit (--dry-run, --ref, --overwrite).",
+    hint: "Publish to a mirror repo",
+    label: "Mirror",
+    name: "mirror",
   },
 ];

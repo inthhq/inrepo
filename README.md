@@ -370,6 +370,34 @@ npx inrepo migrate <package>
 
 This replays the current overlay over the pinned upstream commit, records the result as `inrepo_patches/<package>/series/0001-*.patch`, and removes the snapshot files only after confirming that applying the series reproduces the identical tree. If it does not, the overlay is left exactly as it was and the command reports why. Empty directories are the one thing a series cannot carry over, because git has no way to record them; the command lists any it had to drop.
 
+## Mirroring to another repository
+
+Mirrors run the other way from vendored packages. Your repository stays the source of truth, and `inrepo mirror` publishes a filtered copy of one of its directories to another git repository. For example, keep an SDK and its tests in a private monorepo, and publish it to a public repository without the tests or internal files:
+
+```json
+{
+  "mirrors": [
+    {
+      "name": "sdk",
+      "git": "https://github.com/acme/sdk.git",
+      "directory": "packages/sdk",
+      "exclude": [
+        "/\\.(test|spec)\\.[cm]?[jt]sx?$/",
+        "/(^|/)__tests__$/",
+        "internal"
+      ]
+    }
+  ]
+}
+```
+
+```bash
+npx inrepo mirror --dry-run   # list what would change, push nothing
+npx inrepo mirror             # publish every mirror
+```
+
+Each run publishes the committed tree at `HEAD` (or `--ref <rev>`) as one fast-forward commit with an `Inrepo-Mirror-Source: <sha>` trailer. It never force-pushes. It stops if someone committed to the target directly, or if publishing would roll the target back to an older source commit; `--overwrite` publishes anyway. See the [mirrors reference](./docs/mirrors.md) for every field.
+
 ## Local development
 
 From a clone of this repository:
@@ -390,6 +418,7 @@ node dist/cli.mjs --help
 - [Overview](./docs/index.md)
 - [Quickstart](./docs/quickstart.md)
 - [Config reference](./docs/config.md)
+- [Mirrors reference](./docs/mirrors.md)
 - CLI usage: `npx inrepo --help`
 
 ## Support

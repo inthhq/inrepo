@@ -6,10 +6,12 @@ import type { JsonValue } from "../json/unknown.js";
 import { inrepoConfigPath } from "../paths/inrepo-config-path.js";
 import { packageJsonPath } from "../paths/package-json-path.js";
 import { normalizeRepositoryDirectory } from "../registry/normalize-repository-directory.js";
+import type { InrepoMirror } from "../types/inrepo-mirror.js";
 import type { InrepoPackage } from "../types/inrepo-package.js";
 import type { LoadedConfig } from "../types/loaded-config.js";
 import { validateExcludeList } from "./validate-exclude-list.js";
 import { validateKeepList } from "./validate-keep-list.js";
+import { validateMirrors } from "./validate-mirrors.js";
 
 /** Thrown when neither inrepo.json nor package.json declares inrepo config. */
 export class LoadConfigNotFoundError extends Error {
@@ -312,6 +314,21 @@ export const loadGlobalKeep = async function loadGlobalKeep(
       ? 'inrepo.json "keep"'
       : 'package.json "inrepo.keep"';
   return rootKeepFromParsed(ctx.parsed, label);
+};
+
+/** The `mirrors` list from inrepo.json or package.json#inrepo; empty when none is declared. */
+export const loadMirrors = async function loadMirrors(
+  cwd: string
+): Promise<InrepoMirror[]> {
+  const ctx = await readGlobalInrepoRaw(cwd);
+  if (!ctx || !isJsonObject(ctx.parsed)) {
+    return [];
+  }
+  const label =
+    ctx.source === "inrepo.json"
+      ? 'inrepo.json "mirrors"'
+      : 'package.json "inrepo.mirrors"';
+  return validateMirrors(ctx.parsed.mirrors, label);
 };
 
 /** True when loadConfig failed because no config file/field exists (safe to fall back to globals-only). */
