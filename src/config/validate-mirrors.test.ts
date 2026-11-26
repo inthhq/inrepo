@@ -135,13 +135,19 @@ describe("validateMirrors", () => {
     ).toThrow(/both publish/u);
   });
 
-  test("rejects null keep and directory instead of widening the selection", () => {
+  test("rejects null keep, directory, exclude, and branch instead of defaulting", () => {
     expect(() =>
       validateMirrors([{ git: "g", keep: null, name: "n" }], "mirrors")
     ).toThrow(/at least one path/u);
     expect(() =>
       validateMirrors([{ directory: null, git: "g", name: "n" }], "mirrors")
     ).toThrow(/directory must be a string/u);
+    expect(() =>
+      validateMirrors([{ exclude: null, git: "g", name: "n" }], "mirrors")
+    ).toThrow(/exclude must be an array/u);
+    expect(() =>
+      validateMirrors([{ branch: null, git: "g", name: "n" }], "mirrors")
+    ).toThrow(/branch is required/u);
   });
 
   test("treats .. segments and file:// URLs to one target as duplicates", () => {

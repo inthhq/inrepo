@@ -56,6 +56,12 @@ const validateMirror = function validateMirror(
   if (!isJsonObject(entry)) {
     throw new Error(`${label} must be an object`);
   }
+  // A present-but-null exclude would otherwise mean "exclude nothing".
+  if (Object.hasOwn(entry, "exclude") && !Array.isArray(entry.exclude)) {
+    throw new TypeError(
+      `${label}.exclude must be an array of strings when set`
+    );
+  }
   // An omitted keep publishes the whole directory; a present one must narrow it.
   if (
     Object.hasOwn(entry, "keep") &&
@@ -80,7 +86,7 @@ const validateMirror = function validateMirror(
   if (mirror.git.startsWith("-")) {
     throw new Error(`${label}.git must be a repository URL or path`);
   }
-  if (entry.branch != null) {
+  if (Object.hasOwn(entry, "branch")) {
     mirror.branch = requiredString(entry.branch, `${label}.branch`);
     if (mirror.branch.startsWith("-") || mirror.branch.startsWith("refs/")) {
       throw new Error(
