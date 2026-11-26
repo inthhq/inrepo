@@ -376,6 +376,7 @@ Mirrors run the other way from vendored packages. Your repository stays the sour
 
 ```json
 {
+  "packages": [],
   "mirrors": [
     {
       "name": "sdk",
@@ -396,7 +397,7 @@ npx inrepo mirror --dry-run   # list what would change, push nothing
 npx inrepo mirror             # publish every mirror
 ```
 
-Each run publishes the committed tree at `HEAD` (or `--ref <rev>`) as one fast-forward commit with an `Inrepo-Mirror-Source: <sha>` trailer. It never force-pushes. It stops if someone committed to the target directly, or if publishing would roll the target back to an older source commit; `--overwrite` publishes anyway. See the [mirrors reference](./docs/mirrors.md) for every field.
+Each run publishes the committed tree at `HEAD` (or `--ref <rev>`) as one commit on top of the target branch, with `Inrepo-Mirror-Source` and `Inrepo-Mirror-Tree` trailers. It never rewrites target history. It stops if someone changed the target directly, or if publishing would roll the target back to an older source commit; `--overwrite` publishes anyway. Run it from CI on your protected branch with a bot identity. See the [mirrors reference](./docs/mirrors.md) for every field.
 
 ## Local development
 

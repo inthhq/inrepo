@@ -1,4 +1,5 @@
 import { parseExcludeEntries } from "../git/apply-vendor-excludes.js";
+import { normalizeRepositoryDirectory } from "../registry/normalize-repository-directory.js";
 
 /** Directory prefixes along rel (e.g. "a/b/c" -> ["a", "a/b"]). */
 const ancestorDirectories = function ancestorDirectories(
@@ -19,6 +20,24 @@ const underPrefix = function underPrefix(
   return relPosix === prefix || relPosix.startsWith(`${prefix}/`);
 };
 
+/**
+ * Normalize a literal `keep` or `exclude` path so it compares equal to git's
+ * paths (`./a//b/` becomes `a/b`). Rejects `..`, absolute paths, backslashes,
+ * and entries that name the mirror root itself.
+ */
+const normalizeLiteral = function normalizeLiteral(
+  raw: string,
+  label: string
+): string {
+  const normalized = normalizeRepositoryDirectory(raw, label);
+  if (normalized == null) {
+    throw new Error(
+      `${label} entry ${JSON.stringify(raw)} must name a path inside the mirror directory`
+    );
+  }
+  return normalized;
+};
+
 export interface MirrorSelection {
   /** Paths that will be published. */
   included: string[];
@@ -30,21 +49,20 @@ export interface MirrorSelection {
  * Decide which committed file paths a mirror publishes. Uses the same rules as
  * vendored-module filtering: `keep` prefixes first, then `exclude` literals
  * (a file or a whole directory) and `/regex/` patterns, which match a file or
- * any of its parent directories.
+ * any of its parent directories. Throws on entries that could silently match
+ * nothing because of how they are spelled.
  */
 export const selectMirrorPaths = function selectMirrorPaths(
   paths: string[],
   keep: string[],
   exclude: string[]
 ): MirrorSelection {
-  const keepPrefixes = keep
-    .map((p) => p.replaceAll("\\", "/").replace(/\/+$/u, ""))
-    .filter(Boolean);
+  const keepPrefixes = keep.map((k) => normalizeLiteral(k, "keep"));
   const parsed = parseExcludeEntries(exclude);
   const { regexes } = parsed;
-  const literals = parsed.literals
-    .map((lit) => lit.replace(/^\.\/+/u, "").replace(/\/+$/u, ""))
-    .filter(Boolean);
+  const literals = parsed.literals.map((lit) =>
+    normalizeLiteral(lit, "exclude")
+  );
 
   const isExcluded = (relPosix: string): boolean => {
     if (literals.some((lit) => underPrefix(relPosix, lit))) {

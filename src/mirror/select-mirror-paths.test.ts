@@ -70,4 +70,22 @@ describe("selectMirrorPaths", () => {
   test("rejects unsafe regexes", () => {
     expect(() => selectMirrorPaths(PATHS, [], ["/(a+)+$/"])).toThrow(/ReDoS/u);
   });
+
+  test("normalizes literal spellings so excludes cannot silently miss", () => {
+    const { included } = selectMirrorPaths(
+      ["tests/a.ts", "internal/secret.ts", "src/index.ts"],
+      ["./src", "tests/./", "internal//"],
+      ["tests/./", "././internal//secret.ts"]
+    );
+    expect(included).toEqual(["src/index.ts"]);
+  });
+
+  test("rejects literals that escape or name the mirror root", () => {
+    for (const bad of ["../x", "src/../../x", ".", "./", "a\\b"]) {
+      expect(() => selectMirrorPaths([], [], [bad])).toThrow();
+    }
+    expect(() => selectMirrorPaths([], ["."], [])).toThrow(
+      /inside the mirror/u
+    );
+  });
 });

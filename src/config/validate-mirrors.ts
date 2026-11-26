@@ -1,6 +1,6 @@
-import { parseExcludeEntries } from "../git/apply-vendor-excludes.js";
 import { isJsonObject, isString } from "../json/unknown.js";
 import type { JsonValue } from "../json/unknown.js";
+import { selectMirrorPaths } from "../mirror/select-mirror-paths.js";
 import { normalizeRepositoryDirectory } from "../registry/normalize-repository-directory.js";
 import type { InrepoMirror } from "../types/inrepo-mirror.js";
 import { validateExcludeList } from "./validate-exclude-list.js";
@@ -31,9 +31,17 @@ const validateMirror = function validateMirror(
     name: requiredString(entry.name, `${label}.name`),
   };
   // Fail at load time, not halfway through a mirror run, on a bad pattern.
-  parseExcludeEntries(mirror.exclude);
+  selectMirrorPaths([], mirror.keep, mirror.exclude);
+  if (mirror.git.startsWith("-")) {
+    throw new Error(`${label}.git must be a repository URL or path`);
+  }
   if (entry.branch != null) {
     mirror.branch = requiredString(entry.branch, `${label}.branch`);
+    if (mirror.branch.startsWith("-") || mirror.branch.startsWith("refs/")) {
+      throw new Error(
+        `${label}.branch must be a branch name such as "main", not a full ref`
+      );
+    }
   }
   if (entry.directory != null) {
     if (!isString(entry.directory)) {

@@ -1,15 +1,36 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import nodePath from "node:path";
 
 import { runGitCapture } from "../git/run-git-capture.js";
-import { runGitInput } from "../git/run-git-input.js";
+import { runGitBytes, runGitInput } from "../git/run-git-input.js";
 import { runGit } from "../git/run-git.js";
 import type { InrepoMirror } from "../types/inrepo-mirror.js";
 import { selectMirrorPaths } from "./select-mirror-paths.js";
 
 /** Trailer on every mirror commit naming the source commit it was built from. */
 export const MIRROR_SOURCE_TRAILER = "Inrepo-Mirror-Source";
+/** Trailer on every mirror commit naming the tree inrepo wrote, to detect later edits. */
+export const MIRROR_TREE_TRAILER = "Inrepo-Mirror-Tree";
+
+/** Variables that point git at a specific repository, index, or object store. */
+const FALLBACK_LOCAL_ENV_VARS = [
+  "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+  "GIT_COMMON_DIR",
+  "GIT_CONFIG",
+  "GIT_CONFIG_PARAMETERS",
+  "GIT_DIR",
+  "GIT_GRAFT_FILE",
+  "GIT_IMPLICIT_WORK_TREE",
+  "GIT_INDEX_FILE",
+  "GIT_NAMESPACE",
+  "GIT_NO_REPLACE_OBJECTS",
+  "GIT_OBJECT_DIRECTORY",
+  "GIT_PREFIX",
+  "GIT_REPLACE_REF_BASE",
+  "GIT_SHALLOW_FILE",
+  "GIT_WORK_TREE",
+];
 
 export interface MirrorOptions {
   /** Source revision to publish. Defaults to `HEAD`. */
@@ -47,9 +68,26 @@ interface TreeEntry {
   type: string;
   oid: string;
   path: string;
+  /** False when the path's bytes are not valid UTF-8. */
+  validPath: boolean;
+}
+
+interface Scratch {
+  dir: string;
+  env: NodeJS.ProcessEnv;
 }
 
 const short = (sha: string): string => sha.slice(0, 7);
+
+/** Hide `user:token@` credentials embedded in URLs. */
+export const redactCredentials = function redactCredentials(
+  text: string
+): string {
+  return text.replaceAll(
+    /(?<scheme>\b[a-z][\d+.a-z-]*:\/\/)[^\s/@]+@/giu,
+    "$<scheme>***@"
+  );
+};
 
 const tryCapture = async function tryCapture(
   args: string[],
@@ -78,12 +116,17 @@ const resolveSourceTree = async function resolveSourceTree(
   if (sourceCommit == null) {
     throw new Error(`Cannot resolve ${JSON.stringify(ref)} to a commit`);
   }
-  const relDir = nodePath.posix.join(prefix, mirror.directory ?? "");
+  const relDir = nodePath.posix
+    .join(prefix, mirror.directory ?? "")
+    .replace(/\/+$/u, "");
   const spec =
     relDir === "." || relDir === ""
       ? `${sourceCommit}^{tree}`
-      : `${sourceCommit}:${relDir.replace(/\/+$/u, "")}`;
-  const tree = await tryCapture(["rev-parse", "--verify", spec], cwd);
+      : `${sourceCommit}:${relDir}`;
+  const tree = await tryCapture(
+    ["rev-parse", "--verify", "--end-of-options", spec],
+    cwd
+  );
   const type =
     tree == null ? null : await tryCapture(["cat-file", "-t", tree], cwd);
   if (tree == null || type !== "tree") {
@@ -94,100 +137,211 @@ const resolveSourceTree = async function resolveSourceTree(
   return { sourceCommit, tree };
 };
 
+const utf8 = new TextDecoder("utf-8", { fatal: true });
+const lossyUtf8 = new TextDecoder("utf-8");
+
+/** Every entry under `tree`, read as bytes so non-UTF-8 names are detected. */
 const listTree = async function listTree(
   cwd: string,
   tree: string
 ): Promise<TreeEntry[]> {
-  const raw = await runGitCapture(["ls-tree", "-r", "-z", tree], {
+  // --full-tree: list `tree` itself, not the subdirectory matching cwd.
+  const raw = await runGitBytes(["ls-tree", "-r", "-z", "--full-tree", tree], {
     cwd,
-    trim: false,
   });
   const entries: TreeEntry[] = [];
-  for (const record of raw.split("\0")) {
-    if (!record) {
+  let start = 0;
+  while (start < raw.length) {
+    let end = raw.indexOf(0, start);
+    if (end === -1) {
+      end = raw.length;
+    }
+    const record = raw.subarray(start, end);
+    start = end + 1;
+    const tab = record.indexOf(9);
+    if (tab === -1) {
       continue;
     }
-    const tab = record.indexOf("\t");
-    const [mode = "", type = "", oid = ""] = record.slice(0, tab).split(" ");
-    entries.push({ mode, oid, path: record.slice(tab + 1), type });
+    const [mode = "", type = "", oid = ""] = record
+      .subarray(0, tab)
+      .toString("ascii")
+      .split(" ");
+    const pathBytes = record.subarray(tab + 1);
+    let path: string;
+    let validPath = true;
+    try {
+      path = utf8.decode(pathBytes);
+    } catch {
+      path = lossyUtf8.decode(pathBytes);
+      validPath = false;
+    }
+    entries.push({ mode, oid, path, type, validPath });
   }
   return entries;
 };
 
+/** Refuse entries that cannot be published exactly as committed. */
+const assertPublishable = function assertPublishable(
+  mirror: InrepoMirror,
+  entries: TreeEntry[]
+): void {
+  const invalid = entries.filter((e) => !e.validPath).map((e) => e.path);
+  if (invalid.length > 0) {
+    throw new Error(
+      `Mirror "${mirror.name}": these paths are not valid UTF-8, so they cannot be filtered safely; rename them or exclude a parent directory: ${invalid.join(", ")}`
+    );
+  }
+  const gitlinks = entries
+    .filter((e) => e.type === "commit")
+    .map((e) => e.path);
+  if (gitlinks.length > 0) {
+    throw new Error(
+      `Mirror "${mirror.name}": submodules cannot be mirrored (their .gitmodules entry stays behind); exclude them: ${gitlinks.join(", ")}`
+    );
+  }
+};
+
+/** Git environment for the scratch repository, isolated from the caller's repository variables. */
+const isolatedEnv = async function isolatedEnv(
+  dir: string
+): Promise<NodeJS.ProcessEnv> {
+  const listed = await runGitCapture(["rev-parse", "--local-env-vars"], {
+    cwd: dir,
+  }).catch(() => "");
+  const strip = new Set([...FALLBACK_LOCAL_ENV_VARS, ...listed.split("\n")]);
+  const env: NodeJS.ProcessEnv = Object.fromEntries(
+    Object.entries(process.env).filter(([name]) => !strip.has(name))
+  );
+  env.GIT_TERMINAL_PROMPT = "0";
+  return env;
+};
+
 /** Build a scratch repository that borrows the host's objects via alternates. */
-const makeScratchRepo = async function makeScratchRepo(
-  cwd: string
-): Promise<string> {
+const initScratchRepo = async function initScratchRepo(
+  cwd: string,
+  dir: string
+): Promise<Scratch> {
   const objects = await runGitCapture(["rev-parse", "--git-path", "objects"], {
     cwd,
   });
-  const scratch = await mkdtemp(nodePath.join(tmpdir(), "inrepo-mirror-"));
-  await runGit(["init", "-q", scratch]);
-  const infoDir = nodePath.join(scratch, ".git", "objects", "info");
-  await mkdir(infoDir, { recursive: true });
+  const objectFormat = await runGitCapture(
+    ["rev-parse", "--show-object-format"],
+    { cwd }
+  );
+  const baseEnv = await isolatedEnv(dir);
+  await runGit(["init", "-q", `--object-format=${objectFormat}`, dir], {
+    env: baseEnv,
+  });
+  const gitDir = nodePath.join(dir, ".git");
   await writeFile(
-    nodePath.join(infoDir, "alternates"),
+    nodePath.join(gitDir, "objects", "info", "alternates"),
     `${nodePath.resolve(cwd, objects)}\n`,
     "utf-8"
   );
-  return scratch;
+  return {
+    dir,
+    env: {
+      ...baseEnv,
+      GIT_DIR: gitDir,
+      GIT_INDEX_FILE: nodePath.join(gitDir, "index"),
+    },
+  };
+};
+
+const scratchCapture = function scratchCapture(
+  scratch: Scratch,
+  args: string[],
+  trim = true
+): Promise<string> {
+  return runGitCapture(args, { cwd: scratch.dir, env: scratch.env, trim });
+};
+
+/**
+ * Expand the configured target the way `git push` from this repository would:
+ * remote names and `url.*.insteadOf` rewrites, and relative paths against the config directory.
+ */
+const resolveTargetUrl = async function resolveTargetUrl(
+  cwd: string,
+  git: string
+): Promise<string> {
+  const expanded =
+    (await tryCapture(["ls-remote", "--get-url", git], cwd)) ?? git;
+  if (expanded.startsWith("./") || expanded.startsWith("../")) {
+    return nodePath.resolve(cwd, expanded);
+  }
+  return expanded;
 };
 
 const readTargetTip = async function readTargetTip(
-  scratch: string,
-  mirror: InrepoMirror
+  scratch: Scratch,
+  url: string,
+  ref: string
 ): Promise<string | null> {
-  const ref = `refs/heads/${mirror.branch}`;
-  const listing = await runGitCapture(["ls-remote", mirror.git, ref], {
-    cwd: scratch,
-  });
+  const listing = await scratchCapture(scratch, ["ls-remote", url, ref]);
   const line = listing.split("\n").find((l) => l.endsWith(`\t${ref}`));
   if (!line) {
     return null;
   }
-  await runGit(["fetch", "-q", "--no-tags", "--depth=1", mirror.git, ref], {
-    cwd: scratch,
+  await runGit(["fetch", "-q", "--no-tags", "--depth=1", url, ref], {
+    cwd: scratch.dir,
+    env: scratch.env,
   });
-  return runGitCapture(["rev-parse", "FETCH_HEAD"], { cwd: scratch });
+  return scratchCapture(scratch, ["rev-parse", "FETCH_HEAD"]);
 };
 
-const readPreviousSource = async function readPreviousSource(
-  scratch: string,
+/** The trailers inrepo wrote on `tip`, or empty values when it has none. */
+const readMirrorTrailers = async function readMirrorTrailers(
+  scratch: Scratch,
   tip: string
-): Promise<string | null> {
-  const value = await runGitCapture(
-    [
-      "log",
-      "-1",
-      `--format=%(trailers:key=${MIRROR_SOURCE_TRAILER},valueonly)`,
-      tip,
-    ],
-    { cwd: scratch }
-  );
-  const last = value
-    .split("\n")
-    .map((l) => l.trim())
-    .findLast(Boolean);
-  return last ?? null;
+): Promise<{ source: string | null; tree: string | null }> {
+  const raw = await scratchCapture(scratch, [
+    "log",
+    "-1",
+    "--format=%(trailers:only,unfold)",
+    tip,
+  ]);
+  let source: string | null = null;
+  let tree: string | null = null;
+  for (const line of raw.split("\n")) {
+    const sep = line.indexOf(":");
+    if (sep === -1) {
+      continue;
+    }
+    const key = line.slice(0, sep).trim();
+    const value = line.slice(sep + 1).trim();
+    if (key === MIRROR_SOURCE_TRAILER) {
+      source = value;
+    } else if (key === MIRROR_TREE_TRAILER) {
+      tree = value;
+    }
+  }
+  return { source, tree };
 };
 
-/** Refuse to publish over target changes inrepo did not make, or roll it back. */
+/** Refuse to publish over target changes inrepo did not make, or to roll it back. */
 const assertSafeToPublish = async function assertSafeToPublish(
   cwd: string,
+  scratch: Scratch,
   mirror: InrepoMirror,
   tip: string,
-  previousSource: string | null,
+  tipTree: string,
   sourceCommit: string
 ): Promise<void> {
   const target = `${mirror.git} (${mirror.branch})`;
-  if (previousSource == null) {
+  const trailers = await readMirrorTrailers(scratch, tip);
+  const oid = new RegExp(`^[0-9a-f]{${sourceCommit.length}}$`, "u");
+  const previousSource =
+    trailers.source != null && oid.test(trailers.source)
+      ? trailers.source
+      : null;
+  if (previousSource == null || trailers.tree !== tipTree) {
     throw new Error(
-      `Mirror "${mirror.name}": the tip of ${target}, ${short(tip)}, was not written by inrepo mirror. ` +
+      `Mirror "${mirror.name}": the tip of ${target}, ${short(tip)}, was not written by inrepo mirror, or was changed after it was. ` +
         "Port any changes made there into this repository, then rerun with --overwrite to replace them."
     );
   }
   const known = await tryCapture(
-    ["cat-file", "-e", `${previousSource}^{commit}`],
+    ["cat-file", "-e", "--end-of-options", `${previousSource}^{commit}`],
     cwd
   );
   if (known == null) {
@@ -208,34 +362,46 @@ const assertSafeToPublish = async function assertSafeToPublish(
   }
 };
 
-const readIdentityEnv = async function readIdentityEnv(
-  cwd: string
+/**
+ * Commit identity: GIT_AUTHOR_* / GIT_COMMITTER_* when set, else this
+ * repository's user.name / user.email. Never git's guessed OS identity.
+ */
+const commitEnv = async function commitEnv(
+  cwd: string,
+  scratch: Scratch
 ): Promise<NodeJS.ProcessEnv> {
-  const env: NodeJS.ProcessEnv = { ...process.env };
-  const name = await tryCapture(["config", "user.name"], cwd);
-  const email = await tryCapture(["config", "user.email"], cwd);
-  if (name && env.GIT_AUTHOR_NAME == null) {
-    env.GIT_AUTHOR_NAME = name;
-    env.GIT_COMMITTER_NAME ??= name;
+  const env: NodeJS.ProcessEnv = { ...scratch.env };
+  const name =
+    env.GIT_AUTHOR_NAME || (await tryCapture(["config", "user.name"], cwd));
+  const email =
+    env.GIT_AUTHOR_EMAIL || (await tryCapture(["config", "user.email"], cwd));
+  if (name) {
+    env.GIT_AUTHOR_NAME ||= name;
+    env.GIT_COMMITTER_NAME ||= name;
   }
-  if (email && env.GIT_AUTHOR_EMAIL == null) {
-    env.GIT_AUTHOR_EMAIL = email;
-    env.GIT_COMMITTER_EMAIL ??= email;
+  if (email) {
+    env.GIT_AUTHOR_EMAIL ||= email;
+    env.GIT_COMMITTER_EMAIL ||= email;
   }
   return env;
 };
 
 const listChanges = async function listChanges(
-  scratch: string,
+  scratch: Scratch,
   fromTree: string | null,
   toTree: string
 ): Promise<MirrorChange[]> {
   // A new branch diffs against the empty tree (object format agnostic).
   const base =
-    fromTree ?? (await runGitInput(["mktree"], "", { cwd: scratch }));
-  const raw = await runGitCapture(
+    fromTree ??
+    (await runGitInput(["mktree"], "", {
+      cwd: scratch.dir,
+      env: scratch.env,
+    }));
+  const raw = await scratchCapture(
+    scratch,
     ["diff-tree", "-r", "-z", "--name-status", base, toTree],
-    { cwd: scratch, trim: false }
+    false
   );
   const fields = raw.split("\0").filter(Boolean);
   const changes: MirrorChange[] = [];
@@ -245,14 +411,46 @@ const listChanges = async function listChanges(
   return changes;
 };
 
-/**
- * Publish a filtered snapshot of `mirror.directory` at `opts.ref` to the
- * mirror's target branch as one fast-forward commit. Never force-pushes.
- */
-export const runMirror = async function runMirror(
+/** Build the filtered tree in the scratch index and check it holds exactly `included`. */
+const writeFilteredTree = async function writeFilteredTree(
+  scratch: Scratch,
+  entries: TreeEntry[],
+  included: Set<string>
+): Promise<string> {
+  const indexInfo = entries
+    .filter((e) => included.has(e.path))
+    .map((e) => `${e.mode} ${e.type} ${e.oid}\t${e.path}\0`)
+    .join("");
+  await runGitInput(["update-index", "-z", "--index-info"], indexInfo, {
+    cwd: scratch.dir,
+    env: scratch.env,
+  });
+  const tree = await scratchCapture(scratch, ["write-tree"]);
+  const written = (
+    await scratchCapture(
+      scratch,
+      ["ls-tree", "-r", "-z", "--name-only", "--full-tree", tree],
+      false
+    )
+  )
+    .split("\0")
+    .filter(Boolean);
+  if (
+    written.length !== included.size ||
+    written.some((path) => !included.has(path))
+  ) {
+    throw new Error(
+      "inrepo mirror built a tree that does not match the selected files; nothing was pushed"
+    );
+  }
+  return tree;
+};
+
+const publish = async function publish(
   cwd: string,
   mirror: InrepoMirror,
-  opts: MirrorOptions
+  opts: MirrorOptions,
+  scratch: Scratch
 ): Promise<MirrorResult> {
   const { sourceCommit, tree } = await resolveSourceTree(cwd, mirror, opts.ref);
   const entries = await listTree(cwd, tree);
@@ -267,70 +465,91 @@ export const runMirror = async function runMirror(
     );
   }
   const included = new Set(selection.included);
+  assertPublishable(
+    mirror,
+    entries.filter((e) => included.has(e.path))
+  );
 
-  const scratch = await makeScratchRepo(cwd);
-  try {
-    const indexInfo = entries
-      .filter((e) => included.has(e.path))
-      .map((e) => `${e.mode} ${e.type} ${e.oid}\t${e.path}\0`)
-      .join("");
-    await runGitInput(["update-index", "-z", "--index-info"], indexInfo, {
-      cwd: scratch,
-    });
-    const newTree = await runGitCapture(["write-tree"], { cwd: scratch });
+  const ref = `refs/heads/${mirror.branch}`;
+  await runGit(["check-ref-format", ref], { env: scratch.env });
+  const url = await resolveTargetUrl(cwd, mirror.git);
+  const newTree = await writeFilteredTree(scratch, entries, included);
 
-    const tip = await readTargetTip(scratch, mirror);
-    const tipTree =
-      tip == null
-        ? null
-        : await runGitCapture(["rev-parse", `${tip}^{tree}`], {
-            cwd: scratch,
-          });
-    const base = {
-      excludedCount: selection.excluded.length,
-      includedCount: selection.included.length,
-      previousTip: tip,
-      sourceCommit,
+  const tip = await readTargetTip(scratch, url, ref);
+  const tipTree =
+    tip == null
+      ? null
+      : await scratchCapture(scratch, ["rev-parse", `${tip}^{tree}`]);
+  const base = {
+    excludedCount: selection.excluded.length,
+    includedCount: selection.included.length,
+    previousTip: tip,
+    sourceCommit,
+  };
+  if (tipTree === newTree) {
+    return {
+      ...base,
+      changes: [],
+      commit: null,
+      pushed: false,
+      upToDate: true,
     };
-    if (tipTree === newTree) {
-      return {
-        ...base,
-        changes: [],
-        commit: null,
-        pushed: false,
-        upToDate: true,
-      };
-    }
-    if (tip != null && !opts.overwrite) {
-      const previousSource = await readPreviousSource(scratch, tip);
-      await assertSafeToPublish(cwd, mirror, tip, previousSource, sourceCommit);
-    }
+  }
+  if (tip != null && tipTree != null && !opts.overwrite) {
+    await assertSafeToPublish(cwd, scratch, mirror, tip, tipTree, sourceCommit);
+  }
 
-    const changes = await listChanges(scratch, tipTree, newTree);
-    const subject = opts.message ?? `Mirror ${short(sourceCommit)}`;
-    const commitArgs = ["commit-tree", newTree];
-    if (tip != null) {
-      commitArgs.push("-p", tip);
-    }
-    commitArgs.push(
-      "-m",
-      subject,
-      "-m",
-      `${MIRROR_SOURCE_TRAILER}: ${sourceCommit}`
+  const changes = await listChanges(scratch, tipTree, newTree);
+  const commitArgs = ["-c", "user.useConfigOnly=true", "commit-tree", newTree];
+  if (tip != null) {
+    commitArgs.push("-p", tip);
+  }
+  commitArgs.push(
+    "-m",
+    opts.message ?? `Mirror ${short(sourceCommit)}`,
+    "-m",
+    `${MIRROR_SOURCE_TRAILER}: ${sourceCommit}\n${MIRROR_TREE_TRAILER}: ${newTree}`
+  );
+  const commit = await runGitCapture(commitArgs, {
+    cwd: scratch.dir,
+    env: await commitEnv(cwd, scratch),
+  });
+
+  if (!opts.dryRun) {
+    // The lease makes the push fail if the branch moved, or appeared, since it was read.
+    await runGit(
+      [
+        "push",
+        "-q",
+        `--force-with-lease=${ref}:${tip ?? ""}`,
+        url,
+        `${commit}:${ref}`,
+      ],
+      { cwd: scratch.dir, env: scratch.env }
     );
-    const commit = await runGitCapture(commitArgs, {
-      cwd: scratch,
-      env: await readIdentityEnv(cwd),
-    });
+  }
+  return { ...base, changes, commit, pushed: !opts.dryRun, upToDate: false };
+};
 
-    if (!opts.dryRun) {
-      await runGit(
-        ["push", "-q", mirror.git, `${commit}:refs/heads/${mirror.branch}`],
-        { cwd: scratch }
-      );
-    }
-    return { ...base, changes, commit, pushed: !opts.dryRun, upToDate: false };
+/**
+ * Publish a filtered snapshot of `mirror.directory` at `opts.ref` to the
+ * mirror's target branch as one commit on top of its current tip. Never
+ * rewrites target history.
+ */
+export const runMirror = async function runMirror(
+  cwd: string,
+  mirror: InrepoMirror,
+  opts: MirrorOptions
+): Promise<MirrorResult> {
+  const dir = await mkdtemp(nodePath.join(tmpdir(), "inrepo-mirror-"));
+  try {
+    const scratch = await initScratchRepo(cwd, dir);
+    return await publish(cwd, mirror, opts, scratch);
+  } catch (error) {
+    // Git errors echo the target URL; keep any embedded token out of logs.
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(redactCredentials(message), { cause: error });
   } finally {
-    await rm(scratch, { force: true, recursive: true });
+    await rm(dir, { force: true, recursive: true });
   }
 };

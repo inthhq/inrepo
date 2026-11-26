@@ -1,5 +1,5 @@
 import { loadMirrors } from "../../config/load-config.js";
-import { runMirror } from "../../mirror/run-mirror.js";
+import { redactCredentials, runMirror } from "../../mirror/run-mirror.js";
 import type { MirrorOptions, MirrorResult } from "../../mirror/run-mirror.js";
 import type { InrepoMirror } from "../../types/inrepo-mirror.js";
 import { parseMirrorArgs } from "../args.js";
@@ -14,7 +14,7 @@ const describeResult = function describeResult(
   result: MirrorResult,
   dryRun: boolean
 ): string {
-  const target = `${mirror.git} (${mirror.branch})`;
+  const target = redactCredentials(`${mirror.git} (${mirror.branch})`);
   if (result.upToDate) {
     return `Mirror "${mirror.name}" is up to date with ${short(result.sourceCommit)} at ${target}`;
   }
@@ -67,7 +67,7 @@ export const cmdMirror = async function cmdMirror(
     }
     const result = await runMirror(cwd, mirror, mirrorOpts);
     ui.message(
-      `${result.includedCount} file(s) published, ${result.excludedCount} left out`
+      `Mirror "${mirror.name}": ${result.includedCount} file(s) selected, ${result.excludedCount} left out`
     );
     if (args.dryRun) {
       for (const change of result.changes) {

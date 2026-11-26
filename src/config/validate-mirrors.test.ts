@@ -70,4 +70,16 @@ describe("validateMirrors", () => {
     ).toThrow(/ReDoS/u);
     expect(() => validateMirrors({}, "mirrors")).toThrow(/array/u);
   });
+
+  test("rejects option-like targets and full refs as branches", () => {
+    expect(() =>
+      validateMirrors([{ git: "--upload-pack=x", name: "n" }], "mirrors")
+    ).toThrow(/repository URL or path/u);
+    expect(() =>
+      validateMirrors(
+        [{ branch: "refs/heads/main", git: "g", name: "n" }],
+        "mirrors"
+      )
+    ).toThrow(/branch name/u);
+  });
 });
