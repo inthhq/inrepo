@@ -578,4 +578,22 @@ describe("CLI: mirror (e2e)", () => {
     expect(r.stderr + r.stdout).toMatch(/does not match the one committed/u);
     expect(await runGit(["--git-dir", target, "branch", "--list"])).toBe("");
   });
+
+  test("refuses to replace a branch written by a different mirror", async () => {
+    expect((await runCli(["mirror"], { cwd: host, env: ENV })).exitCode).toBe(
+      0
+    );
+    await commitMirrorConfig(host, {
+      directory: "packages/sdk",
+      git: `file://${target}`,
+    });
+    const renamed = (
+      await Bun.file(nodePath.join(host, "inrepo.json")).text()
+    ).replace('"name":"sdk"', '"name":"other"');
+    await commitAll(host, { "inrepo.json": renamed }, "second mirror");
+    const r = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/last written by mirror "sdk"/u);
+    expect(await targetFiles(target)).toEqual(["README.md", "src/index.ts"]);
+  });
 });

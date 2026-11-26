@@ -1,6 +1,5 @@
 import { realpathSync } from "node:fs";
 import nodePath from "node:path";
-import { fileURLToPath } from "node:url";
 
 /** True for `scheme://…` and scp-style `host:path` targets. */
 const isUrlLike = function isUrlLike(git: string): boolean {
@@ -37,7 +36,9 @@ const canonicalPath = function canonicalPath(path: string): string {
   if (!nodePath.isAbsolute(path)) {
     current = process.cwd();
   }
-  for (const segment of path.split(/[\\/]+/u)) {
+  // Only Windows treats "\\" as a separator; on POSIX it is part of a name.
+  const separators = process.platform === "win32" ? /[\\/]+/u : /\/+/u;
+  for (const segment of path.split(separators)) {
     if (segment === "" || segment === ".") {
       continue;
     }
@@ -55,6 +56,29 @@ const canonicalPath = function canonicalPath(path: string): string {
 };
 
 /**
+ * The path of a local `file://` URL without URL dot-segment removal, which
+ * would collapse `link/..` before the symlink is followed.
+ */
+const fileUrlPath = function fileUrlPath(url: string): string | null {
+  const rest = url.slice("file://".length);
+  const withoutHost = rest.startsWith("localhost/")
+    ? rest.slice("localhost".length)
+    : rest;
+  if (!withoutHost.startsWith("/")) {
+    return null;
+  }
+  try {
+    const decoded = decodeURIComponent(withoutHost);
+    // "/C:/repo" on Windows.
+    return process.platform === "win32" && /^\/[A-Za-z]:/u.test(decoded)
+      ? decoded.slice(1)
+      : decoded;
+  } catch {
+    return null;
+  }
+};
+
+/**
  * A comparison key for duplicate-target checks: the canonical filesystem path
  * (symlinks resolved) for local repositories that exist, else the URL as
  * written without trailing slashes.
@@ -66,12 +90,8 @@ export const targetIdentity = function targetIdentity(
   const trimmed = git.replace(/\/+$/u, "");
   let localPath: string | null = null;
   if (trimmed.startsWith("file://")) {
-    try {
-      localPath = fileURLToPath(trimmed);
-    } catch {
-      localPath = null;
-    }
-  } else if (!isUrlLike(trimmed)) {
+    localPath = fileUrlPath(trimmed);
+  } else if (nodePath.isAbsolute(trimmed) || !isUrlLike(trimmed)) {
     localPath = resolveTargetUrl(configDir, trimmed);
   }
   return localPath == null ? trimmed : canonicalPath(localPath);

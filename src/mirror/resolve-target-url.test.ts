@@ -51,5 +51,20 @@ describe("targetIdentity", () => {
         `file://${nodePath.join(root, "other", "public.git")}`
       )
     ).toBe(viaLink);
+    expect(
+      targetIdentity(
+        root,
+        `file://${nodePath.join(root, "base")}/link/../public.git`
+      )
+    ).toBe(viaLink);
+  });
+
+  test("keeps backslashes as part of POSIX names", () => {
+    if (process.platform === "win32") {
+      return;
+    }
+    expect(targetIdentity(root, "dir\\public.git")).not.toBe(
+      targetIdentity(root, "dir/public.git")
+    );
   });
 });

@@ -50,7 +50,7 @@ npx inrepo mirror             # publish every mirror
 
 Each run reads the committed tree at `HEAD` (or `--ref <rev>`), never your working tree or index, so uncommitted files are never published. The mirror config must match that commit too: the run stops unless the config on disk declares exactly the same mirror as the one committed at that revision (in `inrepo.json`, or `package.json#inrepo` when the commit has no `inrepo.json`). Uncommitted config edits, a deleted `inrepo.json`, and `--ref` to a commit with different filters all stop it. It builds one commit whose tree is exactly the filtered directory, on top of the target branch's current tip, and pushes it. Files you delete or exclude in the source are deleted on the target. If the target already has exactly that content, nothing is pushed. `-m "<subject>"` sets the commit subject; the default is `Mirror <short sha>`.
 
-Every mirror commit ends with two trailers: `Inrepo-Mirror-Source: <sha>`, the source commit it was built from, and `Inrepo-Mirror-Tree: <sha>`, the tree inrepo wrote. The commit message contains nothing else from your repository, so private commit messages stay private.
+Every mirror commit ends with three trailers: `Inrepo-Mirror-Source: <sha>`, the source commit it was built from, `Inrepo-Mirror-Tree: <sha>`, the tree inrepo wrote, and `Inrepo-Mirror-Name: <name>`, the mirror that wrote it. The commit message contains nothing else from your repository, so private commit messages stay private.
 
 The target's root becomes exactly `directory`. Anything else on the target, such as a `LICENSE` or `.github/` folder that only exists there, is deleted by the first run, so keep those files inside `directory` in your repository.
 
@@ -71,5 +71,6 @@ Run mirrors from CI on your protected branch, after changes are merged. Publishi
 `inrepo mirror` never rewrites history on the target, and it stops instead of silently replacing work:
 
 - If the target tip is not an unmodified mirror commit, someone committed to the target directly, edited or amended a mirror commit, or this is the first mirror run. Port any changes made there into your repository, then rerun with `--overwrite`. The run still adds a commit on top.
+- If the target branch was last written by a different mirror, the run stops: two mirrors cannot share a branch. After renaming a mirror, rerun once with `--overwrite`.
 - If the target was last mirrored from a commit that is not an ancestor of the one you are publishing, publishing would roll it back, so the run stops. `--overwrite` publishes anyway.
 - If the target branch moves between the moment inrepo reads it and the push, the push is rejected. Rerun to publish on top of the new tip.

@@ -18,6 +18,8 @@ const TARGET_REMOTE = "inrepo-target";
 export const MIRROR_SOURCE_TRAILER = "Inrepo-Mirror-Source";
 /** Trailer on every mirror commit naming the tree inrepo wrote, to detect later edits. */
 export const MIRROR_TREE_TRAILER = "Inrepo-Mirror-Tree";
+/** Trailer naming the mirror that wrote a commit, so two mirrors never share a branch. */
+export const MIRROR_NAME_TRAILER = "Inrepo-Mirror-Name";
 
 /** Variables that point git at a specific repository, index, or object store. */
 const FALLBACK_LOCAL_ENV_VARS = [
@@ -365,7 +367,11 @@ const readTargetTip = async function readTargetTip(
 const readMirrorTrailers = async function readMirrorTrailers(
   scratch: Scratch,
   tip: string
-): Promise<{ source: string | null; tree: string | null }> {
+): Promise<{
+  name: string | null;
+  source: string | null;
+  tree: string | null;
+}> {
   const raw = await scratchCapture(scratch, [
     "log",
     "-1",
@@ -374,6 +380,7 @@ const readMirrorTrailers = async function readMirrorTrailers(
   ]);
   let source: string | null = null;
   let tree: string | null = null;
+  let name: string | null = null;
   for (const line of raw.split("\n")) {
     const sep = line.indexOf(":");
     if (sep === -1) {
@@ -385,9 +392,11 @@ const readMirrorTrailers = async function readMirrorTrailers(
       source = value;
     } else if (key === MIRROR_TREE_TRAILER) {
       tree = value;
+    } else if (key === MIRROR_NAME_TRAILER) {
+      name = value;
     }
   }
-  return { source, tree };
+  return { name, source, tree };
 };
 
 /** Refuse to publish over target changes inrepo did not make, or to roll it back. */
@@ -410,6 +419,14 @@ const assertSafeToPublish = async function assertSafeToPublish(
     throw new Error(
       `Mirror "${mirror.name}": the tip of ${target}, ${short(tip)}, was not written by inrepo mirror, or was changed after it was. ` +
         "Port any changes made there into this repository, then rerun with --overwrite to replace them."
+    );
+  }
+  // Checked at the target, so no spelling or URL rewrite of `git` can let two
+  // mirrors take turns replacing each other's files on one branch.
+  if (trailers.name !== mirror.name) {
+    throw new Error(
+      `Mirror "${mirror.name}": ${target} was last written by mirror ${JSON.stringify(trailers.name)}, not this one. ` +
+        "Two mirrors cannot share a branch. If this mirror was renamed, rerun with --overwrite."
     );
   }
   const known = await tryCapture(
@@ -677,7 +694,7 @@ const publish = async function publish(
     "-m",
     opts.message ?? `Mirror ${short(sourceCommit)}`,
     "-m",
-    `${MIRROR_SOURCE_TRAILER}: ${sourceCommit}\n${MIRROR_TREE_TRAILER}: ${newTree}`
+    `${MIRROR_SOURCE_TRAILER}: ${sourceCommit}\n${MIRROR_TREE_TRAILER}: ${newTree}\n${MIRROR_NAME_TRAILER}: ${mirror.name}`
   );
   const commit = await runGitCapture(commitArgs, {
     cwd: scratch.dir,
