@@ -15,7 +15,7 @@ describe("validateMirrors", () => {
           {
             directory: "./packages/sdk/",
             exclude: ["/\\.test\\.ts$/"],
-            git: " https://example.com/o/r.git ",
+            git: "https://example.com/o/r.git",
             name: "sdk",
           },
         ],
@@ -174,5 +174,14 @@ describe("validateMirrors", () => {
         /must not contain/u
       );
     }
+  });
+
+  test("rejects git and branch values with surrounding whitespace", () => {
+    expect(() =>
+      validateMirrors([{ git: "sdk.git ", name: "n" }], "mirrors")
+    ).toThrow(/git must not start or end with whitespace/u);
+    expect(() =>
+      validateMirrors([{ branch: " main", git: "g", name: "n" }], "mirrors")
+    ).toThrow(/branch must not start or end with whitespace/u);
   });
 });

@@ -376,6 +376,10 @@ describe("CLI: mirror (e2e)", () => {
     const cwd = nodePath.join(host, " sdk");
     expect((await runCli(["mirror"], { cwd, env: ENV })).exitCode).toBe(0);
     expect(await targetFiles(target)).toEqual(["inner.ts", "inrepo.json"]);
+    // The next run must still recognize its own branch.
+    await commitAll(host, { " sdk/more.ts": "more\n" }, "more");
+    expect((await runCli(["mirror"], { cwd, env: ENV })).exitCode).toBe(0);
+    expect(await targetFiles(target)).toContain("more.ts");
   });
 
   test("resolves a plain relative target path against the config directory", async () => {
@@ -593,7 +597,9 @@ describe("CLI: mirror (e2e)", () => {
     await commitAll(host, { "inrepo.json": renamed }, "second mirror");
     const r = await runCli(["mirror"], { cwd: host, env: ENV });
     expect(r.exitCode).not.toBe(0);
-    expect(r.stderr + r.stdout).toMatch(/last written by mirror "\.:sdk"/u);
+    expect(r.stderr + r.stdout).toMatch(
+      /last written by mirror "sdk@[0-9a-f]{12}"/u
+    );
     expect(await targetFiles(target)).toEqual(["README.md", "src/index.ts"]);
   });
 
@@ -609,8 +615,35 @@ describe("CLI: mirror (e2e)", () => {
     });
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr + r.stdout).toMatch(
-      /last written by mirror "\.:sdk", not this one \("packages\/sdk:sdk"\)/u
+      /last written by mirror "sdk@[0-9a-f]{12}", not this one \("sdk@[0-9a-f]{12}"\)/u
     );
     expect(await targetFiles(target)).toEqual(["README.md", "src/index.ts"]);
+  });
+
+  test("treats mixed-case repeated trailers as not written by inrepo", async () => {
+    expect((await runCli(["mirror"], { cwd: host, env: ENV })).exitCode).toBe(
+      0
+    );
+    const clone = nodePath.join(root, "clone");
+    await runGit(["clone", "-q", target, clone]);
+    const message = await runGit(["log", "-1", "--format=%B"], clone);
+    const name = /Inrepo-Mirror-Name: (?<value>\S+)/u.exec(message)?.groups
+      ?.value;
+    // Same tree, so only the repeated trailer can make the run refuse.
+    await runGit(
+      [
+        "commit",
+        "-q",
+        "--amend",
+        "-m",
+        `${message}\ninrepo-mirror-name: ${name}`,
+      ],
+      clone
+    );
+    await runGit(["push", "-q", "-f", "origin", "main"], clone);
+    await commitAll(host, { "packages/sdk/src/index.ts": "v2\n" }, "v2");
+    const r = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/was not written by inrepo mirror/u);
   });
 });

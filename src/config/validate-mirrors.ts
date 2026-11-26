@@ -74,6 +74,16 @@ const validateMirror = function validateMirror(
   assertExactPaths(entry.keep, `${label}.keep`, false);
   assertExactPaths(entry.exclude, `${label}.exclude`, true);
   assertExactPaths(entry.directory, `${label}.directory`, false);
+  // git and branch are passed to git verbatim; a trimmed copy could name a
+  // different repository ("sdk.git " vs "sdk.git").
+  for (const field of ["git", "branch"] as const) {
+    const value = entry[field];
+    if (isString(value) && value !== value.trim()) {
+      throw new Error(
+        `${label}.${field} must not start or end with whitespace`
+      );
+    }
+  }
   const mirror: InrepoMirror = {
     branch: "main",
     exclude: validateExcludeList(entry.exclude, `${label}.exclude`),
@@ -81,7 +91,7 @@ const validateMirror = function validateMirror(
     keep: validateKeepList(entry.keep, `${label}.keep`),
     name: requiredString(entry.name, `${label}.name`),
   };
-  // The name goes into a commit trailer as "<config dir>:<name>".
+  // The name goes into a commit trailer as "<name>@<config dir hash>".
   const breaksTrailer = [...mirror.name].some((ch) => {
     const code = ch.codePointAt(0) ?? 0;
     return ch === ":" || code < 0x20 || code === 0x7f;

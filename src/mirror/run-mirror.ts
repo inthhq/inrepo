@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import nodePath from "node:path";
@@ -158,9 +159,15 @@ const resolveSourceTree = async function resolveSourceTree(
       `Mirror "${mirror.name}": directory ${JSON.stringify(mirror.directory ?? ".")} is not a committed directory at ${short(sourceCommit)}`
     );
   }
-  // Unique across every config in the repository: config directory + name.
+  // Unique across every config in the repository: the name plus a hash of
+  // the config directory. The hash keeps the private path out of the public
+  // trailer and survives whitespace or line breaks in directory names.
   const configDir = prefix.replace(/\/+$/u, "") || ".";
-  return { identity: `${configDir}:${mirror.name}`, sourceCommit, tree };
+  const dirHash = createHash("sha256")
+    .update(configDir, "utf-8")
+    .digest("hex")
+    .slice(0, 12);
+  return { identity: `${mirror.name}@${dirHash}`, sourceCommit, tree };
 };
 
 // ignoreBOM: a leading U+FEFF is part of the file name, not an encoding marker.
@@ -375,6 +382,9 @@ const readMirrorTrailers = async function readMirrorTrailers(
   tree: string | null;
 }> {
   const raw = await scratchCapture(scratch, [
+    // inrepo writes "Key: value"; ignore a user's trailer.separators.
+    "-c",
+    "trailer.separators=:",
     "log",
     "-1",
     "--format=%(trailers:only,unfold)",
@@ -389,18 +399,19 @@ const readMirrorTrailers = async function readMirrorTrailers(
     if (sep === -1) {
       continue;
     }
-    const key = line.slice(0, sep).trim();
+    // Git compares trailer keys case-insensitively.
+    const key = line.slice(0, sep).trim().toLowerCase();
     const value = line.slice(sep + 1).trim();
     if (seen.has(key)) {
       // A repeated inrepo trailer was not written by inrepo.
       return { name: null, source: null, tree: null };
     }
     seen.add(key);
-    if (key === MIRROR_SOURCE_TRAILER) {
+    if (key === MIRROR_SOURCE_TRAILER.toLowerCase()) {
       source = value;
-    } else if (key === MIRROR_TREE_TRAILER) {
+    } else if (key === MIRROR_TREE_TRAILER.toLowerCase()) {
       tree = value;
-    } else if (key === MIRROR_NAME_TRAILER) {
+    } else if (key === MIRROR_NAME_TRAILER.toLowerCase()) {
       name = value;
     }
   }
