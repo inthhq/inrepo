@@ -92,10 +92,14 @@ const validateMirror = function validateMirror(
     name: requiredString(entry.name, `${label}.name`),
   };
   // The name goes into a commit trailer as "<name>@<config dir hash>".
-  const breaksTrailer = [...mirror.name].some((ch) => {
-    const code = ch.codePointAt(0) ?? 0;
-    return ch === ":" || code < 0x20 || code === 0x7f;
-  });
+  // ":" and ASCII control characters are single UTF-16 code units.
+  let breaksTrailer = false;
+  for (let i = 0; i < mirror.name.length; i += 1) {
+    const code = mirror.name.codePointAt(i) ?? 0;
+    if (code === 0x3a || code < 0x20 || code === 0x7f) {
+      breaksTrailer = true;
+    }
+  }
   if (breaksTrailer) {
     throw new Error(
       `${label}.name must not contain ":" or control characters such as line breaks`

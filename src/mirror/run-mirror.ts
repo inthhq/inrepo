@@ -287,12 +287,16 @@ const initScratchRepo = async function initScratchRepo(
   };
 };
 
-const scratchCapture = function scratchCapture(
+const scratchCapture = async function scratchCapture(
   scratch: Scratch,
   args: string[],
   trim = true
 ): Promise<string> {
-  return runGitCapture(args, { cwd: scratch.dir, env: scratch.env, trim });
+  return await runGitCapture(args, {
+    cwd: scratch.dir,
+    env: scratch.env,
+    trim,
+  });
 };
 
 /**
@@ -310,8 +314,8 @@ const addTargetRemote = async function addTargetRemote(
   });
   // Raw output, not split on newlines: a path may itself contain one. A
   // direction has exactly one URL when --all prints the same as without it.
-  const getUrl = (push: boolean, all: boolean): Promise<string> =>
-    scratchCapture(
+  const getUrl = async (push: boolean, all: boolean): Promise<string> =>
+    await scratchCapture(
       scratch,
       [
         "remote",
@@ -368,7 +372,7 @@ const readTargetTip = async function readTargetTip(
       env: scratch.env,
     }
   );
-  return scratchCapture(scratch, ["rev-parse", "FETCH_HEAD"]);
+  return await scratchCapture(scratch, ["rev-parse", "FETCH_HEAD"]);
 };
 
 /** The trailers inrepo wrote on `tip`, or empty values when it has none. */

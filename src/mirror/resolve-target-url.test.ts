@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdir, realpath, symlink } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
 import { resolveTargetUrl, targetIdentity } from "./resolve-target-url.js";

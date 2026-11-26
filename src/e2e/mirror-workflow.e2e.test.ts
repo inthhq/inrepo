@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdir, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { runCli } from "../test-utils/run-cli.js";
 import { runGit } from "../test-utils/run-git.js";
@@ -27,7 +29,7 @@ const commitAll = async function commitAll(
   await writeFiles(cwd, files);
   await runGit(["add", "-A"], cwd);
   await runGit(["commit", "-q", "-m", message], cwd);
-  return runGit(["rev-parse", "HEAD"], cwd);
+  return await runGit(["rev-parse", "HEAD"], cwd);
 };
 
 interface MirrorFields {
@@ -38,12 +40,12 @@ interface MirrorFields {
 }
 
 /** Commit a new inrepo.json holding one mirror named "sdk". */
-const commitMirrorConfig = function commitMirrorConfig(
+const commitMirrorConfig = async function commitMirrorConfig(
   cwd: string,
   mirror: MirrorFields,
   configDir = ""
 ): Promise<string> {
-  return commitAll(
+  return await commitAll(
     cwd,
     {
       [nodePath.posix.join(configDir, "inrepo.json")]: `${JSON.stringify({
@@ -444,7 +446,7 @@ describe("CLI: mirror (e2e)", () => {
       env: { ...ENV, GIT_TRACE_PACKET: trace },
     });
     expect(r.exitCode).toBe(0);
-    const packets = await Bun.file(trace).text();
+    const packets = await readFile(trace, "utf-8");
     expect(packets).toMatch(/fetch/u);
     expect(packets).not.toContain(privateTip);
     expect(packets).not.toMatch(/fetch> have /u);
@@ -455,14 +457,14 @@ describe("CLI: mirror (e2e)", () => {
       ["hash-object", "-w", "packages/sdk/README.md"],
       host
     );
-    const proc = Bun.spawn(["git", "update-index", "-z", "--index-info"], {
+    // Raw bytes on stdin: the path's 0xFF byte cannot pass through a JS string argument.
+    execFileSync("git", ["update-index", "-z", "--index-info"], {
       cwd: host,
-      stdin: Buffer.concat([
+      input: Buffer.concat([
         Buffer.from(`100644 blob ${blob}\tpackages/sdk/name`),
         Buffer.from([0xff, 0]),
       ]),
     });
-    expect(await proc.exited).toBe(0);
     await runGit(["commit", "-q", "-m", "raw name"], host);
     const r = await runCli(["mirror"], { cwd: host, env: ENV });
     expect(r.exitCode).not.toBe(0);
@@ -471,7 +473,7 @@ describe("CLI: mirror (e2e)", () => {
 
   test("refuses filters that do not match the published commit's config", async () => {
     const config = nodePath.join(host, "inrepo.json");
-    const committed = await Bun.file(config).text();
+    const committed = await readFile(config, "utf-8");
     await writeFile(config, committed.replace(',"internal"', ""), "utf-8");
     const dirty = await runCli(["mirror"], { cwd: host, env: ENV });
     expect(dirty.exitCode).not.toBe(0);
@@ -535,7 +537,7 @@ describe("CLI: mirror (e2e)", () => {
     await runGit(["add", "package.json"], host);
     await runGit(["commit", "-q", "-m", "stale package.json config"], host);
     // Deleted on disk only: the commit still has the stricter inrepo.json.
-    await Bun.file(nodePath.join(host, "inrepo.json")).delete();
+    await rm(nodePath.join(host, "inrepo.json"));
 
     const r = await runCli(["mirror"], { cwd: host, env: ENV });
     expect(r.exitCode).not.toBe(0);
@@ -546,7 +548,7 @@ describe("CLI: mirror (e2e)", () => {
   test("sees config edits hidden by skip-worktree", async () => {
     await runGit(["update-index", "--skip-worktree", "inrepo.json"], host);
     const config = nodePath.join(host, "inrepo.json");
-    const committed = await Bun.file(config).text();
+    const committed = await readFile(config, "utf-8");
     await writeFile(config, committed.replace(',"internal"', ""), "utf-8");
     const r = await runCli(["mirror"], { cwd: host, env: ENV });
     expect(r.exitCode).not.toBe(0);
@@ -572,7 +574,7 @@ describe("CLI: mirror (e2e)", () => {
 
   test("ignores git replace objects when reading the source", async () => {
     const config = nodePath.join(host, "inrepo.json");
-    const committed = await Bun.file(config).text();
+    const committed = await readFile(config, "utf-8");
     const looser = committed.replace(',"internal"', "");
     await writeFile(config, looser, "utf-8");
     const looserBlob = await runGit(["hash-object", "-w", "inrepo.json"], host);
@@ -594,7 +596,7 @@ describe("CLI: mirror (e2e)", () => {
       git: `file://${target}`,
     });
     const renamed = (
-      await Bun.file(nodePath.join(host, "inrepo.json")).text()
+      await readFile(nodePath.join(host, "inrepo.json"), "utf-8")
     ).replace('"name":"sdk"', '"name":"other"');
     await commitAll(host, { "inrepo.json": renamed }, "second mirror");
     const r = await runCli(["mirror"], { cwd: host, env: ENV });
