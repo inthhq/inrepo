@@ -404,7 +404,7 @@ const readMirrorTrailers = async function readMirrorTrailers(
     const key = line.slice(0, sep).trim().toLowerCase();
     const value = line.slice(sep + 1).trim();
     if (seen.has(key)) {
-      // A repeated inrepo trailer was not written by inrepo.
+      // inrepo never writes a key twice, so any repeated key means another author.
       return { name: null, source: null, tree: null };
     }
     seen.add(key);
