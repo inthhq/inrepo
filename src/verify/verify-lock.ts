@@ -164,8 +164,8 @@ const collectGraphIssues = async function collectGraphIssues(
   }));
 };
 
-const errorMessage = function errorMessage<E>(error: E): string {
-  return error instanceof Error ? error.message : String(error);
+const errorMessage = function errorMessage(error: Error): string {
+  return error.message;
 };
 
 const toResult = function toResult(issues: VerifyIssue[]): VerifyResult {
@@ -256,7 +256,10 @@ export const verifyLock = async function verifyLock(
       });
       pristineDir = pristine.dir;
     } catch (error) {
-      report("pristine-unavailable", `"${name}": ${errorMessage(error)}`);
+      report(
+        "pristine-unavailable",
+        `"${name}": ${errorMessage(error instanceof Error ? error : new Error(String(error)))}`
+      );
       continue;
     }
 
@@ -275,7 +278,10 @@ export const verifyLock = async function verifyLock(
       });
     } catch (error) {
       await rm(stage, { force: true, recursive: true });
-      report("assemble-failed", `"${name}": ${errorMessage(error)}`);
+      report(
+        "assemble-failed",
+        `"${name}": ${errorMessage(error instanceof Error ? error : new Error(String(error)))}`
+      );
       continue;
     }
 
@@ -290,7 +296,10 @@ export const verifyLock = async function verifyLock(
           );
         }
       } catch (error) {
-        report("git-check-failed", `"${name}": ${errorMessage(error)}`);
+        report(
+          "git-check-failed",
+          `"${name}": ${errorMessage(error instanceof Error ? error : new Error(String(error)))}`
+        );
       }
 
       try {
@@ -306,7 +315,7 @@ export const verifyLock = async function verifyLock(
       } catch (error) {
         report(
           "git-check-failed",
-          `"${name}" remote check: ${errorMessage(error)}`
+          `"${name}" remote check: ${errorMessage(error instanceof Error ? error : new Error(String(error)))}`
         );
       }
     } else if (existsSync(markerPath)) {
@@ -320,7 +329,7 @@ export const verifyLock = async function verifyLock(
       } catch (error) {
         report(
           "marker-unreadable",
-          `"${name}": could not read ${VENDOR_MARKER}: ${errorMessage(error)}`
+          `"${name}": could not read ${VENDOR_MARKER}: ${errorMessage(error instanceof Error ? error : new Error(String(error)))}`
         );
         await rm(stage, { force: true, recursive: true });
         continue;

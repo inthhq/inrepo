@@ -1,7 +1,8 @@
-import { describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { describe, expect, test } from "vite-plus/test";
 
 import type { JsonObject } from "../json/unknown.js";
 import { writeLockfile } from "../lockfile/write-lockfile.js";

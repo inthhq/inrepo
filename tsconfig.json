@@ -10,5 +10,5 @@
     "verbatimModuleSyntax": true,
     "types": ["node", "bun"]
   },
-  "include": ["src/**/*.ts", "src/**/*.test.ts", "rolldown.config.mjs"]
+  "include": ["src/**/*.ts", "src/**/*.test.ts", "vite.config.ts"]
 }

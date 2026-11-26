@@ -71,7 +71,10 @@ export const resolveRemoteCommit = async function resolveRemoteCommit(
       env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
     });
   } catch (error) {
-    throw asUpstreamGitError(error, { ref: wanted, url: gitUrl });
+    throw asUpstreamGitError(
+      error instanceof Error ? error : new Error(String(error)),
+      { ref: wanted, url: gitUrl }
+    );
   }
   const commit = pickRemoteCommit(parseLsRemote(raw), pattern);
 

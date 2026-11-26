@@ -92,7 +92,7 @@ export const makeLocalGitFixture = async function makeLocalGitFixture(
       await runGit(["add", "--all", "."], work);
       await runGit(["commit", "-m", message], work);
       await runGit(["push", "origin", "HEAD"], work);
-      return runGit(["rev-parse", "HEAD"], work);
+      return await runGit(["rev-parse", "HEAD"], work);
     },
     createBranch: async (name) => {
       await runGit(["checkout", "-b", name], work);

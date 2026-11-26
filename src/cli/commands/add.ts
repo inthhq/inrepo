@@ -350,8 +350,14 @@ export const performAdd = async function performAdd(
     mode: "add",
     resolvedCommit: plannedRoot?.commit,
   };
-  const vendorRoot = (): Promise<MaterializeResult> =>
-    materializePackage(cwd, rootSpec, globalExclude, globalKeep, rootOpts);
+  const vendorRoot = async (): Promise<MaterializeResult> =>
+    await materializePackage(
+      cwd,
+      rootSpec,
+      globalExclude,
+      globalKeep,
+      rootOpts
+    );
 
   let root: MaterializeResult;
   let vendored = new Map<string, MaterializeResult>();
@@ -421,11 +427,11 @@ export const performAdd = async function performAdd(
   return result;
 };
 
-export const cmdAdd = function cmdAdd(
+export const cmdAdd = async function cmdAdd(
   cwd: string,
   argv: string[]
 ): Promise<AddResult> {
-  return performAdd(cwd, parseAddArgs(argv));
+  return await performAdd(cwd, parseAddArgs(argv));
 };
 
 /**
@@ -498,11 +504,11 @@ export const promptAddArgs = async function promptAddArgs(
   const trimmedRef = isString(ref) ? ref.trim() : "";
   // SAFETY: value was parsed or constructed by the surrounding function before this assertion.
   return {
-    dev: dev === true,
+    dev,
     git: trimmedGit === "" ? undefined : trimmedGit,
-    name: (name as string).trim(),
+    name: name.trim(),
     ref: trimmedRef === "" ? undefined : trimmedRef,
     save: true,
-    withDeps: withDeps === true,
+    withDeps,
   };
 };

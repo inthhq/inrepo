@@ -1,12 +1,3 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  test,
-} from "bun:test";
 import { existsSync } from "node:fs";
 import {
   chmod,
@@ -17,6 +8,16 @@ import {
   writeFile,
 } from "node:fs/promises";
 import nodePath from "node:path";
+
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "vite-plus/test";
 
 import type { JsonObject } from "../json/unknown.js";
 import {
@@ -62,8 +63,8 @@ describe("CLI: update workflow (e2e)", () => {
     await fx.cleanup();
   });
 
-  const cli = function cli(args: string[]): ReturnType<typeof runCli> {
-    return runCli(args, { cwd, env: envFor(MODE) });
+  const cli = async function cli(args: string[]): ReturnType<typeof runCli> {
+    return await runCli(args, { cwd, env: envFor(MODE) });
   };
 
   const lockCommit = async function lockCommit(): Promise<string> {
@@ -124,7 +125,7 @@ describe("CLI: update workflow (e2e)", () => {
     );
 
     // The series is renumbered from 0001 and keeps its subjects.
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-Bump-the-exported-version.patch",
       "0002-Add-a-local-helper.patch",
     ]);
@@ -212,7 +213,7 @@ describe("CLI: update workflow (e2e)", () => {
 
     // Nothing that gets committed to the host repository moved.
     expect(await lockCommit()).toBe(before);
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual(
+    expect((await readdir(seriesDir)).toSorted()).toEqual(
       seriesBefore.toSorted()
     );
     expect(
@@ -247,7 +248,7 @@ describe("CLI: update workflow (e2e)", () => {
     expect(done.exitCode).toBe(0);
     expect(done.stdout).toContain(`→ ${moved.slice(0, 7)} (main)`);
 
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-Bump-the-exported-version.patch",
       "0002-Add-a-local-helper.patch",
     ]);
@@ -277,7 +278,7 @@ describe("CLI: update workflow (e2e)", () => {
 
     expect(existsSync(updateDir)).toBe(false);
     expect(await lockCommit()).toBe(before);
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-Bump-the-exported-version.patch",
       "0002-Add-a-local-helper.patch",
     ]);
@@ -290,7 +291,7 @@ describe("CLI: update workflow (e2e)", () => {
   test("a failed finalize restores the series and leaves the update abortable", async () => {
     await syncAndPatch();
     const before = await lockCommit();
-    const seriesBefore = await (await readdir(seriesDir)).toSorted();
+    const seriesBefore = (await readdir(seriesDir)).toSorted();
     const patchBefore = await readFile(
       nodePath.join(seriesDir, "0001-Bump-the-exported-version.patch")
     );
@@ -311,7 +312,7 @@ describe("CLI: update workflow (e2e)", () => {
 
     const cont = await cli(["update", "upstream", "--continue"]);
     expect(cont.exitCode).toBe(1);
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual(seriesBefore);
+    expect((await readdir(seriesDir)).toSorted()).toEqual(seriesBefore);
     expect(
       await readFile(
         nodePath.join(seriesDir, "0001-Bump-the-exported-version.patch")
@@ -330,7 +331,7 @@ describe("CLI: update workflow (e2e)", () => {
     expect(abort.exitCode).toBe(0);
     expect(existsSync(updateDir)).toBe(false);
     expect(await lockCommit()).toBe(before);
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual(seriesBefore);
+    expect((await readdir(seriesDir)).toSorted()).toEqual(seriesBefore);
     expect(
       await readFile(nodePath.join(moduleDir, "src", "index.ts"), "utf-8")
     ).toBe("export const v = 42;\n");
@@ -338,7 +339,7 @@ describe("CLI: update workflow (e2e)", () => {
 
   test("--abort restores a series that was replaced before finalize finished", async () => {
     await syncAndPatch();
-    const seriesBefore = await (await readdir(seriesDir)).toSorted();
+    const seriesBefore = (await readdir(seriesDir)).toSorted();
     const patchBefore = await readFile(
       nodePath.join(seriesDir, "0001-Bump-the-exported-version.patch")
     );
@@ -368,7 +369,7 @@ describe("CLI: update workflow (e2e)", () => {
     const abort = await cli(["update", "upstream", "--abort"]);
     expect(abort.exitCode).toBe(0);
     expect(existsSync(updateDir)).toBe(false);
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual(seriesBefore);
+    expect((await readdir(seriesDir)).toSorted()).toEqual(seriesBefore);
     expect(
       await readFile(
         nodePath.join(seriesDir, "0001-Bump-the-exported-version.patch")
@@ -378,7 +379,7 @@ describe("CLI: update workflow (e2e)", () => {
 
   test("patch and migrate are refused while an update is paused", async () => {
     await syncAndPatch();
-    const seriesBefore = await (await readdir(seriesDir)).toSorted();
+    const seriesBefore = (await readdir(seriesDir)).toSorted();
     const patchBefore = await readFile(
       nodePath.join(seriesDir, "0001-Bump-the-exported-version.patch")
     );
@@ -406,7 +407,7 @@ describe("CLI: update workflow (e2e)", () => {
     expect(migrated.stderr).toContain("already in progress");
     expect(migrated.stderr).toContain("before migrating");
 
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual(seriesBefore);
+    expect((await readdir(seriesDir)).toSorted()).toEqual(seriesBefore);
     expect(
       await readFile(
         nodePath.join(seriesDir, "0001-Bump-the-exported-version.patch")
@@ -622,8 +623,8 @@ describe("CLI: update of a graph-tracked package (e2e)", () => {
     await cleanupTmpDir(cwd);
   });
 
-  const cli = function cli(args: string[]): ReturnType<typeof runCli> {
-    return runCli(args, { cwd, env });
+  const cli = async function cli(args: string[]): ReturnType<typeof runCli> {
+    return await runCli(args, { cwd, env });
   };
 
   const graph = async function graph(): Promise<JsonObject> {

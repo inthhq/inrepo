@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
 import { applySeries } from "./apply-series.js";
@@ -95,7 +96,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
 
@@ -129,6 +130,54 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
     expect(after.date).toBe(before.date);
   });
 
+  test("a clean rebase keeps a bracketed tag at the start of a subject", async () => {
+    const t2 = nodePath.join(tmp, "t2");
+    const t3 = await writeTree(nodePath.join(tmp, "t3"), {
+      ...BASE_FILES,
+      "a.txt": "a1\nPATCHED\na3\n",
+      "b.txt": "b1\nb2\nb3\n",
+    });
+    const tagged = await formatSeriesPatch({
+      author: AUTHOR,
+      baseRoot: t2,
+      patchedRoot: t3,
+      startNumber: 9,
+      subject: "[security] Extend b again",
+    });
+    await writeFile(nodePath.join(seriesDir, tagged.fileName), tagged.content);
+    const newRoot = await writeTree(nodePath.join(tmp, "new"), {
+      ...BASE_FILES,
+      "c.txt": "from upstream\n",
+    });
+
+    const { result } = await startSeriesRebase({
+      author: AUTHOR,
+      oldRoot,
+      repoRoot,
+      resolveNewRoot: async () => newRoot,
+      seriesDir,
+    });
+
+    expect(result.status).toBe("rebased");
+    if (result.status !== "rebased") {
+      return;
+    }
+    expect(result.patches.map((patch) => patch.subject)).toEqual([
+      "Patch the middle line",
+      "Extend b",
+      "[security] Extend b again",
+    ]);
+    expect(result.patches[2].fileName).toBe(
+      "0003-security-Extend-b-again.patch"
+    );
+    expect(
+      parsePatchHeader(
+        { fileName: "x", index: 3, path: "x" },
+        result.patches[2].content.toString("utf-8")
+      ).subject
+    ).toBe("[security] Extend b again");
+  });
+
   test("the rebased series replays onto the new upstream tree", async () => {
     const newRoot = await writeTree(nodePath.join(tmp, "new"), {
       ...BASE_FILES,
@@ -138,7 +187,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
     if (result.status !== "rebased") {
@@ -176,7 +225,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
 
@@ -198,7 +247,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
 
@@ -229,7 +278,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
     expect(started.result.status).toBe("conflict");
@@ -261,7 +310,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
     expect(started.result.status).toBe("conflict");
@@ -311,7 +360,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
     expect(started.result.status).toBe("conflict");
@@ -343,7 +392,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       name: "pkg",
       oldRoot: wrongOld,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(wrongOld),
+      resolveNewRoot: async () => wrongOld,
       seriesDir,
     });
     await expect(refused).rejects.toThrow(
@@ -364,8 +413,8 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       oldRoot: shared,
       // Stand-in for the pristine cache being refreshed in place.
       repoRoot,
-      resolveNewRoot: () =>
-        writeTree(shared, { ...BASE_FILES, "c.txt": "new\n" }),
+      resolveNewRoot: async () =>
+        await writeTree(shared, { ...BASE_FILES, "c.txt": "new\n" }),
       seriesDir,
     });
 
@@ -417,15 +466,15 @@ describe("writeRebasedSeries", () => {
       rebasedPatch(2, "second"),
     ]);
 
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-first.patch",
       "0002-second.patch",
     ]);
+    expect((await readSeries(seriesDir)).map((entry) => entry.index)).toEqual([
+      1, 2,
+    ]);
     expect(
-      await (await readSeries(seriesDir)).map((entry) => entry.index)
-    ).toEqual([1, 2]);
-    expect(
-      await (await readdir(tmp)).filter((name) => name.startsWith(".series-"))
+      (await readdir(tmp)).filter((name) => name.startsWith(".series-"))
     ).toEqual([]);
   });
 

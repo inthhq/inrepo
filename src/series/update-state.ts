@@ -92,7 +92,7 @@ const parseUpdateState = function parseUpdateState(
     newCommit: rec.newCommit as string,
     oldCommit: rec.oldCommit as string,
     persistRef: rec.persistRef === true,
-    ref: rec.ref as string | null,
+    ref: rec.ref,
     repositoryDirectory: isString(rec.repositoryDirectory)
       ? normalizeRepositoryDirectory(
           rec.repositoryDirectory,

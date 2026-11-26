@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile, symlink, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import {
   AGENTS_BLOCK_END,
@@ -44,8 +45,8 @@ describe("CLI: init --agents (e2e)", () => {
     await cleanupTmpDir(cwd);
   });
 
-  const read = function read(file: string): Promise<string> {
-    return readFile(nodePath.join(cwd, file), "utf-8");
+  const read = async function read(file: string): Promise<string> {
+    return await readFile(nodePath.join(cwd, file), "utf-8");
   };
 
   test("creates config and AGENTS.md, and reports both under --json", async () => {
@@ -242,7 +243,9 @@ describe("CLI: init --agents (e2e)", () => {
     expect(r.stdout).toMatch(/inrepo init \[--agents\]/u);
     expect(r.stdout).toMatch(/--json/u);
     expect(r.stdout).toMatch(/--dry-run/u);
-    expect(r.stdout).toMatch(/Exit codes \(with --json; without it every failure exits 1\):/u);
+    expect(r.stdout).toMatch(
+      /Exit codes \(with --json; without it every failure exits 1\):/u
+    );
     expect(r.stdout).toMatch(/3 needs resolution/u);
   });
 

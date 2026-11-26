@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "vite-plus/test";
 
 import type { JsonObject } from "../json/unknown.js";
 import { packumentUrl, registryBaseUrl } from "./fetch-packument.js";
@@ -137,7 +137,7 @@ describe("toRegistryPackage", () => {
     // SAFETY: value was parsed or constructed by the surrounding function before this assertion.
     const pkg = toRegistryPackage("beta", {
       versions: {
-        "1.0.0": { dependencies: { gamma: 1 } as JsonObject },
+        "1.0.0": { dependencies: { gamma: 1 } },
       },
     });
     expect(pkg.manifests[0].dependencies).toEqual({});

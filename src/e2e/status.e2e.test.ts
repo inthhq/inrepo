@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { createHash } from "node:crypto";
 import { readFile, readdir, rm, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { JsonObject, JsonValue } from "../json/unknown.js";
 import {
@@ -77,8 +78,8 @@ describe("CLI: status (e2e)", () => {
     await fx.cleanup();
   });
 
-  const cli = function cli(args: string[]): Promise<RunCliResult> {
-    return runCli(args, { cwd, env: envFor(MODE) });
+  const cli = async function cli(args: string[]): Promise<RunCliResult> {
+    return await runCli(args, { cwd, env: envFor(MODE) });
   };
 
   const configure = async function configure(): Promise<void> {

@@ -252,8 +252,8 @@ export const planWithDeps = async function planWithDeps(
       resolveRepositoryDirectory: async (candidate) =>
         candidate.repositoryDirectory ??
         (await discoverRepositoryDirectory({ cwd, ...candidate })),
-      resolveVersionPins: (packageManifest, name) =>
-        resolveVersionPins(name, packageManifest),
+      resolveVersionPins: async (packageManifest, name) =>
+        await resolveVersionPins(name, packageManifest),
     },
     root: {
       commit: pristine.commit,

@@ -210,15 +210,16 @@ export const cmdStatus = async function cmdStatus(
       (known.config?.packages ?? []).map((pkg) => pkg.module ?? pkg.name)
     );
     packages = await Promise.all(
-      selection.packages.map((pkg) =>
-        readPackageStatus({
-          configured: configured.has(pkg.module ?? pkg.name),
-          cwd,
-          globalExclude: selection.globalExclude,
-          globalKeep: selection.globalKeep,
-          lockEntry: selection.modules[pkg.module ?? pkg.name],
-          pkg,
-        })
+      selection.packages.map(
+        async (pkg) =>
+          await readPackageStatus({
+            configured: configured.has(pkg.module ?? pkg.name),
+            cwd,
+            globalExclude: selection.globalExclude,
+            globalKeep: selection.globalKeep,
+            lockEntry: selection.modules[pkg.module ?? pkg.name],
+            pkg,
+          })
       )
     );
   }

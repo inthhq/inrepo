@@ -14,11 +14,10 @@ export interface ClonePackageOptions {
 }
 
 /** True when git itself could not be started (not installed / not on PATH). */
-export const isGitSpawnFailure = function isGitSpawnFailure<E>(
-  error: E
+export const isGitSpawnFailure = function isGitSpawnFailure(
+  error: Error
 ): boolean {
   return (
-    error instanceof Error &&
     error.cause instanceof Error &&
     "code" in error.cause &&
     error.cause.code === "ENOENT"
@@ -30,13 +29,10 @@ export const isGitSpawnFailure = function isGitSpawnFailure<E>(
  * `UPSTREAM_UNAVAILABLE`, keeping the git message. A missing git binary is a
  * local problem and passes through unchanged.
  */
-export const asUpstreamGitError = function asUpstreamGitError<E>(
-  error: E,
+export const asUpstreamGitError = function asUpstreamGitError(
+  error: Error,
   details: { url: string; ref?: string | null }
 ): Error {
-  if (!(error instanceof Error)) {
-    return new Error(String(error));
-  }
   if (error instanceof InrepoError || isGitSpawnFailure(error)) {
     return error;
   }
@@ -82,7 +78,10 @@ export const clonePackage = async function clonePackage({
   try {
     await fetchIntoDest({ dest, gitUrl, ref });
   } catch (error) {
-    throw asUpstreamGitError(error, { ref, url: gitUrl });
+    throw asUpstreamGitError(
+      error instanceof Error ? error : new Error(String(error)),
+      { ref, url: gitUrl }
+    );
   }
 
   const commit = await runGitCapture(["rev-parse", "HEAD"], { cwd: dest });

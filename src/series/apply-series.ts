@@ -67,8 +67,17 @@ export const applySeriesToRepo = async function applySeriesToRepo(
     try {
       // --keep-cr: the mailbox splitter strips a trailing CR by default, which
       // would silently rewrite CRLF content.
+      // --keep-non-patch: by default every leading `[tag]` is stripped from
+      // the subject, not only `[PATCH]`.
       await runSeriesGit(
-        ["am", "--3way", "--keep-cr", "--no-verify", patch.path],
+        [
+          "am",
+          "--3way",
+          "--keep-cr",
+          "--keep-non-patch",
+          "--no-verify",
+          patch.path,
+        ],
         {
           cwd: repoRoot,
         }

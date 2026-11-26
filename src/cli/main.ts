@@ -27,6 +27,7 @@ import {
   isDryRun,
   isJsonMode,
 } from "./output.js";
+import type { HelpData } from "./output.js";
 import { inrepoGlobalFlags, showInrepoHelp } from "./rendering.js";
 import { createInrepoTelemetryOptions } from "./telemetry.js";
 import { error as printError } from "./ui.js";
@@ -80,12 +81,6 @@ const handleNoCommand = async function handleNoCommand(
     process.exitCode = 1;
   }
 };
-
-interface HelpData {
-  commands: { description: string; name: string }[];
-  globalFlags: string[];
-  version: string;
-}
 
 /** Machine-readable help: the command table plus inrepo's global flags. */
 const helpData = function helpData(packageInfo: InrepoPackageInfo): HelpData {

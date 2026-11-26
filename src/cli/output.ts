@@ -10,12 +10,47 @@
  * TTY or a known agent/CI environment is detected.
  */
 
+import type { VerifyResult } from "../types/verify-result.js";
+import type { AddResult } from "./commands/add.js";
+import type { InitResult } from "./commands/init.js";
+import type { StatusReport } from "./commands/status.js";
+import type { SyncResult } from "./commands/sync.js";
+import type { UpdateResult } from "./commands/update.js";
 import type { ErrorPayload } from "./errors.js";
+import type { DiffResult, MigrateResult, PatchResult } from "./types.js";
 
 /** Bump only on breaking changes to the envelope or a command's `data`. */
 export const JSON_SCHEMA_VERSION = 1;
 
-export interface SuccessEnvelope<T> {
+/** `data` of `inrepo --version --json`. */
+export interface VersionData {
+  name: string;
+  version: string;
+}
+
+/** `data` of `inrepo --help --json`. */
+export interface HelpData {
+  commands: { description: string; name: string }[];
+  globalFlags: string[];
+  version: string;
+}
+
+/** Every command's typed, JSON-serializable result (`null` when it has none). */
+export type CommandData =
+  | AddResult
+  | DiffResult
+  | HelpData
+  | InitResult
+  | MigrateResult
+  | PatchResult
+  | StatusReport
+  | SyncResult
+  | UpdateResult
+  | VerifyResult
+  | VersionData
+  | null;
+
+export interface SuccessEnvelope<T extends CommandData = CommandData> {
   schemaVersion: typeof JSON_SCHEMA_VERSION;
   ok: true;
   command: string;
@@ -23,7 +58,7 @@ export interface SuccessEnvelope<T> {
   data: T;
 }
 
-export interface FailureEnvelope<T = null> {
+export interface FailureEnvelope<T extends CommandData = CommandData> {
   schemaVersion: typeof JSON_SCHEMA_VERSION;
   ok: false;
   command: string;
@@ -99,10 +134,7 @@ export const configureOutput = function configureOutput(options: {
   if (options.json && state.rawStdoutWrite === undefined) {
     const raw = process.stdout.write.bind(process.stdout);
     state.rawStdoutWrite = raw;
-    // SAFETY: stderr.write has the same overloads as stdout.write.
-    process.stdout.write = process.stderr.write.bind(
-      process.stderr
-    ) as typeof process.stdout.write;
+    process.stdout.write = process.stderr.write.bind(process.stderr);
     // Bun's console.log writes to fd 1 directly, bypassing stdout.write.
     state.rawConsoleLog = console.log;
     state.rawConsoleInfo = console.info;
@@ -121,11 +153,11 @@ export const isDryRun = function isDryRun(): boolean {
 
 /** True when decorative output (ASCII banner) should be printed. */
 export const shouldDecorate = function shouldDecorate(): boolean {
-  return !state.json && process.stdout.isTTY === true && !isAgentEnvironment();
+  return !state.json && process.stdout.isTTY && !isAgentEnvironment();
 };
 
-const writeJson = function writeJson<T>(
-  value: FailureEnvelope<T> | SuccessEnvelope<T>
+const writeJson = function writeJson(
+  value: FailureEnvelope | SuccessEnvelope
 ): void {
   const write =
     state.rawStdoutWrite ?? process.stdout.write.bind(process.stdout);
@@ -134,14 +166,14 @@ const writeJson = function writeJson<T>(
 };
 
 /** Emit the success envelope. No-op outside `--json` or if already emitted. */
-export const emitResult = function emitResult<T>(
+export const emitResult = function emitResult(
   command: string,
-  data: T
+  data: CommandData
 ): void {
   if (!state.json || state.emitted) {
     return;
   }
-  const envelope: SuccessEnvelope<T> = {
+  const envelope: SuccessEnvelope = {
     command,
     data,
     ok: true,
@@ -154,15 +186,15 @@ export const emitResult = function emitResult<T>(
 };
 
 /** Emit the failure envelope. No-op outside `--json` or if already emitted. */
-export const emitFailure = function emitFailure<T = null>(
+export const emitFailure = function emitFailure(
   command: string,
   error: ErrorPayload,
-  data?: T
+  data?: CommandData
 ): void {
   if (!state.json || state.emitted) {
     return;
   }
-  const envelope: FailureEnvelope<T> = {
+  const envelope: FailureEnvelope = {
     command,
     error,
     ok: false,

@@ -272,10 +272,10 @@ const readConfig = async function readConfig(
  * Throws `CONFIG_NOT_FOUND` when neither location declares config, and
  * `CONFIG_INVALID` when the config exists but is malformed.
  */
-export const loadConfig = function loadConfig(
+export const loadConfig = async function loadConfig(
   cwd: string
 ): Promise<LoadedConfig> {
-  return withConfigErrors(cwd, () => readConfig(cwd));
+  return await withConfigErrors(cwd, async () => await readConfig(cwd));
 };
 
 /**
@@ -333,10 +333,10 @@ const readGlobalInrepoRaw = async function readGlobalInrepoRaw(
  * Root `exclude` list only (no `packages` required). Used by `inrepo add` so global
  * excludes apply even when sync has not been run.
  */
-export const loadGlobalExclude = function loadGlobalExclude(
+export const loadGlobalExclude = async function loadGlobalExclude(
   cwd: string
 ): Promise<string[]> {
-  return withConfigErrors(cwd, async () => {
+  return await withConfigErrors(cwd, async () => {
     const ctx = await readGlobalInrepoRaw(cwd);
     if (!ctx) {
       return [];
@@ -352,10 +352,10 @@ export const loadGlobalExclude = function loadGlobalExclude(
 /**
  * Root `keep` list only. Used by `inrepo add` when full `loadConfig` is unavailable.
  */
-export const loadGlobalKeep = function loadGlobalKeep(
+export const loadGlobalKeep = async function loadGlobalKeep(
   cwd: string
 ): Promise<string[]> {
-  return withConfigErrors(cwd, async () => {
+  return await withConfigErrors(cwd, async () => {
     const ctx = await readGlobalInrepoRaw(cwd);
     if (!ctx) {
       return [];

@@ -96,9 +96,7 @@ export const tryFormatSeriesPatch = async function tryFormatSeriesPatch(
       { author: opts.author, cwd: repo }
     );
 
-    const produced = await (
-      await readdir(out)
-    )
+    const produced = (await readdir(out))
       .filter((name) => name.endsWith(".patch"))
       .toSorted();
     if (produced.length !== 1) {

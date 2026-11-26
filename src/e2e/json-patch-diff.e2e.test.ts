@@ -1,12 +1,3 @@
-import {
-  afterAll,
-  afterEach,
-  beforeAll,
-  beforeEach,
-  describe,
-  expect,
-  test,
-} from "bun:test";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import {
@@ -19,6 +10,16 @@ import {
   writeFile,
 } from "node:fs/promises";
 import nodePath from "node:path";
+
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  test,
+} from "vite-plus/test";
 
 import type { JsonObject } from "../json/unknown.js";
 import {
@@ -84,8 +85,8 @@ describe("CLI: --json for patch, diff, and migrate (e2e)", () => {
   let overlayDir: string;
   let seriesDir: string;
 
-  const cli = function cli(args: string[]): Promise<RunCliResult> {
-    return runCli(args, { cwd, env: envFor(MODE) });
+  const cli = async function cli(args: string[]): Promise<RunCliResult> {
+    return await runCli(args, { cwd, env: envFor(MODE) });
   };
 
   beforeAll(async () => {

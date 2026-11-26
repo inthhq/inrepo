@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { readFile, readdir, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+
 import {
   afterAll,
   afterEach,
@@ -6,10 +10,7 @@ import {
   describe,
   expect,
   test,
-} from "bun:test";
-import { existsSync } from "node:fs";
-import { readFile, readdir, writeFile } from "node:fs/promises";
-import nodePath from "node:path";
+} from "vite-plus/test";
 
 import { isJsonObject } from "../json/unknown.js";
 import type { JsonObject, JsonValue } from "../json/unknown.js";
@@ -83,11 +84,11 @@ describe("CLI --json / --dry-run: add, sync, verify (e2e)", () => {
   let fx: LocalGitFixture;
   let cwd: string;
 
-  const cli = function cli(
+  const cli = async function cli(
     args: string[],
     env: { readonly [key: string]: string | undefined } = ENV
   ): Promise<RunCliResult> {
-    return runCli(args, { cwd, env });
+    return await runCli(args, { cwd, env });
   };
 
   beforeAll(async () => {

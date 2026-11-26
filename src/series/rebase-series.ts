@@ -130,7 +130,7 @@ const stoppedSubject = async function stoppedSubject(
       return "(unknown patch)";
     }
     return (
-      (await (await readFile(messagePath, "utf-8")).split("\n")[0].trim()) ||
+      (await readFile(messagePath, "utf-8")).split("\n")[0].trim() ||
       "(unknown patch)"
     );
   }
@@ -256,9 +256,7 @@ const collectRebasedPatches = async function collectRebasedPatches(
       { cwd: repoRoot }
     );
 
-    const produced = await (
-      await readdir(out)
-    )
+    const produced = (await readdir(out))
       .filter((name) => name.endsWith(".patch"))
       .toSorted();
     // `<sha>\t<subject>` keeps one line per commit even when a subject is
@@ -308,10 +306,10 @@ const runRebaseStep = async function runRebaseStep(
     if (!rebaseInProgress(repoRoot)) {
       throw error;
     }
-    return conflictResult(repoRoot, newBase);
+    return await conflictResult(repoRoot, newBase);
   }
   if (rebaseInProgress(repoRoot)) {
-    return conflictResult(repoRoot, newBase);
+    return await conflictResult(repoRoot, newBase);
   }
   return {
     patches: await collectRebasedPatches(repoRoot, newBase),
@@ -456,7 +454,7 @@ export const continueSeriesRebase = async function continueSeriesRebase(opts: {
     cwd: repo,
   });
   const args = patchIsEmpty ? ["rebase", "--skip"] : ["rebase", "--continue"];
-  return runRebaseStep(repo, args, opts.newBase, opts.author);
+  return await runRebaseStep(repo, args, opts.newBase, opts.author);
 };
 
 /**

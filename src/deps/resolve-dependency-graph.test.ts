@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 
 import type { RegistryPackage } from "../registry/load-registry-package.js";
 import type { PublishedArtifact } from "../types/published-artifact.js";
@@ -34,15 +34,13 @@ const makeIo = function makeIo(
   const fetched: string[] = [];
   return {
     fetched,
-    loadRegistryPackage(name: string): Promise<RegistryPackage> {
+    async loadRegistryPackage(name: string): Promise<RegistryPackage> {
       fetched.push(name);
       const versions = registry[name];
       if (!versions) {
-        return Promise.reject(
-          new Error(`npm registry: package not found: ${name}`)
-        );
+        throw new Error(`npm registry: package not found: ${name}`);
       }
-      return Promise.resolve({
+      return {
         manifests: Object.entries(versions).map(([version, manifest]) => ({
           artifact: manifest.artifact ?? null,
           attestationsUrl: null,
@@ -57,22 +55,22 @@ const makeIo = function makeIo(
           version,
         })),
         name,
-      });
+      };
     },
-    resolveRepositoryDirectory(candidate) {
-      return Promise.resolve(candidate.repositoryDirectory);
+    async resolveRepositoryDirectory(candidate) {
+      return candidate.repositoryDirectory;
     },
-    resolveVersionPins(manifest, name: string) {
+    async resolveVersionPins(manifest, name: string) {
       const tagged = registry[name]?.[manifest.version]?.tagged;
       if (tagged === false) {
-        return Promise.resolve([]);
+        return [];
       }
-      return Promise.resolve([
+      return [
         {
           commit: commitFor(name, manifest.version),
           ref: `v${manifest.version}`,
         },
-      ]);
+      ];
     },
   };
 };
@@ -92,12 +90,12 @@ const makeRoot = function makeRoot(
   };
 };
 
-const resolve = function resolve(
+const resolve = async function resolve(
   registry: FakeRegistry,
   root: GraphRoot,
   vendored = new Map<string, VendoredPackage>()
 ) {
-  return resolveDependencyGraph({ io: makeIo(registry), root, vendored });
+  return await resolveDependencyGraph({ io: makeIo(registry), root, vendored });
 };
 
 describe("resolveDependencyGraph", () => {

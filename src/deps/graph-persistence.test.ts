@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { writeLockfile } from "../lockfile/write-lockfile.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";

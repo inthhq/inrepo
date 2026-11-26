@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import {
   bootstrapHostPackageJson,
@@ -52,8 +53,8 @@ describe("CLI: repository subtree lifecycle (e2e)", () => {
     await Promise.all([cleanupTmpDir(cwd), fx.cleanup()]);
   });
 
-  const cli = function cli(args: string[]): ReturnType<typeof runCli> {
-    return runCli(args, { cwd, env: envFor(MODE) });
+  const cli = async function cli(args: string[]): ReturnType<typeof runCli> {
+    return await runCli(args, { cwd, env: envFor(MODE) });
   };
 
   test("keeps sync, diff, patch, update, and verify paths package-relative", async () => {

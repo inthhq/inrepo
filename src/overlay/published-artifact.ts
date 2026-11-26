@@ -288,7 +288,7 @@ const hasBlockingAncestor = async function hasBlockingAncestor(
     if (!existsSync(ancestor)) {
       continue;
     }
-    if (!(await (await lstat(ancestor)).isDirectory())) {
+    if (!(await lstat(ancestor)).isDirectory()) {
       return true;
     }
   }

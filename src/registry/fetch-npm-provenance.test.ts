@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test } from "vite-plus/test";
 
 import { fetchNpmProvenanceCommit } from "./fetch-npm-provenance.js";
 
@@ -61,8 +61,7 @@ const installFetch = function installFetch(
   impl: () => Promise<Response> | Response
 ): void {
   const fetchImpl = Object.assign(
-    (_input: string | URL | Request, _init?: RequestInit) =>
-      Promise.resolve(impl()),
+    async (_input: string | URL | Request, _init?: RequestInit) => await impl(),
     { preconnect: originalFetch.preconnect }
   );
   globalThis.fetch = fetchImpl;

@@ -91,11 +91,11 @@ const seriesConfigArgs = function seriesConfigArgs(
 };
 
 /** Run git inside a scratch series repository with hardened config and env. */
-export const runSeriesGit = function runSeriesGit(
+export const runSeriesGit = async function runSeriesGit(
   args: string[],
   opts: { cwd: string; author?: SeriesAuthor }
 ): Promise<void> {
-  return runGit(
+  await runGit(
     [...seriesConfigArgs(opts.author ?? DEFAULT_SERIES_AUTHOR), ...args],
     {
       cwd: opts.cwd,
@@ -105,11 +105,11 @@ export const runSeriesGit = function runSeriesGit(
 };
 
 /** Same as {@link runSeriesGit} but returns stdout, trimmed unless told otherwise. */
-export const runSeriesGitCapture = function runSeriesGitCapture(
+export const runSeriesGitCapture = async function runSeriesGitCapture(
   args: string[],
   opts: { cwd: string; author?: SeriesAuthor; trim?: boolean }
 ): Promise<string> {
-  return runGitCapture(
+  return await runGitCapture(
     [...seriesConfigArgs(opts.author ?? DEFAULT_SERIES_AUTHOR), ...args],
     {
       cwd: opts.cwd,
