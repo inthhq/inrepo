@@ -35,7 +35,7 @@ Declare mirrors in `inrepo.json` (or `package.json#inrepo`):
 | `git` | Target repository URL or path (not a git remote name). Required. |
 | `branch` | Target branch. Defaults to `main`. |
 | `directory` | Directory in this repository, relative to the config, that becomes the target's root. Defaults to the config directory. |
-| `keep` | Path prefixes under `directory` to publish. When set, nothing else is published. |
+| `keep` | Path prefixes under `directory` to publish. When set, it must list at least one path, and nothing else is published. |
 | `exclude` | Paths or `/regex/` patterns under `directory` that are never published. A literal drops a file or a whole directory. A regex drops any file whose path, or any parent directory's path, matches. |
 
 `keep` and `exclude` follow the same rules as they do for vendored packages: `keep` runs first, then `exclude`. Root-level `keep` and `exclude` apply only to vendored packages, not to mirrors.
@@ -48,7 +48,7 @@ npx inrepo mirror sdk         # publish one mirror
 npx inrepo mirror             # publish every mirror
 ```
 
-Each run reads the committed tree at `HEAD` (or `--ref <rev>`), never your working tree or index, so uncommitted files are never published. The mirror config must match that commit too: if `inrepo.json` has uncommitted changes, or `--ref` names a commit with a different config, the run stops. It builds one commit whose tree is exactly the filtered directory, on top of the target branch's current tip, and pushes it. Files you delete or exclude in the source are deleted on the target. If the target already has exactly that content, nothing is pushed. `-m "<subject>"` sets the commit subject; the default is `Mirror <short sha>`.
+Each run reads the committed tree at `HEAD` (or `--ref <rev>`), never your working tree or index, so uncommitted files are never published. The mirror config must match that commit too: the run stops unless the config on disk declares exactly the same mirror as the one committed at that revision (in `inrepo.json`, or `package.json#inrepo` when the commit has no `inrepo.json`). Uncommitted config edits, a deleted `inrepo.json`, and `--ref` to a commit with different filters all stop it. It builds one commit whose tree is exactly the filtered directory, on top of the target branch's current tip, and pushes it. Files you delete or exclude in the source are deleted on the target. If the target already has exactly that content, nothing is pushed. `-m "<subject>"` sets the commit subject; the default is `Mirror <short sha>`.
 
 Every mirror commit ends with two trailers: `Inrepo-Mirror-Source: <sha>`, the source commit it was built from, and `Inrepo-Mirror-Tree: <sha>`, the tree inrepo wrote. The commit message contains nothing else from your repository, so private commit messages stay private.
 

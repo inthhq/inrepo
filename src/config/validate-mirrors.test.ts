@@ -115,4 +115,23 @@ describe("validateMirrors", () => {
       )
     ).toThrow(/both publish to branch "main"/u);
   });
+
+  test("rejects an explicitly empty keep list", () => {
+    expect(() =>
+      validateMirrors([{ git: "g", keep: [], name: "n" }], "mirrors")
+    ).toThrow(/at least one path/u);
+  });
+
+  test("treats relative and absolute spellings of one target as duplicates", () => {
+    expect(() =>
+      validateMirrors(
+        [
+          { directory: "a", git: "../public.git", name: "one" },
+          { directory: "b", git: "/work/public.git", name: "two" },
+        ],
+        "mirrors",
+        "/work/host"
+      )
+    ).toThrow(/both publish/u);
+  });
 });

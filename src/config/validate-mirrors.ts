@@ -1,7 +1,6 @@
-import nodePath from "node:path";
-
 import { isJsonObject, isString } from "../json/unknown.js";
 import type { JsonValue } from "../json/unknown.js";
+import { resolveTargetUrl } from "../mirror/resolve-target-url.js";
 import { selectMirrorPaths } from "../mirror/select-mirror-paths.js";
 import { normalizeRepositoryDirectory } from "../registry/normalize-repository-directory.js";
 import type { InrepoMirror } from "../types/inrepo-mirror.js";
@@ -50,10 +49,12 @@ const assertExactPaths = function assertExactPaths(
   }
 };
 
-/** Compare targets by spelling-insensitive form: `./a/` and `a` are the same path. */
-const targetKey = function targetKey(git: string): string {
-  const trimmed = git.replace(/\/+$/u, "");
-  return git.includes("://") ? trimmed : nodePath.posix.normalize(trimmed);
+/**
+ * Compare targets the way publishing resolves them: `./a/`, `a`, and the
+ * absolute path to `a` are the same repository.
+ */
+const targetKey = function targetKey(git: string, configDir: string): string {
+  return resolveTargetUrl(configDir, git.replace(/\/+$/u, ""));
 };
 
 const validateMirror = function validateMirror(
@@ -62,6 +63,11 @@ const validateMirror = function validateMirror(
 ): InrepoMirror {
   if (!isJsonObject(entry)) {
     throw new Error(`${label} must be an object`);
+  }
+  if (Array.isArray(entry.keep) && entry.keep.length === 0) {
+    throw new Error(
+      `${label}.keep must list at least one path when set; omit it to publish the whole directory`
+    );
   }
   assertExactPaths(entry.keep, `${label}.keep`, false);
   assertExactPaths(entry.exclude, `${label}.exclude`, true);
@@ -104,7 +110,9 @@ const validateMirror = function validateMirror(
 /** Validate the optional `mirrors` array of an inrepo config object. */
 export const validateMirrors = function validateMirrors(
   raw: JsonValue | undefined,
-  label: string
+  label: string,
+  /** Directory relative target paths resolve against; defaults to the process cwd. */
+  configDir = process.cwd()
 ): InrepoMirror[] {
   if (raw == null) {
     return [];
@@ -125,7 +133,7 @@ export const validateMirrors = function validateMirrors(
     }
     seen.add(mirror.name);
     // Two mirrors on one branch would each replace the other's files.
-    const target = `${targetKey(mirror.git)}\n${mirror.branch}`;
+    const target = `${targetKey(mirror.git, configDir)}\n${mirror.branch}`;
     const other = targets.get(target);
     if (other != null) {
       throw new Error(

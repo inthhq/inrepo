@@ -471,7 +471,9 @@ describe("CLI: mirror (e2e)", () => {
     await writeFile(config, committed.replace(',"internal"', ""), "utf-8");
     const dirty = await runCli(["mirror"], { cwd: host, env: ENV });
     expect(dirty.exitCode).not.toBe(0);
-    expect(dirty.stderr + dirty.stdout).toMatch(/reads its filters from/u);
+    expect(dirty.stderr + dirty.stdout).toMatch(
+      /does not match the one committed/u
+    );
     await writeFile(config, committed, "utf-8");
 
     await runGit(["checkout", "-q", "-b", "spec-move"], host);
@@ -486,7 +488,9 @@ describe("CLI: mirror (e2e)", () => {
       env: ENV,
     });
     expect(other.exitCode).not.toBe(0);
-    expect(other.stderr + other.stdout).toMatch(/reads its filters from/u);
+    expect(other.stderr + other.stdout).toMatch(
+      /does not match the one committed/u
+    );
     expect(await runGit(["--git-dir", target, "branch", "--list"])).toBe("");
   });
 
@@ -505,5 +509,57 @@ describe("CLI: mirror (e2e)", () => {
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr + r.stdout).toMatch(/different repositories for fetch/u);
     expect(await runGit(["--git-dir", elsewhere, "branch", "--list"])).toBe("");
+  });
+
+  test("refuses a looser package.json config when the committed inrepo.json is deleted", async () => {
+    await writeFile(
+      nodePath.join(host, "package.json"),
+      `${JSON.stringify({
+        inrepo: {
+          mirrors: [
+            { directory: "packages/sdk", git: "../public.git", name: "sdk" },
+          ],
+          packages: [],
+        },
+        name: "host",
+      })}\n`,
+      "utf-8"
+    );
+    await runGit(["add", "package.json"], host);
+    await runGit(["commit", "-q", "-m", "stale package.json config"], host);
+    // Deleted on disk only: the commit still has the stricter inrepo.json.
+    await Bun.file(nodePath.join(host, "inrepo.json")).delete();
+
+    const r = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/does not match the one committed/u);
+    expect(await runGit(["--git-dir", target, "branch", "--list"])).toBe("");
+  });
+
+  test("sees config edits hidden by skip-worktree", async () => {
+    await runGit(["update-index", "--skip-worktree", "inrepo.json"], host);
+    const config = nodePath.join(host, "inrepo.json");
+    const committed = await Bun.file(config).text();
+    await writeFile(config, committed.replace(',"internal"', ""), "utf-8");
+    const r = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/does not match the one committed/u);
+  });
+
+  test("pushes only through the checked remote, whatever global remote config says", async () => {
+    const elsewhere = nodePath.join(root, "elsewhere.git");
+    await runGit(["init", "--bare", "-q", "-b", "main", elsewhere]);
+    const r = await runCli(["mirror"], {
+      cwd: host,
+      env: {
+        ...ENV,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: "remote.inrepo-target.pushurl",
+        GIT_CONFIG_VALUE_0: elsewhere,
+      },
+    });
+    expect(r.exitCode).not.toBe(0);
+    expect(await runGit(["--git-dir", elsewhere, "branch", "--list"])).toBe("");
+    expect(await runGit(["--git-dir", target, "branch", "--list"])).toBe("");
   });
 });

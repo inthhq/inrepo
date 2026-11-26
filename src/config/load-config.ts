@@ -328,7 +328,38 @@ export const loadMirrors = async function loadMirrors(
     ctx.source === "inrepo.json"
       ? 'inrepo.json "mirrors"'
       : 'package.json "inrepo.mirrors"';
-  return validateMirrors(ctx.parsed.mirrors, label);
+  return validateMirrors(ctx.parsed.mirrors, label, cwd);
+};
+
+/**
+ * The `mirrors` list from config file contents (for example, read from a
+ * commit), with the same rules as {@link loadMirrors}.
+ */
+export const mirrorsFromConfigText = function mirrorsFromConfigText(
+  text: string,
+  file: "inrepo.json" | "package.json",
+  configDir: string
+): InrepoMirror[] {
+  if (!text.trim()) {
+    return [];
+  }
+  // SAFETY: JSON.parse produces a JSON value from file contents.
+  const parsed = JSON.parse(text) as JsonValue;
+  if (!isJsonObject(parsed)) {
+    return [];
+  }
+  if (file === "inrepo.json") {
+    return validateMirrors(parsed.mirrors, 'inrepo.json "mirrors"', configDir);
+  }
+  const { inrepo } = parsed;
+  if (!isJsonObject(inrepo)) {
+    return [];
+  }
+  return validateMirrors(
+    inrepo.mirrors,
+    'package.json "inrepo.mirrors"',
+    configDir
+  );
 };
 
 /** True when loadConfig failed because no config file/field exists (safe to fall back to globals-only). */
