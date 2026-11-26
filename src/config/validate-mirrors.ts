@@ -81,6 +81,16 @@ const validateMirror = function validateMirror(
     keep: validateKeepList(entry.keep, `${label}.keep`),
     name: requiredString(entry.name, `${label}.name`),
   };
+  // The name goes into a commit trailer as "<config dir>:<name>".
+  const breaksTrailer = [...mirror.name].some((ch) => {
+    const code = ch.codePointAt(0) ?? 0;
+    return ch === ":" || code < 0x20 || code === 0x7f;
+  });
+  if (breaksTrailer) {
+    throw new Error(
+      `${label}.name must not contain ":" or control characters such as line breaks`
+    );
+  }
   // Fail at load time, not halfway through a mirror run, on a bad pattern.
   selectMirrorPaths([], mirror.keep, mirror.exclude);
   if (mirror.git.startsWith("-")) {

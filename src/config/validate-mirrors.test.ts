@@ -167,4 +167,12 @@ describe("validateMirrors", () => {
       ).toThrow(/both publish/u);
     }
   });
+
+  test("rejects names that would break the name trailer", () => {
+    for (const name of ["sdk\npublic", "a:b", "tab\tname"]) {
+      expect(() => validateMirrors([{ git: "g", name }], "mirrors")).toThrow(
+        /must not contain/u
+      );
+    }
+  });
 });

@@ -32,13 +32,13 @@ export const resolveTargetUrl = function resolveTargetUrl(
  * next `..` is applied, the way the operating system (and so git) does.
  */
 const canonicalPath = function canonicalPath(path: string): string {
-  let current = nodePath.parse(nodePath.resolve("/")).root;
-  if (!nodePath.isAbsolute(path)) {
-    current = process.cwd();
-  }
+  // Start from the path's own root ("/", "C:\\", "\\\\server\\share\\"), so a
+  // drive or UNC prefix is not treated as an ordinary segment.
+  const { root } = nodePath.parse(path);
+  let current = root === "" ? process.cwd() : root;
   // Only Windows treats "\\" as a separator; on POSIX it is part of a name.
   const separators = process.platform === "win32" ? /[\\/]+/u : /\/+/u;
-  for (const segment of path.split(separators)) {
+  for (const segment of path.slice(root.length).split(separators)) {
     if (segment === "" || segment === ".") {
       continue;
     }

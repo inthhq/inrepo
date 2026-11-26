@@ -119,7 +119,7 @@ const resolveSourceTree = async function resolveSourceTree(
   cwd: string,
   mirror: InrepoMirror,
   ref: string
-): Promise<{ sourceCommit: string; tree: string }> {
+): Promise<{ identity: string; sourceCommit: string; tree: string }> {
   let prefix: string;
   try {
     // Keep path whitespace: strip only git's terminating newline.
@@ -158,7 +158,9 @@ const resolveSourceTree = async function resolveSourceTree(
       `Mirror "${mirror.name}": directory ${JSON.stringify(mirror.directory ?? ".")} is not a committed directory at ${short(sourceCommit)}`
     );
   }
-  return { sourceCommit, tree };
+  // Unique across every config in the repository: config directory + name.
+  const configDir = prefix.replace(/\/+$/u, "") || ".";
+  return { identity: `${configDir}:${mirror.name}`, sourceCommit, tree };
 };
 
 // ignoreBOM: a leading U+FEFF is part of the file name, not an encoding marker.
@@ -381,6 +383,7 @@ const readMirrorTrailers = async function readMirrorTrailers(
   let source: string | null = null;
   let tree: string | null = null;
   let name: string | null = null;
+  const seen = new Set<string>();
   for (const line of raw.split("\n")) {
     const sep = line.indexOf(":");
     if (sep === -1) {
@@ -388,6 +391,11 @@ const readMirrorTrailers = async function readMirrorTrailers(
     }
     const key = line.slice(0, sep).trim();
     const value = line.slice(sep + 1).trim();
+    if (seen.has(key)) {
+      // A repeated inrepo trailer was not written by inrepo.
+      return { name: null, source: null, tree: null };
+    }
+    seen.add(key);
     if (key === MIRROR_SOURCE_TRAILER) {
       source = value;
     } else if (key === MIRROR_TREE_TRAILER) {
@@ -406,7 +414,8 @@ const assertSafeToPublish = async function assertSafeToPublish(
   mirror: InrepoMirror,
   tip: string,
   tipTree: string,
-  sourceCommit: string
+  sourceCommit: string,
+  identity: string
 ): Promise<void> {
   const target = `${mirror.git} (${mirror.branch})`;
   const trailers = await readMirrorTrailers(scratch, tip);
@@ -423,10 +432,10 @@ const assertSafeToPublish = async function assertSafeToPublish(
   }
   // Checked at the target, so no spelling or URL rewrite of `git` can let two
   // mirrors take turns replacing each other's files on one branch.
-  if (trailers.name !== mirror.name) {
+  if (trailers.name !== identity) {
     throw new Error(
-      `Mirror "${mirror.name}": ${target} was last written by mirror ${JSON.stringify(trailers.name)}, not this one. ` +
-        "Two mirrors cannot share a branch. If this mirror was renamed, rerun with --overwrite."
+      `Mirror "${mirror.name}": ${target} was last written by mirror ${JSON.stringify(trailers.name)}, not this one (${JSON.stringify(identity)}). ` +
+        "Two mirrors cannot share a branch. If this mirror was renamed or its config moved, pass --overwrite on the next run that changes content."
     );
   }
   const known = await tryCapture(
@@ -549,6 +558,8 @@ const writeFilteredTree = async function writeFilteredTree(
 };
 
 interface MirrorSource {
+  /** `<config dir>:<name>`, recorded in the name trailer. */
+  identity: string;
   sourceCommit: string;
   entries: TreeEntry[];
   included: Set<string>;
@@ -622,7 +633,11 @@ const prepareSource = async function prepareSource(
   mirror: InrepoMirror,
   ref: string
 ): Promise<MirrorSource> {
-  const { sourceCommit, tree } = await resolveSourceTree(cwd, mirror, ref);
+  const { identity, sourceCommit, tree } = await resolveSourceTree(
+    cwd,
+    mirror,
+    ref
+  );
   await assertConfigMatchesSource(cwd, mirror, sourceCommit, ref);
   const entries = await listTree(cwd, tree);
   const selection = selectMirrorPaths(
@@ -643,6 +658,7 @@ const prepareSource = async function prepareSource(
   return {
     entries,
     excludedCount: selection.excluded.length,
+    identity,
     included,
     sourceCommit,
   };
@@ -655,7 +671,7 @@ const publish = async function publish(
   source: MirrorSource,
   scratch: Scratch
 ): Promise<MirrorResult> {
-  const { sourceCommit, entries, included } = source;
+  const { sourceCommit, entries, identity, included } = source;
   const ref = `refs/heads/${mirror.branch}`;
   await runGit(["check-ref-format", ref], { env: scratch.env });
   await addTargetRemote(scratch, resolveTargetUrl(cwd, mirror.git));
@@ -682,7 +698,15 @@ const publish = async function publish(
     };
   }
   if (tip != null && tipTree != null && !opts.overwrite) {
-    await assertSafeToPublish(cwd, scratch, mirror, tip, tipTree, sourceCommit);
+    await assertSafeToPublish(
+      cwd,
+      scratch,
+      mirror,
+      tip,
+      tipTree,
+      sourceCommit,
+      identity
+    );
   }
 
   const changes = await listChanges(scratch, tipTree, newTree);
@@ -694,7 +718,7 @@ const publish = async function publish(
     "-m",
     opts.message ?? `Mirror ${short(sourceCommit)}`,
     "-m",
-    `${MIRROR_SOURCE_TRAILER}: ${sourceCommit}\n${MIRROR_TREE_TRAILER}: ${newTree}\n${MIRROR_NAME_TRAILER}: ${mirror.name}`
+    `${MIRROR_SOURCE_TRAILER}: ${sourceCommit}\n${MIRROR_TREE_TRAILER}: ${newTree}\n${MIRROR_NAME_TRAILER}: ${identity}`
   );
   const commit = await runGitCapture(commitArgs, {
     cwd: scratch.dir,

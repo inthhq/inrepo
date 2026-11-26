@@ -593,7 +593,24 @@ describe("CLI: mirror (e2e)", () => {
     await commitAll(host, { "inrepo.json": renamed }, "second mirror");
     const r = await runCli(["mirror"], { cwd: host, env: ENV });
     expect(r.exitCode).not.toBe(0);
-    expect(r.stderr + r.stdout).toMatch(/last written by mirror "sdk"/u);
+    expect(r.stderr + r.stdout).toMatch(/last written by mirror "\.:sdk"/u);
+    expect(await targetFiles(target)).toEqual(["README.md", "src/index.ts"]);
+  });
+
+  test("tells apart same-named mirrors in different config directories", async () => {
+    expect((await runCli(["mirror"], { cwd: host, env: ENV })).exitCode).toBe(
+      0
+    );
+    await commitMirrorConfig(host, { git: `file://${target}` }, "packages/sdk");
+    await commitAll(host, { "packages/sdk/src/index.ts": "v2\n" }, "v2");
+    const r = await runCli(["mirror"], {
+      cwd: nodePath.join(host, "packages", "sdk"),
+      env: ENV,
+    });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(
+      /last written by mirror "\.:sdk", not this one \("packages\/sdk:sdk"\)/u
+    );
     expect(await targetFiles(target)).toEqual(["README.md", "src/index.ts"]);
   });
 });
