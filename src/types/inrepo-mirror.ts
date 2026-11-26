@@ -6,7 +6,7 @@
 export interface InrepoMirror {
   /** Unique label used to select the mirror on the command line. */
   name: string;
-  /** Target repository URL (anything `git push` accepts). */
+  /** Target repository URL or path (not a git remote name). */
   git: string;
   /** Target branch that receives mirror commits. Defaults to `main`. */
   branch: string;

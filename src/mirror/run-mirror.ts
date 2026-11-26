@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import nodePath from "node:path";
@@ -5,6 +6,7 @@ import nodePath from "node:path";
 import { runGitCapture } from "../git/run-git-capture.js";
 import { runGitBytes, runGitInput } from "../git/run-git-input.js";
 import { runGit } from "../git/run-git.js";
+import { inrepoConfigPath } from "../paths/inrepo-config-path.js";
 import type { InrepoMirror } from "../types/inrepo-mirror.js";
 import { selectMirrorPaths } from "./select-mirror-paths.js";
 
@@ -283,6 +285,37 @@ const resolveTargetUrl = function resolveTargetUrl(
   return nodePath.resolve(cwd, git);
 };
 
+/**
+ * `url.*.pushInsteadOf` can send the push somewhere other than the repository
+ * inrepo fetched and checked. Refuse instead of publishing unchecked.
+ */
+const assertSameFetchAndPushUrl = async function assertSameFetchAndPushUrl(
+  scratch: Scratch,
+  url: string
+): Promise<void> {
+  await runGit(["remote", "add", "inrepo-target", url], {
+    cwd: scratch.dir,
+    env: scratch.env,
+  });
+  const fetchUrl = await scratchCapture(scratch, [
+    "remote",
+    "get-url",
+    "inrepo-target",
+  ]);
+  const pushUrl = await scratchCapture(scratch, [
+    "remote",
+    "get-url",
+    "--push",
+    "inrepo-target",
+  ]);
+  if (fetchUrl !== pushUrl) {
+    throw new Error(
+      `git rewrites the mirror target to different repositories for fetch (${fetchUrl}) and push (${pushUrl}), ` +
+        "so inrepo cannot check the repository it would publish to. Remove the url.*.pushInsteadOf rule or point the mirror at the push URL."
+    );
+  }
+};
+
 const readTargetTip = async function readTargetTip(
   scratch: Scratch,
   url: string,
@@ -493,6 +526,35 @@ interface MirrorSource {
   excludedCount: number;
 }
 
+/**
+ * The filters come from the config on disk; refuse to apply them to a commit
+ * whose own config differs, so an uncommitted edit or another branch's
+ * `--ref` cannot publish files that commit's config excludes.
+ */
+const assertConfigMatchesSource = async function assertConfigMatchesSource(
+  cwd: string,
+  sourceCommit: string,
+  ref: string
+): Promise<void> {
+  const file = existsSync(inrepoConfigPath(cwd))
+    ? "inrepo.json"
+    : "package.json";
+  const committed = await tryCapture(
+    ["cat-file", "-e", `${sourceCommit}:./${file}`],
+    cwd
+  );
+  const same =
+    committed != null &&
+    (await tryCapture(["diff", "--quiet", sourceCommit, "--", file], cwd)) !=
+      null;
+  if (!same) {
+    throw new Error(
+      `inrepo mirror reads its filters from ${file}, which is uncommitted or differs from ${JSON.stringify(ref)} (${short(sourceCommit)}). ` +
+        `Commit it, or check out ${JSON.stringify(ref)}, so the filters match the files being published.`
+    );
+  }
+};
+
 /** Resolve and filter the source tree; touches nothing outside the host repository. */
 const prepareSource = async function prepareSource(
   cwd: string,
@@ -500,6 +562,7 @@ const prepareSource = async function prepareSource(
   ref: string
 ): Promise<MirrorSource> {
   const { sourceCommit, tree } = await resolveSourceTree(cwd, mirror, ref);
+  await assertConfigMatchesSource(cwd, sourceCommit, ref);
   const entries = await listTree(cwd, tree);
   const selection = selectMirrorPaths(
     entries.map((e) => e.path),
@@ -535,6 +598,7 @@ const publish = async function publish(
   const ref = `refs/heads/${mirror.branch}`;
   await runGit(["check-ref-format", ref], { env: scratch.env });
   const url = resolveTargetUrl(cwd, mirror.git);
+  await assertSameFetchAndPushUrl(scratch, url);
   const newTree = await writeFilteredTree(scratch, entries, included);
 
   const tip = await readTargetTip(scratch, url, ref);

@@ -464,4 +464,46 @@ describe("CLI: mirror (e2e)", () => {
     expect(r.exitCode).not.toBe(0);
     expect(r.stderr + r.stdout).toMatch(/not valid UTF-8/u);
   });
+
+  test("refuses filters that do not match the published commit's config", async () => {
+    const config = nodePath.join(host, "inrepo.json");
+    const committed = await Bun.file(config).text();
+    await writeFile(config, committed.replace(',"internal"', ""), "utf-8");
+    const dirty = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(dirty.exitCode).not.toBe(0);
+    expect(dirty.stderr + dirty.stdout).toMatch(/reads its filters from/u);
+    await writeFile(config, committed, "utf-8");
+
+    await runGit(["checkout", "-q", "-b", "spec-move"], host);
+    await commitMirrorConfig(host, {
+      directory: "packages/sdk",
+      exclude: ["spec"],
+      git: "../public.git",
+    });
+    await runGit(["checkout", "-q", "main"], host);
+    const other = await runCli(["mirror", "--ref", "spec-move"], {
+      cwd: host,
+      env: ENV,
+    });
+    expect(other.exitCode).not.toBe(0);
+    expect(other.stderr + other.stdout).toMatch(/reads its filters from/u);
+    expect(await runGit(["--git-dir", target, "branch", "--list"])).toBe("");
+  });
+
+  test("refuses when a push URL rewrite points away from the checked target", async () => {
+    const elsewhere = nodePath.join(root, "elsewhere.git");
+    await runGit(["init", "--bare", "-q", "-b", "main", elsewhere]);
+    const r = await runCli(["mirror"], {
+      cwd: host,
+      env: {
+        ...ENV,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: `url.${elsewhere}.pushInsteadOf`,
+        GIT_CONFIG_VALUE_0: target,
+      },
+    });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/different repositories for fetch/u);
+    expect(await runGit(["--git-dir", elsewhere, "branch", "--list"])).toBe("");
+  });
 });

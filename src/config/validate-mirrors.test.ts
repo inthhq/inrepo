@@ -87,6 +87,8 @@ describe("validateMirrors", () => {
   test("rejects path spellings that would be silently rewritten", () => {
     const cases: JsonValue[] = [
       { directory: " sdk", git: "g", name: "n" },
+      { git: "g", keep: ["src /"], name: "n" },
+      { exclude: ["a/ b"], git: "g", name: "n" },
       { exclude: ["private "], git: "g", name: "n" },
       { git: "g", keep: ["src\\lib"], name: "n" },
       { exclude: ["src\\lib"], git: "g", name: "n" },
@@ -107,7 +109,7 @@ describe("validateMirrors", () => {
       validateMirrors(
         [
           { directory: "a", git: "g", name: "one" },
-          { directory: "b", git: "g", name: "two" },
+          { directory: "b", git: "./g/", name: "two" },
         ],
         "mirrors"
       )

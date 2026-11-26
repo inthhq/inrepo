@@ -1,3 +1,5 @@
+import nodePath from "node:path";
+
 import { isJsonObject, isString } from "../json/unknown.js";
 import type { JsonValue } from "../json/unknown.js";
 import { selectMirrorPaths } from "../mirror/select-mirror-paths.js";
@@ -31,18 +33,27 @@ const assertExactPaths = function assertExactPaths(
     if (!isString(value)) {
       continue;
     }
-    if (value !== value.trim()) {
+    const isRegex = allowRegex && value.startsWith("/");
+    // Every path segment, not just the whole entry: "src /" would otherwise
+    // lose its trailing slash and then its space, and select "src".
+    const segments = isRegex ? [value] : value.split("/");
+    if (segments.some((segment) => segment !== segment.trim())) {
       throw new Error(
-        `${label} entry ${JSON.stringify(value)} must not start or end with whitespace`
+        `${label} entry ${JSON.stringify(value)} must not have whitespace at the start or end of a path segment`
       );
     }
-    const isRegex = allowRegex && value.startsWith("/");
     if (!isRegex && value.includes("\\")) {
       throw new Error(
         `${label} entry ${JSON.stringify(value)} must use POSIX "/" separators`
       );
     }
   }
+};
+
+/** Compare targets by spelling-insensitive form: `./a/` and `a` are the same path. */
+const targetKey = function targetKey(git: string): string {
+  const trimmed = git.replace(/\/+$/u, "");
+  return git.includes("://") ? trimmed : nodePath.posix.normalize(trimmed);
 };
 
 const validateMirror = function validateMirror(
@@ -114,7 +125,7 @@ export const validateMirrors = function validateMirrors(
     }
     seen.add(mirror.name);
     // Two mirrors on one branch would each replace the other's files.
-    const target = `${mirror.git}\n${mirror.branch}`;
+    const target = `${targetKey(mirror.git)}\n${mirror.branch}`;
     const other = targets.get(target);
     if (other != null) {
       throw new Error(
