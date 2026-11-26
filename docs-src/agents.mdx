@@ -1,0 +1,241 @@
+---
+title: Using inrepo from agents and scripts
+description: The --json envelope, exit codes, error codes, the recommended agent loop, the update conflict loop, dry runs, and non-interactive setup.
+group: get-started
+---
+
+# Using inrepo from agents and scripts
+
+Pass `--json` to any command. stdout then carries exactly one JSON envelope, and all human output goes to stderr. Branch on `error.code` (and, under `--json`, the exit class); never parse the human text. Start every session with `inrepo status --json`, capture edits with `inrepo patch <name> -m "<reason>"` before anything rebuilds a checkout, and finish with `inrepo verify`.
+
+Per-command `data` shapes are in the [command reference](/docs/commands) (`docs/commands.md` in the npm package).
+
+## What does a --json result look like?
+
+Success:
+
+```ts
+interface SuccessEnvelope<T> {
+  schemaVersion: 1;
+  ok: true;
+  command: string; // "status", "sync", "update", ...
+  dryRun?: true; // present only when --dry-run was passed
+  data: T; // per-command shape; see the command reference
+}
+```
+
+Failure:
+
+```ts
+interface FailureEnvelope<T> {
+  schemaVersion: 1;
+  ok: false;
+  command: string;
+  error: {
+    code: string; // stable; see the error-code table below
+    message: string; // human text; may change between releases
+    hint?: string; // recovery guidance
+    nextCommand?: string; // a concrete command that moves the project forward
+    details?: object; // structured facts: package, files, paths
+  };
+  data?: T; // partial result when the failure still produced one (verify)
+}
+```
+
+For example, `inrepo status --json` in a project with one clean package:
+
+```json
+{
+  "command": "status",
+  "data": {
+    "configPath": "inrepo.json",
+    "lockfilePath": "inrepo.lock.json",
+    "nextActions": [],
+    "packages": [
+      {
+        "checkout": {
+          "changedFiles": [],
+          "commit": "8f2c1e0b9d4a7c6e5f3b2a1908d7c6b5a4f3e2d1",
+          "patchesChangedSinceSync": false,
+          "path": "inrepo_modules/left-pad",
+          "present": true,
+          "tracked": true,
+          "uncapturedEdits": false
+        },
+        "commit": "8f2c1e0b9d4a7c6e5f3b2a1908d7c6b5a4f3e2d1",
+        "condition": "clean",
+        "configured": true,
+        "dev": false,
+        "git": "https://github.com/left-pad/left-pad",
+        "lockedRef": "main",
+        "module": "left-pad",
+        "name": "left-pad",
+        "nextActions": [],
+        "patches": {
+          "count": 1,
+          "format": "series",
+          "overlayFiles": [],
+          "series": [
+            {
+              "fileName": "0001-Pad-with-tabs.patch",
+              "number": 1,
+              "subject": "Pad with tabs"
+            }
+          ]
+        },
+        "ref": "main",
+        "repositoryDirectory": null,
+        "update": null
+      }
+    ]
+  },
+  "ok": true,
+  "schemaVersion": 1
+}
+```
+
+Rules that hold for every command:
+
+- stdout holds the envelope and nothing else. Progress, warnings, and the banner go to stderr, so `inrepo sync --json > result.json` is safe.
+- Exactly one envelope is printed, also on failure. A failure envelope has no `dryRun` field.
+- `--help --json` returns `data: { commands: [{ name, description }], globalFlags, version }`, and `--version --json` returns `data: { name, version }`.
+- Arguments that fail to parse still produce a `USAGE` failure envelope.
+
+### How is the schema versioned?
+
+`schemaVersion` changes only for a breaking change to the envelope or to a command's `data`: a removed or renamed field, or a changed meaning. New fields, new error codes, new `VerifyIssueKind` values, and new `PackageCondition` values can appear without a version change, so ignore keys you do not know. Check that `schemaVersion` is `1` before you rely on the shapes on these pages.
+
+## Which exit codes can inrepo return?
+
+The classes below apply under `--json`. Without `--json`, inrepo keeps its original behavior: 0 on success and 1 on any failure, so existing scripts keep working. Agents should always pass `--json`.
+
+| Exit | Meaning | What to do |
+| --- | --- | --- |
+| 0 | Success. | Continue. |
+| 1 | A check failed (`VERIFY_FAILED`) or an unclassified error (`ERROR`). | Read `error.message`; follow `nextCommand` if present. |
+| 2 | Usage, config, or lockfile problem, or an unknown package. | Fix the command or the input file. Retrying unchanged will fail again. |
+| 3 | Work is paused and needs resolution: a conflict, uncaptured edits, an update in progress, or a patch that no longer applies. | Resolve it, usually with `error.nextCommand`. |
+| 4 | Git remote, npm registry, or network failure. | Retry later, or check the URL, ref, network, and credentials. |
+
+## Which error codes can inrepo return?
+
+Codes are stable: a code may be added, but renaming or removing one is a breaking change.
+
+| Code | Exit | Meaning | Typical `nextCommand` |
+| --- | --- | --- | --- |
+| `USAGE` | 2 | Unknown command or option, missing or extra argument, an unsupported `--dry-run`, or `patch` without `-m`. | `inrepo patch <name> -m "<reason>"` for a missing `-m`; `inrepo status --json` for a bare `inrepo --json`; otherwise none (hint: `inrepo --help`). |
+| `CONFIG_NOT_FOUND` | 2 | The project has no inrepo config. | `inrepo init`, or `INREPO_CONFIG=inrepo.json inrepo init` without a terminal. |
+| `CONFIG_INVALID` | 2 | Config is malformed, fails validation, or has an empty `packages` array. `details.file` names the file. | `inrepo add <package>` for an empty config; otherwise none. |
+| `LOCKFILE_INVALID` | 2 | `inrepo.lock.json` is malformed or inconsistent. | None. Restore it from version control; do not hand-edit it. |
+| `PACKAGE_NOT_FOUND` | 2 | The named package is not configured or locked, or the npm registry does not have it. `details.known` lists the accepted names. | `inrepo sync` when the package is configured but not locked yet. |
+| `NO_UPDATE_IN_PROGRESS` | 2 | `update --continue` or `--abort` with no paused update. | `inrepo update <name>` |
+| `INTERACTIVE_REQUIRED` | 2 | Reserved for an action that needs a prompt in a non-interactive session. Not raised by any command yet. | None. |
+| `UNCAPTURED_EDITS` | 3 | `inrepo_modules/<name>/` has edits that are not in `inrepo_patches/`. `sync`, `add`, and `update` refuse to overwrite them. | `inrepo patch <name> -m "<reason>"`; `inrepo sync --force` when `inrepo_patches/` also changed. |
+| `UPDATE_CONFLICT` | 3 | `inrepo update` stopped on a rebase conflict. | `inrepo update <name> --continue` |
+| `UPDATE_IN_PROGRESS` | 3 | An update for this package is paused; `patch`, `migrate`, and a new `update` refuse to run. | `inrepo update <name> --continue` |
+| `MIRROR_NOT_FOUND` | 2 | `inrepo mirror <name>` names no configured mirror. `details.known` lists the names. | None. |
+| `MIRROR_HISTORY_MISSING` | 2 | `inrepo mirror` cannot check the last mirrored commit: the clone is shallow or lacks it. | None. Fetch full history. |
+| `MIRROR_TARGET_CHANGED` | 3 | The mirror target changed outside inrepo, was written by another mirror, or would be rolled back. `details.reason` says which. | `inrepo mirror <name> --overwrite`, after porting any target changes. |
+| `PATCH_APPLY_FAILED` | 3 | A committed patch does not apply to the pinned commit. `details.patch` and `details.file` name it. | None. The hint suggests `inrepo update <name>`. |
+| `UPSTREAM_UNAVAILABLE` | 4 | A git remote, the npm registry, or the network failed. `details` has the URL. | None. Retry. |
+| `VERIFY_FAILED` | 1 | `inrepo verify` found checkouts that disagree with the lockfile. `data` holds the issues. | `inrepo sync` (see the note below). |
+| `ERROR` | 1 | Any other failure. | Sometimes `inrepo sync`, `inrepo migrate <name>`, or `inrepo update <name> --abort`. |
+
+A `nextCommand` is a suggestion with placeholders such as `<reason>` left for you to fill in. Read `hint` before you run it. For `VERIFY_FAILED` caused by `tree-drift`, the checkout usually has uncaptured edits: capture them with `inrepo patch` or discard them with `inrepo sync --force`, because a plain `inrepo sync` refuses with `UNCAPTURED_EDITS`.
+
+## What loop should an agent follow?
+
+```bash
+# 1. Read the state. Follow nextActions of anything not "clean" first.
+inrepo status --json
+
+# 2. Act: edit files in inrepo_modules/<name>/, or run add, sync, or update.
+inrepo add left-pad --json
+
+# 3. Capture every edit before anything rebuilds the checkout.
+inrepo patch left-pad -m "Pad with tabs" --json
+
+# 4. Review the committed delta (optional) and verify. verify must exit 0.
+inrepo diff left-pad --stat --json
+inrepo verify --json
+```
+
+Then commit the config, `inrepo.lock.json`, and `inrepo_patches/`. Never commit `inrepo_modules/` or `.inrepo/`.
+
+Rules that prevent lost work:
+
+- `inrepo_modules/` is generated. Editing it is fine, but `sync`, `update`, and `add` rebuild it. Run `inrepo patch <name> -m "<reason>"` first. If you forget, those commands stop with `UNCAPTURED_EDITS` rather than discard the edits, unless you pass `--force`.
+- `-m` is required. Each `patch` run appends a new numbered patch, so capture one logical change per run with a reason that says why.
+- Never hand-edit `inrepo.lock.json` or `inrepo_patches/**/*.patch`. To change a patch, edit the checkout and capture a new patch. To move a pin, use `inrepo update` or `inrepo add --ref`.
+- `inrepo sync --force` discards uncaptured edits. It keeps a backup under `.inrepo/backups/`, but treat it as destructive.
+
+## How do I resolve an update conflict?
+
+1. Run `inrepo status <name> --json` and make sure `condition` is `clean`. `update` refuses with `UNCAPTURED_EDITS` otherwise.
+2. Optionally preview with `inrepo update <name> --dry-run --json`. It reports the target commit and the patches to rebase, but it cannot predict conflicts.
+3. Run `inrepo update <name> --json`. Exit 0 means done: go to step 7. Exit 3 with `UPDATE_CONFLICT` looks like this:
+
+   ```json
+   {
+     "command": "update",
+     "error": {
+       "code": "UPDATE_CONFLICT",
+       "message": "Rebasing \"left-pad\" stopped on patch 0001 \"Pad with tabs\".\nConflicted files:\n  src/index.js\nResolve them in .inrepo/updates/left-pad/repo, then run:\n  inrepo update left-pad --continue   finish the rebase and move the pin\n  inrepo update left-pad --abort      discard the update and leave everything as it is\nNothing in inrepo_patches/, the config, the lockfile, or inrepo_modules/ has changed.",
+       "hint": "Edit the conflicted files under .inrepo/updates/left-pad/repo to remove the conflict markers, then run: inrepo update left-pad --continue (or --abort to discard the update)",
+       "nextCommand": "inrepo update left-pad --continue",
+       "details": {
+         "conflictedFiles": ["src/index.js"],
+         "package": "left-pad",
+         "patch": { "number": 1, "subject": "Pad with tabs" },
+         "repoPath": ".inrepo/updates/left-pad/repo"
+       }
+     },
+     "ok": false,
+     "schemaVersion": 1
+   }
+   ```
+
+4. For each path in `details.conflictedFiles`, edit `<repoPath>/<path>`, for example `.inrepo/updates/left-pad/repo/src/index.js`. Remove every conflict marker and keep the intent of both upstream and the patch named in `details.patch`. Do not run `git add`, `git rebase`, or `git am` there; inrepo stages the files for you. Do not edit `inrepo_modules/` during an update.
+5. Optionally confirm with `inrepo status <name> --json`: `update.unresolvedFiles` is empty and `update.readyToContinue` is `true`.
+6. Run `inrepo update <name> --continue --json`.
+   - Exit 0: the series is rewritten, the pin moved, and the checkout rebuilt.
+   - Exit 3 with `UPDATE_CONFLICT` and the same `details.patch`: markers remain. Go back to step 4.
+   - Exit 3 with `UPDATE_CONFLICT` and a later `details.patch`: the next patch conflicts too. Go back to step 4.
+   - To give up at any point, run `inrepo update <name> --abort --json`. It deletes the scratch repository and changes nothing else.
+7. Run `inrepo verify --json` and commit the changed `inrepo_patches/<name>/series/`, `inrepo.lock.json`, and config.
+
+Until the update finishes or is aborted, `patch`, `migrate`, and another `update` for that package fail with `UPDATE_IN_PROGRESS`. A resolution that leaves a patch with no effect drops that patch from the series. Patches that upstream has already adopted are dropped automatically.
+
+## What does --dry-run guarantee?
+
+`--dry-run` works with `add`, `sync`, `patch`, `update`, and `mirror`. Any other command fails with `USAGE`. A dry run never writes the config, `inrepo.lock.json`, `package.json`, `inrepo_modules/`, `inrepo_patches/`, or inrepo's state under `.inrepo/` (sync state, in-progress updates). The one exception is the gitignored download cache `.inrepo/cache/`, which a dry run may fill so later runs are faster. Scratch work happens in the OS temp directory. The success envelope has `"dryRun": true`.
+
+| Command | Under `--dry-run` |
+| --- | --- |
+| `add` | Resolves the commit and reports `would-create`, `would-update`, `would-rebuild`, or `unchanged`. With `--with-deps` it resolves the whole closure, which may fill `.inrepo/cache/`. It does not create a config. |
+| `sync` | Reports an action per package. It skips first-time setup, so a project without config fails with `CONFIG_NOT_FOUND`. It still fails with `UNCAPTURED_EDITS` when a real sync would. |
+| `patch` | Computes the patch that would be appended. `-m` is optional; without it, `patch.file` and `patch.subject` are `null`. The upstream cache may be filled. |
+| `update` | Resolves the target commit and reports `would-update` or `up-to-date`. It cannot predict conflicts and cannot be combined with `--continue` or `--abort`. |
+| `mirror` | Builds the mirror commit, runs every safety check, and reports `would-push` or `up-to-date` with the file changes. It pushes nothing. |
+
+A dry run can contact git remotes and the npm registry, so it can fail with `UPSTREAM_UNAVAILABLE`.
+
+## How does inrepo behave without a terminal?
+
+inrepo never prompts when stdin or stdout is not a TTY, when `CI=true`, when `INREPO_NONINTERACTIVE=1`, or under `--json`. In an interactive terminal it prompts only during first-time setup and in the menu a bare `inrepo` opens. In a non-interactive session:
+
+- Set `INREPO_CONFIG=inrepo.json` or `INREPO_CONFIG=package.json` to let `init`, `add`, or `sync` create the config. Without it, they fail with `CONFIG_NOT_FOUND` and `nextCommand: "INREPO_CONFIG=inrepo.json inrepo init"`.
+- A bare `inrepo` prints help instead of opening the menu, and exits 1 when the project has no config. A bare `inrepo --json` fails with `USAGE` and `nextCommand: "inrepo status --json"`.
+- `patch` needs `-m` in every session.
+
+The ASCII banner is printed only when stdout is a TTY, `--json` is off, and none of these variables is set to a value other than empty, `0`, or `false`: `CI`, `CLAUDECODE`, `CLAUDE_CODE_ENTRYPOINT`, `CODEX_SANDBOX`, `CODEX_HOME`, `CURSOR_AGENT`, `GEMINI_CLI`, `AIDER_MODEL`, `INREPO_AGENT`. Set `INREPO_AGENT=1` to suppress it in any other harness. The background update check is skipped under `--json`.
+
+## How do I give a project's agents these rules?
+
+```bash
+npx inrepo init --agents
+```
+
+This adds a short block of inrepo rules to the project's `AGENTS.md`, creating the file if needed, between `<!-- inrepo:agents:start -->` and `<!-- inrepo:agents:end -->`. Rerunning it replaces the block in place, so you can rerun it after upgrading inrepo. If `CLAUDE.md` exists and does not already mention `AGENTS.md`, it gets the same block. It creates the config first when there is none; if that cannot happen (no terminal and no `INREPO_CONFIG`), it fails with `CONFIG_NOT_FOUND` and writes nothing. `--json` reports each file as `created`, `updated`, or `unchanged`. See [inrepo init](/docs/commands#inrepo-init) for the full behavior.
+
+The inrepo npm package also ships an agent skill at `skills/inrepo/SKILL.md` (the same file lives in the GitHub repository, so skill installers that read `skills/*/SKILL.md` pick it up) and these docs. When inrepo is a project dependency, an agent can read `node_modules/inrepo/AGENTS.md` and `node_modules/inrepo/docs/agents.md` offline, matched to the installed version.

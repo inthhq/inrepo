@@ -1,0 +1,535 @@
+---
+title: Commands
+description: Every inrepo command with its flags, the files it writes, --dry-run support, the JSON data shape, and the error codes it can raise.
+group: reference
+---
+
+# Commands
+
+Each section below lists a command's synopsis and flags, the files it writes, whether it accepts `--dry-run`, the TypeScript shape of `data` in its `--json` success envelope, and the error codes it can raise. Exit codes in parentheses apply under `--json`; without it every failure exits 1. The envelope itself, exit codes, and the full error-code table are on [Using inrepo from agents and scripts](/docs/agents) (`docs/agents.md` in the npm package).
+
+Two flags work with every command:
+
+| Flag | Effect |
+| --- | --- |
+| `--json` | stdout carries exactly one JSON envelope. All human output (progress, warnings, banners) goes to stderr. |
+| `--dry-run` | Only `add`, `sync`, `patch`, `update`, and `mirror` accept it. Other commands fail with `USAGE` (exit 2). |
+
+Every command can also raise `USAGE` for an unknown option or an unexpected argument, `CONFIG_INVALID` for a malformed `inrepo.json` or `package.json#inrepo`, and `LOCKFILE_INVALID` for a malformed `inrepo.lock.json`. The per-command lists below leave these three out.
+
+A command that fails with a plain error (one with no specific code) reports code `ERROR` and exits 1.
+
+## inrepo init
+
+```bash
+inrepo init [--agents]
+```
+
+Creates an empty config. If a config already exists, `init` does nothing to it.
+
+- In a terminal, `init` asks where to put the config (`inrepo.json` or `package.json#inrepo`) and offers to add `/inrepo_modules/` and `/.inrepo/` to `.gitignore`.
+- Without a terminal, or under `--json`, `init` reads `INREPO_CONFIG=inrepo.json` or `INREPO_CONFIG=package.json`, writes that stub, and appends the two `.gitignore` lines without asking.
+- `--agents` adds a short inrepo guidance block to `AGENTS.md`, creating the file if it is missing. The block sits between `<!-- inrepo:agents:start -->` and `<!-- inrepo:agents:end -->`; a rerun replaces it in place and leaves the rest of the file alone. If `CLAUDE.md` exists, does not mention `AGENTS.md`, and is not a symlink to it, the same block goes there too. A `CLAUDE.md` that already has the block is kept current.
+- `--agents` creates the config first when there is none, the same way plain `init` does. When setup cannot run (no terminal and no `INREPO_CONFIG`), it fails with `CONFIG_NOT_FOUND` before writing any guidance.
+
+Writes: `inrepo.json` or `package.json`, `.gitignore`, and with `--agents`, `AGENTS.md` and possibly `CLAUDE.md`.
+
+Dry run: not supported.
+
+```ts
+interface InitResult {
+  /** True when this run created the config. */
+  initialized: boolean;
+  /** True when the project already had inrepo config before this run. */
+  alreadyInitialized: boolean;
+  configPath: "inrepo.json" | "package.json" | null;
+  /** Null without --agents. */
+  agents: {
+    files: Array<{
+      path: string; // "AGENTS.md" or "CLAUDE.md"
+      action: "created" | "updated" | "unchanged";
+    }>;
+  } | null;
+}
+```
+
+Errors:
+
+- `CONFIG_NOT_FOUND`: no terminal and no `INREPO_CONFIG`, without `--agents`. `nextCommand` is `INREPO_CONFIG=inrepo.json inrepo init`.
+- `ERROR`: `AGENTS.md` or `CLAUDE.md` has only one of the two markers, or has them in the wrong order. Fix the markers by hand and rerun.
+
+## inrepo status
+
+```bash
+inrepo status [<name>]
+```
+
+Reports every vendored package, or only `<name>`: its pin, its patches, whether the checkout has uncaptured edits, and any paused update. Each package also gets a `condition` and the `nextActions` that move it forward. `status` is the right first command for an agent.
+
+`status` never fetches and never writes to the project. It works without a config: with nothing configured, `nextActions` is `["inrepo init"]`. With a config and no packages, it is `["inrepo add <name>"]`.
+
+Writes: nothing. To compute changed files, `status` assembles a tree in the OS temp directory, and only from upstream sources already cached under `.inrepo/`.
+
+Dry run: not supported (it never writes).
+
+```ts
+interface StatusReport {
+  /** "inrepo.json" or "package.json"; null without config. */
+  configPath: string | null;
+  /** "inrepo.lock.json"; null when it does not exist yet. */
+  lockfilePath: string | null;
+  packages: PackageStatus[];
+  /** Every package's nextActions, deduplicated, most urgent package first. */
+  nextActions: string[];
+}
+
+interface PackageStatus {
+  name: string;
+  /** Storage identity under inrepo_modules/ (name@version for --with-deps dependencies). */
+  module: string;
+  dev: boolean;
+  /** True when the package is declared in the config (not only in the lockfile). */
+  configured: boolean;
+  git: string | null;
+  ref: string | null;
+  repositoryDirectory: string | null;
+  /** Commit pinned in the lockfile; null when not locked yet. */
+  commit: string | null;
+  lockedRef: string | null;
+  condition: PackageCondition;
+  patches: {
+    format: "series" | "overlay" | "none";
+    /** Patches in the series, or files in a legacy overlay. */
+    count: number;
+    series: Array<{ number: number; subject: string; fileName: string }>;
+    /** Legacy overlay file paths, relative to inrepo_patches/<module>/. */
+    overlayFiles: string[];
+  };
+  checkout: {
+    /** Project-relative, e.g. "inrepo_modules/left-pad". */
+    path: string;
+    present: boolean;
+    /** Commit recorded in the checkout's .inrepo-vendor.json marker. */
+    commit: string | null;
+    /** True when a sync or patch record exists for this checkout. */
+    tracked: boolean;
+    /** Null when it cannot be known offline. */
+    uncapturedEdits: boolean | null;
+    /** True when inrepo_patches/<module>/ changed since the checkout was built. */
+    patchesChangedSinceSync: boolean | null;
+    /** Files that differ from the committed state; null when the upstream cache is not on disk. */
+    changedFiles: string[] | null;
+  };
+  update: {
+    inProgress: true;
+    fromCommit: string | null;
+    targetRef: string | null;
+    targetCommit: string | null;
+    startedAt: string | null;
+    /** True while the scratch rebase is stopped on a patch. */
+    rebaseStopped: boolean;
+    stoppedAt: { number: number; subject: string } | null;
+    /** Unmerged paths in the scratch repository. */
+    conflictedFiles: string[];
+    /** Conflicted paths that still contain conflict markers. */
+    unresolvedFiles: string[];
+    /** True when `inrepo update <name> --continue` can proceed. */
+    readyToContinue: boolean;
+    /** Project-relative scratch repository, e.g. ".inrepo/updates/left-pad/repo". */
+    repoPath: string;
+  } | null;
+  /** Commands that move this package forward, most important first. */
+  nextActions: string[];
+}
+
+type PackageCondition =
+  | "update-in-progress" // next: inrepo update <name> --continue | --abort
+  | "diverged" // checkout and inrepo_patches/ both changed; next: inrepo sync --force
+  | "uncaptured-edits" // next: inrepo patch <name> -m "<reason>" (or inrepo sync --force)
+  | "not-locked" // configured, not in the lockfile; next: inrepo sync
+  | "missing" // locked, no checkout; next: inrepo sync
+  | "needs-sync" // checkout behind the lockfile or the patches; next: inrepo sync
+  | "unverified" // checkout has no sync record; next: inrepo verify
+  | "clean"; // nothing to do (a legacy overlay suggests inrepo migrate <name>)
+```
+
+The conditions are listed most urgent first. A package on a legacy overlay suggests `inrepo patch <name>`, without `-m`, for uncaptured edits.
+
+Errors: `PACKAGE_NOT_FOUND` when `<name>` is neither configured nor locked. `details.known` lists the accepted names.
+
+## inrepo add
+
+```bash
+inrepo add [-D|--dev] <name> [--git <url>] [--repository-directory <path>] [--ref <ref>] [--with-deps] [--no-save]
+```
+
+Pins a package, builds its checkout in `inrepo_modules/<name>/`, links it in the root `package.json`, and records it in the config. Running `add` again for a package that is already vendored refreshes its pin.
+
+| Flag | Meaning |
+| --- | --- |
+| `-D`, `--dev` | Link under `devDependencies` instead of `dependencies`. |
+| `--git <url>` | Clone URL. Required when the npm registry has no usable repository for the package. |
+| `--repository-directory <path>` | Package root inside a monorepo checkout. |
+| `--ref <ref>` | Branch, tag, or commit to pin. |
+| `--with-deps` | Also vendor the runtime dependency closure and record the graph in the lockfile. Cannot be combined with `--no-save`. |
+| `--no-save` | Do not write the config entry. Also skips first-time setup. |
+
+Writes: config, `inrepo.lock.json`, `package.json`, `inrepo_modules/<name>/`, and caches under `.inrepo/`.
+
+Dry run: resolves the commit (and, with `--with-deps`, the whole closure) and reports what it would vendor. It writes no config, lockfile, `package.json`, or checkout. Only `--with-deps` fills the `.inrepo/` cache, because resolving dependencies needs the root's manifest at the pinned commit. A dry run in a project without config does not create one.
+
+```ts
+interface AddResult {
+  /** The package named on the command line. */
+  package: MaterializeResult & { dev: boolean };
+  /** Whether the package is (or, under --dry-run, would be) recorded in config. */
+  saved: boolean;
+  /** --with-deps only: every dependency in resolution order. */
+  dependencies?: MaterializeResult[];
+}
+
+interface MaterializeResult {
+  action: MaterializeAction;
+  /** Backup of discarded checkout edits, relative to the project; null unless edits were discarded. */
+  backup: string | null;
+  /** Upstream commit the checkout is (or would be) built from. */
+  commit: string;
+  git: string;
+  module: string;
+  name: string;
+  /** Project-relative checkout, e.g. "inrepo_modules/left-pad". */
+  path: string;
+  /** Patch files in inrepo_patches/<module>/series/. */
+  patches: number;
+  /** Lockfile commit before this run; null when the package was not locked. */
+  previousCommit: string | null;
+  ref: string | null;
+  repositoryDirectory: string | null;
+}
+
+type MaterializeAction =
+  | "created" // no checkout or no lockfile entry before; one was built
+  | "updated" // the pin (commit, source, or ref) moved; the checkout was rebuilt
+  | "rebuilt" // same pin, different tree (patches, filters, or discarded edits)
+  | "unchanged" // same pin, identical tree
+  | "reused" // --with-deps: an existing pin already satisfies the graph
+  | "would-create"
+  | "would-update"
+  | "would-rebuild"; // --dry-run predictions
+```
+
+Errors:
+
+- `CONFIG_NOT_FOUND`: first run without a terminal and without `INREPO_CONFIG`.
+- `PACKAGE_NOT_FOUND`: the npm registry has no such package.
+- `UPSTREAM_UNAVAILABLE`: git clone or fetch failed, or the registry request failed.
+- `UNCAPTURED_EDITS`: the package is already vendored and its checkout has edits that are not in `inrepo_patches/`.
+- `PATCH_APPLY_FAILED`: a committed patch does not apply to the pinned commit.
+- `ERROR`: `--with-deps` could not resolve the closure, for example an unsatisfiable range or an unsupported dependency source. The message names the dependency and the reason.
+
+## inrepo sync
+
+```bash
+inrepo sync [--force]
+```
+
+Rebuilds every checkout in `inrepo_modules/` from `inrepo.lock.json` plus `inrepo_patches/`. A configured package that is not locked yet is resolved and pinned.
+
+`sync` refuses to overwrite a checkout with uncaptured edits. `--force` discards them after saving a copy under `.inrepo/backups/`; the backup path is returned in `backup`.
+
+Writes: `inrepo_modules/`, `inrepo.lock.json` (new pins only), `package.json`, and `.inrepo/`. First-time setup can also write the config and `.gitignore`.
+
+Dry run: reports a `would-*` or `unchanged` action per package and writes nothing. It does not run first-time setup, so a project without config fails with `CONFIG_NOT_FOUND`. It still fails with `UNCAPTURED_EDITS` when a real sync would.
+
+```ts
+interface SyncResult {
+  /** One entry per configured package, in the order they were vendored. */
+  packages: MaterializeResult[]; // see inrepo add
+}
+```
+
+Errors:
+
+- `CONFIG_NOT_FOUND`: no config and setup cannot run.
+- `CONFIG_INVALID`: the config has an empty `packages` array. `nextCommand` is `inrepo add <package>`.
+- `UNCAPTURED_EDITS` (exit 3): a checkout has edits. `nextCommand` is `inrepo patch <name> -m "<reason>"`. `details.package` names the package, and `details.files` lists the changed files when they are known. When `inrepo_patches/` also changed (`details.overlayChanged: true`), `nextCommand` is `inrepo sync --force`.
+- `PATCH_APPLY_FAILED` (exit 3): a patch no longer applies. `details.patch` and `details.file` name it.
+- `UPSTREAM_UNAVAILABLE` (exit 4): a fetch failed.
+
+## inrepo patch
+
+```bash
+inrepo patch [<name>] -m "<reason>"
+```
+
+Captures the edits in `inrepo_modules/<name>/` as the next numbered patch, `inrepo_patches/<name>/series/NNNN-<subject>.patch`. The reason becomes the patch subject. Without `<name>`, every package is checked. A package with no edits reports `captured: false`, and nothing is written for it.
+
+`-m` (or `--message`) is required for every package on the patch series, which includes every new package. Without it, `patch` fails with `USAGE` and `nextCommand` is `inrepo patch <name> -m "<reason>"`. A package still on a legacy whole-file overlay ignores `-m` and rewrites its overlay files.
+
+Writes: `inrepo_patches/<name>/` and `.inrepo/`.
+
+Dry run: computes the patch and reports it without writing it or the sync record. `-m` is optional under `--dry-run`. Without it, `patch.file` and `patch.subject` are `null` because the file name comes from the message. The upstream cache under `.inrepo/` can still be filled.
+
+```ts
+interface PatchResult {
+  packages: Array<{
+    module: string;
+    /** "series" appends a numbered patch; "overlay" rewrites legacy snapshot files. */
+    format: "series" | "overlay";
+    /** Whether this run wrote (or would write) anything; false means no uncaptured edits. */
+    captured: boolean;
+    /** Series captures only. */
+    patch?: {
+      number: number;
+      /** e.g. "inrepo_patches/left-pad/series/0001-Fix-padding.patch"; null under --dry-run without -m. */
+      file: string | null;
+      subject: string | null;
+    };
+    /** Series: paths the new patch touches. Overlay: every path the overlay holds. */
+    files: Array<{ path: string; status: "added" | "deleted" | "modified" }>;
+  }>;
+}
+```
+
+Errors:
+
+- `USAGE`: `-m` is missing.
+- `PACKAGE_NOT_FOUND`: `<name>` is unknown or not locked yet. `nextCommand` is `inrepo sync` for an unlocked package.
+- `UPDATE_IN_PROGRESS` (exit 3): an update is paused for this package. Finish it first.
+- `ERROR` with `nextCommand: "inrepo sync"`: the checkout is missing, or `inrepo_patches/` changed since the last sync.
+- `UPSTREAM_UNAVAILABLE` (exit 4): the upstream cache could not be filled.
+
+## inrepo diff
+
+```bash
+inrepo diff [<name>] [--stat]
+```
+
+Shows the effective change from the pinned upstream commit to the patched tree, and the patches that produce it. It compares committed state only: uncaptured edits in `inrepo_modules/` do not appear. `diff` exits 0 whether or not anything differs.
+
+Writes: only scratch files and caches under `.inrepo/`.
+
+Dry run: not supported (it never writes project files).
+
+```ts
+interface DiffResult {
+  packages: Array<{
+    module: string;
+    source: "series" | "legacy-overlay" | "none";
+    /** Full pinned upstream commit. */
+    commit: string;
+    patches: Array<{ number: number; file: string; subject: string }>;
+    /** Upstream to patched tree, sorted by path. additions/deletions are null for binary files. */
+    files: Array<{
+      path: string;
+      status: "added" | "deleted" | "modified";
+      additions: number | null;
+      deletions: number | null;
+    }>;
+    /** Full unified diff; omitted under --stat; empty when nothing differs. */
+    diff?: string;
+  }>;
+}
+```
+
+Errors: `PACKAGE_NOT_FOUND`, `PATCH_APPLY_FAILED`, `UPSTREAM_UNAVAILABLE`.
+
+## inrepo update
+
+```bash
+inrepo update <name> [--ref <ref>]
+inrepo update <name> --continue
+inrepo update <name> --abort
+```
+
+Moves a package to a newer upstream commit by rebasing its patch series onto it in a scratch repository under `.inrepo/updates/<name>/`. Only a clean rebase writes anything: the renumbered series, the lockfile pin, a new `--ref` in config, and the rebuilt checkout. On a conflict, nothing outside `.inrepo/` changes. The steps to resolve one are in [the update conflict loop](/docs/agents#how-do-i-resolve-an-update-conflict).
+
+| Flag | Meaning |
+| --- | --- |
+| `--ref <ref>` | New branch, tag, or commit. It is saved to config when the update succeeds. |
+| `--continue` | Resume after conflicts are resolved in `.inrepo/updates/<name>/repo`. |
+| `--abort` | Discard the paused update. The project stays as it was. |
+
+Writes: `inrepo_patches/<name>/series/`, `inrepo.lock.json`, config (with `--ref`), `inrepo_modules/<name>/`, and `.inrepo/`.
+
+Dry run: resolves the target commit and reports `would-update` or `up-to-date` with the patches it would rebase. It writes nothing and cannot predict conflicts. `--dry-run` cannot be combined with `--continue` or `--abort`.
+
+```ts
+type UpdateResult = UpdateMoveResult | UpdateAbortResult;
+
+interface UpdateMoveResult {
+  package: string;
+  status: "updated" | "up-to-date" | "would-update";
+  /** ref null means the default branch. */
+  from: { commit: string; ref: string | null };
+  to: { commit: string; ref: string | null };
+  patches: {
+    /** Patches in the series when the update started. */
+    count: number;
+    /** Patches carried onto the new commit (would be, under --dry-run). */
+    rebased: number;
+    /** The resulting series; under --dry-run or when up to date, the current one. */
+    series: Array<{ number: number; subject: string }>;
+  };
+}
+
+interface UpdateAbortResult {
+  package: string;
+  status: "aborted";
+}
+```
+
+Errors:
+
+- `UPDATE_CONFLICT` (exit 3): the rebase stopped. `details` has `package`, `patch: { number, subject }`, `conflictedFiles`, and `repoPath`. `nextCommand` is `inrepo update <name> --continue`. `--continue` raises the same code while conflict markers remain.
+- `UPDATE_IN_PROGRESS` (exit 3): an update for this package is already paused.
+- `UNCAPTURED_EDITS` (exit 3): the checkout has edits that the rebuild would discard. Capture them first.
+- `NO_UPDATE_IN_PROGRESS` (exit 2): `--continue` or `--abort` with nothing paused.
+- `PACKAGE_NOT_FOUND` (exit 2): `<name>` is unknown.
+- `UPSTREAM_UNAVAILABLE` (exit 4): the target ref could not be resolved.
+- `ERROR`: the package is still on a legacy overlay (`nextCommand: "inrepo migrate <name>"`), the scratch repository is missing (`nextCommand: "inrepo update <name> --abort"`), the package is not locked, or it is a graph-managed `--with-deps` dependency, which must be updated through its graph root with `add --with-deps`.
+
+## inrepo migrate
+
+```bash
+inrepo migrate <name>
+```
+
+Converts a package's legacy whole-file overlay into `inrepo_patches/<name>/series/0001-<subject>.patch`. The overlay files are deleted only after replaying the series reproduces the identical tree.
+
+Writes: `inrepo_patches/<name>/` and `.inrepo/`.
+
+Dry run: not supported.
+
+```ts
+interface MigrateResult {
+  module: string;
+  /** The series that now carries the package's changes. */
+  patches: Array<{ number: number; file: string; subject: string }>;
+  /** Paths the generated series touches, sorted. */
+  files: Array<{ path: string; status: "added" | "deleted" | "modified" }>;
+  /** Top-level legacy overlay entries removed from inrepo_patches/<name>/. */
+  removedOverlayEntries: string[];
+  /** Empty directories the overlay created; git cannot record them. */
+  droppedEmptyDirectories: string[];
+}
+```
+
+Errors: `PACKAGE_NOT_FOUND` (unknown or not locked), `UPDATE_IN_PROGRESS`, and `USAGE` when the package already has a series or has no overlay to migrate.
+
+## inrepo verify
+
+```bash
+inrepo verify
+```
+
+Checks that every checkout matches the lockfile plus the committed patches, and that the recorded dependency graph is consistent. Run it in CI and before an agent reports that it is done.
+
+Writes: only caches and scratch trees under `.inrepo/`.
+
+Dry run: not supported (it never writes project files).
+
+On success, `data` is the result below with `ok: true` and an empty `issues` array. On drift, `verify` exits 1 and prints a failure envelope. Its `error.code` is `VERIFY_FAILED`, `error.details.modules` lists the affected modules, `error.nextCommand` is `inrepo sync`, and `data` carries the same result with `ok: false`.
+
+```ts
+interface VerifyResult {
+  ok: boolean;
+  issues: Array<{
+    /** Lockfile module; null for project-wide findings. */
+    module: string | null;
+    kind: VerifyIssueKind;
+    message: string;
+    /** Set on "tree-drift". Paths are relative to the module root. */
+    drift?: {
+      added: string[];
+      modified: string[];
+      removed: string[];
+      typeChanges: string[];
+    };
+  }>;
+  /** issues[].message, for line-oriented output. */
+  errors: string[];
+}
+
+type VerifyIssueKind =
+  | "assemble-failed"
+  | "empty-lockfile"
+  | "git-check-failed"
+  | "graph"
+  | "head-mismatch"
+  | "marker-commit-mismatch"
+  | "marker-git-url-mismatch"
+  | "marker-invalid"
+  | "marker-missing"
+  | "marker-repository-directory-mismatch"
+  | "marker-unreadable"
+  | "missing-directory"
+  | "not-a-directory"
+  | "origin-mismatch"
+  | "pristine-unavailable"
+  | "tree-drift";
+```
+
+Branch on `issues[].kind`, not on `message`; message text can change between releases. An empty lockfile is itself a failure (`empty-lockfile`).
+
+`tree-drift` usually means uncaptured edits. Run `inrepo patch <name> -m "<reason>"` to keep them, or `inrepo sync --force` to discard them. Do not follow `nextCommand: "inrepo sync"` blindly in that case: a plain sync refuses with `UNCAPTURED_EDITS`.
+
+## inrepo mirror
+
+```bash
+inrepo mirror [<name>] [--ref <rev>] [--overwrite] [-m "<subject>"]
+```
+
+Publishes a filtered snapshot of a committed directory to each configured mirror target (or just `<name>`), as one commit on top of the target branch. See [Mirrors](/docs/mirrors) (`docs/mirrors.md` in the npm package) for the config and the safety checks.
+
+- `--ref <rev>`: source revision to publish. Defaults to `HEAD`.
+- `--overwrite`: publish even when the target changed, another mirror wrote it, or the run would roll it back. It still adds a commit on top; target history is never rewritten.
+- `-m "<subject>"`: subject of the mirror commit. Defaults to `Mirror <short sha>`.
+
+Writes: nothing in the project. It pushes to the target repository.
+
+Dry run: builds the commit and reports the changes, but pushes nothing. `action` is `would-push` or `up-to-date`. A dry run still contacts the target, so it can fail with `UPSTREAM_UNAVAILABLE`, and it still runs every safety check.
+
+```ts
+interface MirrorResult {
+  /** One entry per published mirror, in config order. */
+  mirrors: Array<{
+    name: string;
+    /** Target URL or path, with any user:token@ removed. */
+    target: string;
+    branch: string;
+    /** Full source commit published. */
+    sourceCommit: string;
+    /** Target branch tip before this run; null for a new branch. */
+    previousTip: string | null;
+    action: "pushed" | "up-to-date" | "would-push";
+    /** The mirror commit; null when up to date. */
+    commit: string | null;
+    includedCount: number;
+    excludedCount: number;
+    /** Target tree changes, sorted by path. Paths are relative to the target root. */
+    changes: Array<{ path: string; status: "added" | "deleted" | "modified" }>;
+  }>;
+}
+```
+
+Errors:
+
+- `CONFIG_INVALID`:
+  - no `mirrors` array;
+  - an invalid mirror entry;
+  - `directory` missing at the revision;
+  - nothing left to publish;
+  - submodules or non-UTF-8 paths;
+  - a config on disk that differs from the one committed at the revision;
+  - git config that sends fetch and push to different repositories.
+- `MIRROR_NOT_FOUND`: no mirror named `<name>`. `details.known` lists the configured names.
+- `MIRROR_TARGET_CHANGED` (exit 3): the target cannot be published to without `--overwrite`. `details.reason` is:
+  - `foreign-tip`: the tip was not written by inrepo, or was edited after.
+  - `other-mirror`: another mirror wrote the branch.
+  - `rollback`: the revision does not descend from the last mirrored one.
+
+  `nextCommand` is `inrepo mirror <name> --overwrite`. Port any changes made on the target first.
+
+- `MIRROR_HISTORY_MISSING`: the clone lacks the last mirrored commit or is shallow. Fetch full history.
+- `UPSTREAM_UNAVAILABLE` (exit 4): fetching from or pushing to the target failed, including a push rejected because the branch moved. `details.url` is redacted.

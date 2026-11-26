@@ -71,7 +71,7 @@ export const cmdInteractive = async function cmdInteractive(
       await cmdSync(cwd, [], { suppressBanners: true });
       outro("Sync complete.");
     } else if (action === "verify") {
-      const ok = await cmdVerify(cwd, { suppressBanners: true });
+      const { ok } = await cmdVerify(cwd, { suppressBanners: true });
       if (ok) {
         outro("All vendored modules match the lockfile.");
       } else {

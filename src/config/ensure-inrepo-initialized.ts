@@ -4,6 +4,8 @@ import { readFile, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
 import { stdin as input, stdout as output } from "node:process";
 
+import { InrepoError } from "../cli/errors.js";
+import { isJsonMode } from "../cli/output.js";
 import {
   cancel,
   confirm,
@@ -49,7 +51,10 @@ const packageJsonHasInrepoKey = function packageJsonHasInrepoKey(
   }
   const raw = readFileSync(pkgPath, "utf-8");
   if (!raw.trim()) {
-    throw new Error("Invalid package.json: file is empty");
+    throw new InrepoError(
+      "CONFIG_INVALID",
+      "Invalid package.json: file is empty"
+    );
   }
   let pkg: JsonValue;
   try {
@@ -57,10 +62,17 @@ const packageJsonHasInrepoKey = function packageJsonHasInrepoKey(
     pkg = JSON.parse(raw) as JsonValue;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    throw new Error(`Invalid package.json: ${err.message}`, { cause: error });
+    throw new InrepoError(
+      "CONFIG_INVALID",
+      `Invalid package.json: ${err.message}`,
+      { cause: error }
+    );
   }
   if (!isJsonObject(pkg)) {
-    throw new Error("Invalid package.json: expected a JSON object at the root");
+    throw new InrepoError(
+      "CONFIG_INVALID",
+      "Invalid package.json: expected a JSON object at the root"
+    );
   }
   return "inrepo" in pkg && pkg.inrepo != null;
 };
@@ -82,7 +94,11 @@ const writePackageJsonInrepoStub = async function writePackageJsonInrepoStub(
     parsed = JSON.parse(raw) as JsonValue;
   } catch (error) {
     const err = error instanceof Error ? error : new Error(String(error));
-    throw new Error(`Invalid package.json: ${err.message}`, { cause: error });
+    throw new InrepoError(
+      "CONFIG_INVALID",
+      `Invalid package.json: ${err.message}`,
+      { cause: error }
+    );
   }
   if (!isJsonObject(parsed)) {
     throw new Error("package.json must contain a JSON object");
@@ -177,7 +193,8 @@ const isNonInteractive = function isNonInteractive(): boolean {
     !input.isTTY ||
     !output.isTTY ||
     process.env.CI === "true" ||
-    process.env.INREPO_NONINTERACTIVE === "1"
+    process.env.INREPO_NONINTERACTIVE === "1" ||
+    isJsonMode()
   );
 };
 
@@ -257,8 +274,13 @@ export const ensureInrepoInitialized = async function ensureInrepoInitialized(
   }
 
   if (isNonInteractive()) {
-    throw new Error(
-      `inrepo: first-time setup needs an interactive terminal.\n${nonInteractiveHint()}`
+    throw new InrepoError(
+      "CONFIG_NOT_FOUND",
+      `inrepo: first-time setup needs an interactive terminal.\n${nonInteractiveHint()}`,
+      {
+        hint: nonInteractiveHint(),
+        nextCommand: "INREPO_CONFIG=inrepo.json inrepo init",
+      }
     );
   }
 

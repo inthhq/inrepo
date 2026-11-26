@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import nodePath from "node:path";
 
+import { InrepoError } from "../cli/errors.js";
 import { copyTree, defaultSkipTreePath } from "../overlay/tree-utils.js";
 import { applySeriesToRepo } from "./apply-series.js";
 import { readSeries, seriesPatchFileName } from "./read-series.js";
@@ -158,6 +159,75 @@ const conflictResult = async function conflictResult(
   };
 };
 
+/** Where a paused rebase stands, read without touching the scratch repository. */
+export interface SeriesRebaseInspection {
+  /** True while git still has the rebase parked (a conflict awaits resolution). */
+  inProgress: boolean;
+  /** Patch the rebase stopped on; null when it is not stopped. */
+  stoppedAt: { number: number; subject: string } | null;
+  /** Unmerged paths in the scratch work tree. */
+  conflictedFiles: string[];
+  /** Unmerged paths whose contents still carry conflict markers. */
+  unresolvedFiles: string[];
+}
+
+/** Unmerged index paths, read from the index without refreshing it. */
+const unmergedPaths = async function unmergedPaths(
+  repoRoot: string
+): Promise<string[]> {
+  const raw = await runSeriesGitCapture(["ls-files", "--unmerged"], {
+    cwd: repoRoot,
+    trim: false,
+  });
+  const paths = new Set<string>();
+  for (const line of raw.split("\n")) {
+    const tab = line.indexOf("\t");
+    if (tab !== -1) {
+      paths.add(line.slice(tab + 1));
+    }
+  }
+  return [...paths].toSorted();
+};
+
+/**
+ * Read-only report of an update's scratch repository: which patch the rebase
+ * stopped on and which files still need resolving. Used by `inrepo status`,
+ * which must not write, so it avoids commands that refresh the index.
+ */
+export const inspectSeriesRebase = async function inspectSeriesRebase(
+  repoRoot: string,
+  newBase: string
+): Promise<SeriesRebaseInspection> {
+  if (!rebaseInProgress(repoRoot)) {
+    return {
+      conflictedFiles: [],
+      inProgress: false,
+      stoppedAt: null,
+      unresolvedFiles: [],
+    };
+  }
+  const conflicted = await unmergedPaths(repoRoot);
+  const unresolved: string[] = [];
+  for (const file of conflicted) {
+    const abs = nodePath.join(repoRoot, file);
+    if (existsSync(abs) && hasConflictMarkers(await readFile(abs, "utf-8"))) {
+      unresolved.push(file);
+    }
+  }
+  let number = 0;
+  try {
+    number = (await commitCount(repoRoot, `${newBase}..HEAD`)) + 1;
+  } catch {
+    number = 0;
+  }
+  return {
+    conflictedFiles: conflicted,
+    inProgress: true,
+    stoppedAt: { number, subject: await stoppedSubject(repoRoot) },
+    unresolvedFiles: unresolved,
+  };
+};
+
 /**
  * Regenerate the series from the commits that now sit on top of the new
  * upstream base. `git format-patch` renumbers them from 0001 and carries each
@@ -270,6 +340,8 @@ export const startSeriesRebase = async function startSeriesRebase(opts: {
   author?: SeriesAuthor;
   /** Called as each existing patch is replayed onto the old pin. */
   onPatch?: (patch: SeriesPatch) => void;
+  /** Package the series belongs to; reported when a patch fails to apply. */
+  name?: string;
 }): Promise<{ newBase: string; result: SeriesRebaseResult }> {
   const patches = await readSeries(opts.seriesDir);
   if (patches.length === 0) {
@@ -289,13 +361,25 @@ export const startSeriesRebase = async function startSeriesRebase(opts: {
   });
 
   try {
-    await applySeriesToRepo(repo, patches, { onPatch: opts.onPatch });
+    await applySeriesToRepo(repo, patches, {
+      name: opts.name,
+      onPatch: opts.onPatch,
+    });
   } catch (error) {
-    const err = error instanceof Error ? error : new Error(String(error));
-    throw new Error(
-      `The committed series does not apply to the pinned commit, so there is nothing to rebase: ${err.message}`,
-      { cause: error }
-    );
+    // Keep the code and details from the source; only add rebase context.
+    if (error instanceof InrepoError) {
+      throw new InrepoError(
+        error.code,
+        `The committed series does not apply to the pinned commit, so there is nothing to rebase: ${error.message}`,
+        {
+          cause: error,
+          details: error.details,
+          hint: error.hint,
+          nextCommand: error.nextCommand,
+        }
+      );
+    }
+    throw error;
   }
 
   const newRoot = await opts.resolveNewRoot();
@@ -354,12 +438,14 @@ export const continueSeriesRebase = async function continueSeriesRebase(opts: {
 
   const unresolved = await unresolvedConflictedFiles(repo);
   if (unresolved.length > 0) {
-    throw new Error(
+    throw new InrepoError(
+      "UPDATE_CONFLICT",
       [
         "Cannot continue the rebase: unresolved conflicts remain:",
         ...unresolved.map((file) => `  ${file}`),
         "Resolve every listed file, then run --continue again.",
-      ].join("\n")
+      ].join("\n"),
+      { details: { conflictedFiles: unresolved } }
     );
   }
 

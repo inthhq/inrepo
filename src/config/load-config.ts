@@ -1,20 +1,61 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
+import { InrepoError } from "../cli/errors.js";
 import { isBoolean, isJsonObject, isString } from "../json/unknown.js";
 import type { JsonValue } from "../json/unknown.js";
 import { inrepoConfigPath } from "../paths/inrepo-config-path.js";
 import { packageJsonPath } from "../paths/package-json-path.js";
 import { normalizeRepositoryDirectory } from "../registry/normalize-repository-directory.js";
+import type { InrepoMirror } from "../types/inrepo-mirror.js";
 import type { InrepoPackage } from "../types/inrepo-package.js";
 import type { LoadedConfig } from "../types/loaded-config.js";
 import { validateExcludeList } from "./validate-exclude-list.js";
 import { validateKeepList } from "./validate-keep-list.js";
+import { validateMirrors } from "./validate-mirrors.js";
 
 /** Thrown when neither inrepo.json nor package.json declares inrepo config. */
-export class LoadConfigNotFoundError extends Error {
+export class LoadConfigNotFoundError extends InrepoError {
   override readonly name = "LoadConfigNotFoundError";
+
+  constructor(message: string) {
+    super("CONFIG_NOT_FOUND", message, { nextCommand: "inrepo init" });
+  }
 }
+
+/**
+ * Re-tag a parse/validation failure as `CONFIG_INVALID`, keeping its message.
+ * Errors that already carry a code pass through unchanged.
+ */
+const asConfigInvalid = function asConfigInvalid<E>(
+  error: E,
+  file: string
+): Error {
+  if (error instanceof InrepoError) {
+    return error;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return new InrepoError("CONFIG_INVALID", message, {
+    cause: error,
+    details: { file },
+    hint: `Fix ${file}; see inrepo.schema.json for the expected shape.`,
+  });
+};
+
+/** Run a config read, surfacing malformed config as `CONFIG_INVALID`. */
+const withConfigErrors = async function withConfigErrors<T>(
+  cwd: string,
+  read: () => Promise<T>
+): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    throw asConfigInvalid(
+      error,
+      existsSync(inrepoConfigPath(cwd)) ? "inrepo.json" : "package.json"
+    );
+  }
+};
 
 const rootExcludeFromParsed = function rootExcludeFromParsed(
   parsed: JsonValue,
@@ -156,8 +197,7 @@ const validatePackage = function validatePackage(
   return pkg;
 };
 
-/** Load declarative config from inrepo.json (preferred) or package.json#inrepo. */
-export const loadConfig = async function loadConfig(
+const readConfig = async function readConfig(
   cwd: string
 ): Promise<LoadedConfig> {
   const inrepoPath = inrepoConfigPath(cwd);
@@ -229,6 +269,18 @@ export const loadConfig = async function loadConfig(
 };
 
 /**
+ * Load declarative config from inrepo.json (preferred) or package.json#inrepo.
+ *
+ * Throws `CONFIG_NOT_FOUND` when neither location declares config, and
+ * `CONFIG_INVALID` when the config exists but is malformed.
+ */
+export const loadConfig = async function loadConfig(
+  cwd: string
+): Promise<LoadedConfig> {
+  return await withConfigErrors(cwd, async () => await readConfig(cwd));
+};
+
+/**
  * Parsed root for global `exclude` / `keep`: prefer inrepo.json, else package.json#inrepo object.
  * Returns null when there is nothing to read (same empty-array behavior as before).
  */
@@ -286,15 +338,17 @@ const readGlobalInrepoRaw = async function readGlobalInrepoRaw(
 export const loadGlobalExclude = async function loadGlobalExclude(
   cwd: string
 ): Promise<string[]> {
-  const ctx = await readGlobalInrepoRaw(cwd);
-  if (!ctx) {
-    return [];
-  }
-  const label =
-    ctx.source === "inrepo.json"
-      ? 'inrepo.json "exclude"'
-      : 'package.json "inrepo.exclude"';
-  return rootExcludeFromParsed(ctx.parsed, label);
+  return await withConfigErrors(cwd, async () => {
+    const ctx = await readGlobalInrepoRaw(cwd);
+    if (!ctx) {
+      return [];
+    }
+    const label =
+      ctx.source === "inrepo.json"
+        ? 'inrepo.json "exclude"'
+        : 'package.json "inrepo.exclude"';
+    return rootExcludeFromParsed(ctx.parsed, label);
+  });
 };
 
 /**
@@ -303,15 +357,65 @@ export const loadGlobalExclude = async function loadGlobalExclude(
 export const loadGlobalKeep = async function loadGlobalKeep(
   cwd: string
 ): Promise<string[]> {
-  const ctx = await readGlobalInrepoRaw(cwd);
-  if (!ctx) {
+  return await withConfigErrors(cwd, async () => {
+    const ctx = await readGlobalInrepoRaw(cwd);
+    if (!ctx) {
+      return [];
+    }
+    const label =
+      ctx.source === "inrepo.json"
+        ? 'inrepo.json "keep"'
+        : 'package.json "inrepo.keep"';
+    return rootKeepFromParsed(ctx.parsed, label);
+  });
+};
+
+/** The `mirrors` list from inrepo.json or package.json#inrepo; empty when none is declared. */
+export const loadMirrors = async function loadMirrors(
+  cwd: string
+): Promise<InrepoMirror[]> {
+  return await withConfigErrors(cwd, async () => {
+    const ctx = await readGlobalInrepoRaw(cwd);
+    if (!ctx || !isJsonObject(ctx.parsed)) {
+      return [];
+    }
+    const label =
+      ctx.source === "inrepo.json"
+        ? 'inrepo.json "mirrors"'
+        : 'package.json "inrepo.mirrors"';
+    return validateMirrors(ctx.parsed.mirrors, label, cwd);
+  });
+};
+
+/**
+ * The `mirrors` list from config file contents (for example, read from a
+ * commit), with the same rules as {@link loadMirrors}.
+ */
+export const mirrorsFromConfigText = function mirrorsFromConfigText(
+  text: string,
+  file: "inrepo.json" | "package.json",
+  configDir: string
+): InrepoMirror[] {
+  if (!text.trim()) {
     return [];
   }
-  const label =
-    ctx.source === "inrepo.json"
-      ? 'inrepo.json "keep"'
-      : 'package.json "inrepo.keep"';
-  return rootKeepFromParsed(ctx.parsed, label);
+  // SAFETY: JSON.parse produces a JSON value from file contents.
+  const parsed = JSON.parse(text) as JsonValue;
+  if (!isJsonObject(parsed)) {
+    return [];
+  }
+  if (file === "inrepo.json") {
+    return validateMirrors(parsed.mirrors, 'inrepo.json "mirrors"', configDir);
+  }
+  const { inrepo } = parsed;
+  if (!isJsonObject(inrepo)) {
+    return [];
+  }
+  return validateMirrors(
+    inrepo.mirrors,
+    'package.json "inrepo.mirrors"',
+    configDir
+  );
 };
 
 /** True when loadConfig failed because no config file/field exists (safe to fall back to globals-only). */

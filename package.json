@@ -23,7 +23,7 @@
     "dist",
     "inrepo.schema.json",
     "AGENTS.md",
-    "SKILL.md",
+    "skills",
     "docs"
   ],
   "type": "module",

@@ -6,18 +6,21 @@ import { copyTree } from "../overlay/tree-utils.js";
 import {
   hasStagedChanges,
   initSeriesBaseRepo,
+  listStagedFileChanges,
   replaceWorkTree,
   runSeriesGit,
   skipGitDir,
   stageAll,
 } from "./series-git.js";
-import type { SeriesAuthor } from "./series-git.js";
+import type { SeriesAuthor, StagedFileChange } from "./series-git.js";
 
 export interface FormattedSeriesPatch {
   /** File name git chose, e.g. `0002-tighten-jsdoc-types.patch`. */
   fileName: string;
   /** Raw `git format-patch --binary` bytes, ready to write into `series/`. */
   content: Buffer;
+  /** Paths the patch touches, sorted, with their change kind and line counts. */
+  files: StagedFileChange[];
 }
 
 export interface FormatSeriesPatchOptions {
@@ -63,6 +66,7 @@ export const tryFormatSeriesPatch = async function tryFormatSeriesPatch(
     if (!(await hasStagedChanges(repo))) {
       return null;
     }
+    const files = await listStagedFileChanges(repo);
     await runSeriesGit(
       [
         "commit",
@@ -104,6 +108,7 @@ export const tryFormatSeriesPatch = async function tryFormatSeriesPatch(
     return {
       content: await readFile(nodePath.join(out, produced[0])),
       fileName: produced[0],
+      files,
     };
   } finally {
     await rm(work, { force: true, recursive: true });

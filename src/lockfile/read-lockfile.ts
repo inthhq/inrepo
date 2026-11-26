@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
+import { InrepoError } from "../cli/errors.js";
 import {
   isBoolean,
   isJsonObject,
@@ -205,11 +206,15 @@ const assertLockGraph = function assertLockGraph(
   return out;
 };
 
-export const readLockfile = async function readLockfile(cwd: string): Promise<{
+interface ParsedLockfile {
   lockfileVersion: number;
   modules: LockModulesByName;
   graph: LockGraph;
-}> {
+}
+
+const parseLockfile = async function parseLockfile(
+  cwd: string
+): Promise<ParsedLockfile> {
   const p = lockfilePath(cwd);
   if (!existsSync(p)) {
     return { graph: {}, lockfileVersion: 1, modules: {} };
@@ -243,4 +248,26 @@ export const readLockfile = async function readLockfile(cwd: string): Promise<{
     lockfileVersion,
     modules: assertLockModules(modules),
   };
+};
+
+/**
+ * Read and validate `inrepo.lock.json`. A missing file is an empty lockfile;
+ * a malformed one throws `LOCKFILE_INVALID` with the original message.
+ */
+export const readLockfile = async function readLockfile(
+  cwd: string
+): Promise<ParsedLockfile> {
+  try {
+    return await parseLockfile(cwd);
+  } catch (error) {
+    if (error instanceof InrepoError) {
+      throw error;
+    }
+    const message = error instanceof Error ? error.message : String(error);
+    throw new InrepoError("LOCKFILE_INVALID", message, {
+      cause: error,
+      details: { file: "inrepo.lock.json" },
+      hint: "Fix inrepo.lock.json, or restore it from version control (git checkout -- inrepo.lock.json).",
+    });
+  }
 };

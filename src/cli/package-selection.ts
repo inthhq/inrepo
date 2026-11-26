@@ -7,6 +7,7 @@ import {
 import { readLockfile } from "../lockfile/read-lockfile.js";
 import { normalizeRepositoryUrlIdentity } from "../registry/normalize-repository-url-identity.js";
 import type { LockModule } from "../types/lock-module.js";
+import { InrepoError } from "./errors.js";
 import type { PackageSpec } from "./types.js";
 
 export interface PackageSelection {
@@ -97,8 +98,32 @@ export const selectPackages = async function selectPackages(
     throw new Error(`Nothing to ${verb}: no configured or locked packages.`);
   }
   if (name && !configByName.has(name) && !modules[name]) {
-    throw new Error(`No configured or locked package named "${name}".`);
+    const known = [
+      ...new Set([...configByName.keys(), ...Object.keys(modules)]),
+    ].toSorted();
+    throw new InrepoError(
+      "PACKAGE_NOT_FOUND",
+      `No configured or locked package named "${name}".`,
+      { details: { known, package: name } }
+    );
   }
 
   return { globalExclude, globalKeep, modules, packages };
+};
+
+/** The lockfile entry a per-package command needs, or `PACKAGE_NOT_FOUND`. */
+export const requireLockEntry = function requireLockEntry(
+  modules: Record<string, LockModule>,
+  module: string,
+  message: string
+): LockModule {
+  const lockEntry = modules[module];
+  if (!lockEntry) {
+    throw new InrepoError("PACKAGE_NOT_FOUND", message, {
+      details: { package: module },
+      hint: "Vendor it with inrepo add, or rebuild the lockfile with inrepo sync",
+      nextCommand: "inrepo sync",
+    });
+  }
+  return lockEntry;
 };

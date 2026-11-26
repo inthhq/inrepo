@@ -49,6 +49,7 @@ export const assemblePatchedTree = async function assemblePatchedTree(
   const patches = await readSeries(seriesDir);
   if (patches.length > 0) {
     await applySeries({
+      name: opts.name,
       pristineRoot: opts.pristineRoot,
       seriesDir,
       targetRoot: opts.targetRoot,

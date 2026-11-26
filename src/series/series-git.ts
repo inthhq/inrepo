@@ -207,3 +207,73 @@ export const replaceWorkTree = async function replaceWorkTree(
     treatMissingAsEmpty: true,
   });
 };
+
+export type StagedChangeStatus = "added" | "deleted" | "modified";
+
+export interface StagedFileChange {
+  path: string;
+  status: StagedChangeStatus;
+  /** Added lines; `null` for a binary file. */
+  additions: number | null;
+  /** Deleted lines; `null` for a binary file. */
+  deletions: number | null;
+}
+
+const stagedStatus = function stagedStatus(code: string): StagedChangeStatus {
+  if (code.startsWith("A")) {
+    return "added";
+  }
+  if (code.startsWith("D")) {
+    return "deleted";
+  }
+  return "modified";
+};
+
+const parseLineCount = function parseLineCount(raw: string): number | null {
+  return raw === "-" ? null : Math.trunc(Number(raw));
+};
+
+/**
+ * Per-file summary of the index against `HEAD` in a scratch repository, sorted
+ * by path. Renames are reported as a deletion plus an addition so every entry
+ * names exactly one path.
+ */
+export const listStagedFileChanges = async function listStagedFileChanges(
+  root: string
+): Promise<StagedFileChange[]> {
+  const base = ["diff", "--cached", "--no-renames", "--no-ext-diff", "-z"];
+  const nameStatus = await runSeriesGitCapture([...base, "--name-status"], {
+    cwd: root,
+    trim: false,
+  });
+  const numstat = await runSeriesGitCapture([...base, "--numstat"], {
+    cwd: root,
+    trim: false,
+  });
+
+  const statuses = new Map<string, StagedChangeStatus>();
+  const statusFields = nameStatus.split("\0");
+  for (let i = 0; i + 1 < statusFields.length; i += 2) {
+    const code = statusFields[i] ?? "";
+    const path = statusFields[i + 1] ?? "";
+    if (code !== "" && path !== "") {
+      statuses.set(path, stagedStatus(code));
+    }
+  }
+
+  const changes: StagedFileChange[] = [];
+  for (const record of numstat.split("\0")) {
+    const [added, deleted, ...rest] = record.split("\t");
+    const path = rest.join("\t");
+    if (added === undefined || deleted === undefined || path === "") {
+      continue;
+    }
+    changes.push({
+      additions: parseLineCount(added),
+      deletions: parseLineCount(deleted),
+      path,
+      status: statuses.get(path) ?? "modified",
+    });
+  }
+  return changes.toSorted((a, b) => a.path.localeCompare(b.path));
+};

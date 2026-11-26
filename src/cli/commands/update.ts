@@ -25,9 +25,11 @@ import { readPackageManifest } from "../../package-json/read-package-manifest.js
 import { inrepoConfigPath } from "../../paths/inrepo-config-path.js";
 import { moduleDestPath } from "../../paths/module-dest-path.js";
 import { listLegacyOverlayEntries } from "../../series/legacy-overlay.js";
+import { readSeriesHeaders } from "../../series/read-patch-header.js";
 import { readSeries } from "../../series/read-series.js";
 import {
   continueSeriesRebase,
+  inspectSeriesRebase,
   startSeriesRebase,
   writeRebasedSeries,
 } from "../../series/rebase-series.js";
@@ -48,7 +50,9 @@ import {
 import type { UpdateState } from "../../series/update-state.js";
 import type { LockModule } from "../../types/lock-module.js";
 import { parseUpdateArgs } from "../args.js";
-import { selectPackages } from "../package-selection.js";
+import { InrepoError, isInrepoError } from "../errors.js";
+import { isDryRun } from "../output.js";
+import { requireLockEntry, selectPackages } from "../package-selection.js";
 import { printBanner } from "../rendering.js";
 import type { DispatchOpts, PackageSpec, UpdateArgs } from "../types.js";
 import { intro, outro, spinner, warn } from "../ui.js";
@@ -59,6 +63,53 @@ import {
 } from "../vendor.js";
 
 type SeriesConflict = Extract<SeriesRebaseResult, { status: "conflict" }>;
+
+/** One end of an update: the pinned commit and the ref it tracks. */
+export interface UpdatePin {
+  commit: string;
+  /** Null means the default branch. */
+  ref: string | null;
+}
+
+/** A patch as it stands after (or, under --dry-run, before) the update. */
+export interface UpdatePatchRef {
+  number: number;
+  subject: string;
+}
+
+export interface UpdatePatchSummary {
+  /** Patches in the series when the update started. */
+  count: number;
+  /** Patches carried onto the new commit (would be, under --dry-run). */
+  rebased: number;
+  /** The resulting series; under --dry-run and when up to date, the current one. */
+  series: UpdatePatchRef[];
+}
+
+/** JSON `data` of a start, `--continue`, or `--dry-run` update. */
+export interface UpdateMoveResult {
+  package: string;
+  status: "updated" | "up-to-date" | "would-update";
+  from: UpdatePin;
+  to: UpdatePin;
+  patches: UpdatePatchSummary;
+}
+
+/** JSON `data` of `inrepo update <name> --abort`. */
+export interface UpdateAbortResult {
+  package: string;
+  status: "aborted";
+}
+
+export type UpdateResult = UpdateAbortResult | UpdateMoveResult;
+
+/**
+ * Human report line. Written through `process.stdout.write` so `--json`
+ * reroutes it to stderr; Bun's `console.log` bypasses that redirect.
+ */
+const say = function say(line: string): void {
+  process.stdout.write(`${line}\n`);
+};
 
 const short = function short(commit: string): string {
   return commit.slice(0, 7);
@@ -97,6 +148,29 @@ const conflictMessage = function conflictMessage(
   ].join("\n");
 };
 
+/** Typed conflict failure: same prose, plus the structured facts an agent needs. */
+const conflictError = function conflictError(
+  cwd: string,
+  name: string,
+  result: SeriesConflict
+): InrepoError {
+  const repoPath = nodePath.relative(cwd, updateRepoPath(cwd, name));
+  return new InrepoError(
+    "UPDATE_CONFLICT",
+    conflictMessage(cwd, name, result),
+    {
+      details: {
+        conflictedFiles: result.files,
+        package: name,
+        patch: { number: result.number, subject: result.subject },
+        repoPath,
+      },
+      hint: `Edit the conflicted files under ${repoPath} to remove the conflict markers, then run: inrepo update ${name} --continue (or --abort to discard the update)`,
+      nextCommand: `inrepo update ${name} --continue`,
+    }
+  );
+};
+
 /**
  * Refuse to update on top of edits that are not in the series yet: the update
  * rebuilds `inrepo_modules/<name>`, which would discard them.
@@ -116,8 +190,17 @@ const assertModuleCaptured = async function assertModuleCaptured(
   if ((await hashTree(dest)) === state.moduleHash) {
     return;
   }
-  throw new Error(
-    `uncaptured edits in "inrepo_modules/${name}"; run "inrepo patch ${name} -m "reason"" to capture them or "inrepo sync --force" to discard them before updating`
+  throw new InrepoError(
+    "UNCAPTURED_EDITS",
+    `uncaptured edits in "inrepo_modules/${name}"; run "inrepo patch ${name} -m "reason"" to capture them or "inrepo sync --force" to discard them before updating`,
+    {
+      details: {
+        module: nodePath.relative(cwd, dest),
+        package: name,
+      },
+      hint: `Capture them with: inrepo patch ${name} -m "<reason>" (or discard them with: inrepo sync --force)`,
+      nextCommand: `inrepo patch ${name} -m "<reason>"`,
+    }
   );
 };
 
@@ -215,16 +298,17 @@ const loadUpdateContext = async function loadUpdateContext(
   const [pkg] = packages;
   const module = pkg.module ?? pkg.name;
   if (module !== pkg.name) {
-    throw new Error(
-      `Graph-managed module "${module}" cannot be updated directly; rerun add --with-deps for a graph root.`
+    throw new InrepoError(
+      "USAGE",
+      `Graph-managed module "${module}" cannot be updated directly; rerun add --with-deps for a graph root.`,
+      { details: { module, package: pkg.name } }
     );
   }
-  const lockEntry = modules[module];
-  if (!lockEntry) {
-    throw new Error(
-      `Cannot update "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`
-    );
-  }
+  const lockEntry = requireLockEntry(
+    modules,
+    module,
+    `Cannot update "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`
+  );
   return { cwd, globalExclude, globalKeep, lockEntry, pkg };
 };
 
@@ -323,15 +407,74 @@ const reportSuccess = function reportSuccess(
   state: UpdateState,
   patches: RebasedPatch[] | null
 ): void {
-  console.log(
+  say(
     `Updated "${state.name}" ${short(state.oldCommit)} → ${short(state.newCommit)}${refLabel(state.ref)}`
   );
   for (const patch of patches ?? []) {
-    console.log(
+    say(
       `  ${String(patch.number).padStart(4, "0")}  ${patch.subject || "(no subject)"}`
     );
   }
-  console.log(`Review the result with: inrepo diff ${state.name}`);
+  say(`Review the result with: inrepo diff ${state.name}`);
+};
+
+const currentSeries = async function currentSeries(
+  cwd: string,
+  name: string
+): Promise<UpdatePatchRef[]> {
+  const headers = await readSeriesHeaders(seriesDirPath(cwd, name));
+  return headers.map((header) => ({
+    number: header.index,
+    subject: header.subject,
+  }));
+};
+
+const rebasedSeries = function rebasedSeries(
+  patches: RebasedPatch[]
+): UpdatePatchRef[] {
+  return patches.map((patch) => ({
+    number: patch.number,
+    subject: patch.subject,
+  }));
+};
+
+/** Result for a finished update, from the state it was driven by. */
+const updatedResult = function updatedResult(
+  state: UpdateState,
+  oldRef: string | null,
+  count: number,
+  series: UpdatePatchRef[],
+  rebased: number
+): UpdateMoveResult {
+  return {
+    from: { commit: state.oldCommit, ref: oldRef },
+    package: state.name,
+    patches: { count, rebased, series },
+    status: "updated",
+    to: { commit: state.newCommit, ref: state.ref },
+  };
+};
+
+/** `ls-remote` the target ref; failures are reported as upstream trouble. */
+const resolveTarget = async function resolveTarget(
+  gitUrl: string,
+  ref: string | null
+): Promise<string> {
+  try {
+    return await resolveRemoteCommit(gitUrl, ref);
+  } catch (error) {
+    // Already classified (e.g. a short commit id is USAGE, an unknown ref is
+    // UPSTREAM_UNAVAILABLE); keep the code instead of flattening it.
+    if (error instanceof InrepoError) {
+      throw error;
+    }
+    const err = error instanceof Error ? error : new Error(String(error));
+    throw new InrepoError("UPSTREAM_UNAVAILABLE", err.message, {
+      cause: error,
+      details: { gitUrl, ref },
+      hint: "Check the git URL, the ref, and network access, then retry.",
+    });
+  }
 };
 
 type StartOutcome =
@@ -357,7 +500,7 @@ const prepareUpdate = async function prepareUpdate(
   const targetRef = args.ref ?? ctx.pkg.ref ?? lockEntry.ref ?? null;
 
   s.message(`Resolving ${targetRef ? `"${targetRef}"` : "the default branch"}`);
-  const resolved = await resolveRemoteCommit(lockEntry.gitUrl, targetRef);
+  const resolved = await resolveTarget(lockEntry.gitUrl, targetRef);
   if (resolved === lockEntry.commit && (lockEntry.ref ?? null) === targetRef) {
     return { commit: resolved, kind: "up-to-date", ref: targetRef };
   }
@@ -401,6 +544,7 @@ const prepareUpdate = async function prepareUpdate(
   );
   const started = await startSeriesRebase({
     author: await resolveSeriesAuthor(cwd),
+    name,
     oldRoot: oldPristine.dir,
     onPatch: (patch) => {
       s.message(`Replaying ${patch.fileName}`);
@@ -420,14 +564,11 @@ const prepareUpdate = async function prepareUpdate(
     : { kind: "rebased", patches: started.result.patches, state };
 };
 
-const startUpdate = async function startUpdate(
+/** Refuse what would also stop a real update, before anything else runs. */
+const assertUpdatable = async function assertUpdatable(
   cwd: string,
-  args: UpdateArgs,
-  opts: DispatchOpts
+  name: string
 ): Promise<void> {
-  const ctx = await loadUpdateContext(cwd, args.name);
-  const { name } = ctx.pkg;
-
   if (isUpdateInProgress(cwd, name)) {
     throw updateInProgressError(cwd, name);
   }
@@ -436,11 +577,82 @@ const startUpdate = async function startUpdate(
     overlayDirPath(cwd, name)
   );
   if (legacyEntries.length > 0) {
-    throw new Error(
-      `"${name}" still uses a legacy whole-file overlay, which cannot be rebased onto a new commit. Run "inrepo migrate ${name}" first, then "inrepo update ${name}".`
+    throw new InrepoError(
+      "ERROR",
+      `"${name}" still uses a legacy whole-file overlay, which cannot be rebased onto a new commit. Run "inrepo migrate ${name}" first, then "inrepo update ${name}".`,
+      {
+        details: { package: name },
+        nextCommand: `inrepo migrate ${name}`,
+      }
     );
   }
   await assertModuleCaptured(cwd, name);
+};
+
+/**
+ * `--dry-run`: resolve the target with `ls-remote` and report what an update
+ * would do. Nothing is fetched into `.inrepo/` and nothing is written.
+ */
+const previewUpdate = async function previewUpdate(
+  cwd: string,
+  args: UpdateArgs,
+  opts: DispatchOpts
+): Promise<UpdateMoveResult> {
+  const ctx = await loadUpdateContext(cwd, args.name);
+  const { name } = ctx.pkg;
+  const { lockEntry } = ctx;
+  await assertUpdatable(cwd, name);
+
+  const series = await currentSeries(cwd, name);
+  const targetRef = args.ref ?? ctx.pkg.ref ?? lockEntry.ref ?? null;
+  const resolved = await resolveTarget(lockEntry.gitUrl, targetRef);
+  const upToDate =
+    resolved === lockEntry.commit && (lockEntry.ref ?? null) === targetRef;
+  const willRebase = !upToDate && resolved !== lockEntry.commit;
+  const result: UpdateMoveResult = {
+    from: { commit: lockEntry.commit, ref: lockEntry.ref ?? null },
+    package: name,
+    patches: {
+      count: series.length,
+      rebased: willRebase ? series.length : 0,
+      series,
+    },
+    status: upToDate ? "up-to-date" : "would-update",
+    to: { commit: resolved, ref: targetRef },
+  };
+
+  if (upToDate) {
+    say(`"${name}" is already at ${short(resolved)}${refLabel(targetRef)}`);
+  } else {
+    say(
+      `Would update "${name}" ${short(lockEntry.commit)} → ${short(resolved)}${refLabel(targetRef)}`
+    );
+    if (willRebase && series.length > 0) {
+      say(
+        `Would rebase ${plural(series.length, "patch", "patches")} (conflicts are only known once the update runs):`
+      );
+    }
+    for (const patch of willRebase ? series : []) {
+      say(
+        `  ${String(patch.number).padStart(4, "0")}  ${patch.subject || "(no subject)"}`
+      );
+    }
+  }
+  if (!opts.suppressBanners) {
+    outro("Dry run: nothing was written.");
+  }
+  return result;
+};
+
+const startUpdate = async function startUpdate(
+  cwd: string,
+  args: UpdateArgs,
+  opts: DispatchOpts
+): Promise<UpdateMoveResult> {
+  const ctx = await loadUpdateContext(cwd, args.name);
+  const { name } = ctx.pkg;
+  await assertUpdatable(cwd, name);
+  const seriesBefore = await currentSeries(cwd, name);
 
   const s = spinner();
   s.start(`Updating "${name}"`);
@@ -459,12 +671,18 @@ const startUpdate = async function startUpdate(
     if (!opts.suppressBanners) {
       outro("Nothing to update.");
     }
-    return;
+    return {
+      from: { commit: ctx.lockEntry.commit, ref: ctx.lockEntry.ref ?? null },
+      package: name,
+      patches: { count: seriesBefore.length, rebased: 0, series: seriesBefore },
+      status: "up-to-date",
+      to: { commit: outcome.commit, ref: outcome.ref },
+    };
   }
   if (outcome.kind === "conflict") {
     await writeUpdateState(cwd, name, outcome.state);
     s.error(`Rebase of "${name}" stopped on a conflict`);
-    throw new Error(conflictMessage(cwd, name, outcome.result));
+    throw conflictError(cwd, name, outcome.result);
   }
 
   const patches = outcome.kind === "rebased" ? outcome.patches : null;
@@ -479,26 +697,71 @@ const startUpdate = async function startUpdate(
   if (!opts.suppressBanners) {
     outro(`Updated "${name}".`);
   }
+  return updatedResult(
+    outcome.state,
+    ctx.lockEntry.ref ?? null,
+    seriesBefore.length,
+    patches == null ? seriesBefore : rebasedSeries(patches),
+    patches?.length ?? 0
+  );
+};
+
+const noUpdateError = function noUpdateError(name: string): InrepoError {
+  return new InrepoError(
+    "NO_UPDATE_IN_PROGRESS",
+    `No update in progress for "${name}". Start one with "inrepo update ${name}".`,
+    {
+      details: { package: name },
+      nextCommand: `inrepo update ${name}`,
+    }
+  );
+};
+
+/** Re-throw `--continue`'s "markers remain" refusal with the package context. */
+const enrichContinueConflict = async function enrichContinueConflict(
+  cwd: string,
+  state: UpdateState,
+  error: InrepoError
+): Promise<InrepoError> {
+  const { name } = state;
+  const repoRoot = updateRepoPath(cwd, name);
+  const repoPath = nodePath.relative(cwd, repoRoot);
+  const inspection = await inspectSeriesRebase(repoRoot, state.newBase);
+  return new InrepoError("UPDATE_CONFLICT", error.message, {
+    cause: error,
+    details: {
+      conflictedFiles: inspection.unresolvedFiles,
+      package: name,
+      patch: inspection.stoppedAt,
+      repoPath,
+    },
+    hint: `Edit the listed files under ${repoPath} to remove the conflict markers, then run: inrepo update ${name} --continue (or --abort to discard the update)`,
+    nextCommand: `inrepo update ${name} --continue`,
+  });
 };
 
 const continueUpdate = async function continueUpdate(
   cwd: string,
   name: string,
   opts: DispatchOpts
-): Promise<void> {
+): Promise<UpdateMoveResult> {
   const state = await readUpdateState(cwd, name);
   if (!state) {
-    throw new Error(
-      `No update in progress for "${name}". Start one with "inrepo update ${name}".`
-    );
+    throw noUpdateError(name);
   }
   const repoRoot = updateRepoPath(cwd, state.name);
   if (!existsSync(repoRoot)) {
-    throw new Error(
-      `The scratch repository for "${state.name}" is missing from ${nodePath.relative(cwd, repoRoot)}. Run "inrepo update ${state.name} --abort" and start the update again.`
+    throw new InrepoError(
+      "ERROR",
+      `The scratch repository for "${state.name}" is missing from ${nodePath.relative(cwd, repoRoot)}. Run "inrepo update ${state.name} --abort" and start the update again.`,
+      {
+        details: { package: state.name },
+        nextCommand: `inrepo update ${state.name} --abort`,
+      }
     );
   }
   const ctx = await loadUpdateContext(cwd, state.name);
+  const seriesBefore = await currentSeries(cwd, state.name);
 
   const s = spinner();
   s.start(`Continuing the update of "${state.name}"`);
@@ -511,12 +774,19 @@ const continueUpdate = async function continueUpdate(
     });
   } catch (error) {
     s.error(`Failed to continue the update of "${state.name}"`);
+    if (
+      error instanceof Error &&
+      isInrepoError(error) &&
+      error.code === "UPDATE_CONFLICT"
+    ) {
+      throw await enrichContinueConflict(cwd, state, error);
+    }
     throw error;
   }
 
   if (result.status === "conflict") {
     s.error(`Rebase of "${state.name}" stopped on another conflict`);
-    throw new Error(conflictMessage(cwd, state.name, result));
+    throw conflictError(cwd, state.name, result);
   }
   s.stop(
     `Rebased ${plural(result.patches.length, "patch", "patches")} for "${state.name}" onto ${short(state.newCommit)}`
@@ -527,24 +797,36 @@ const continueUpdate = async function continueUpdate(
   if (!opts.suppressBanners) {
     outro(`Updated "${state.name}".`);
   }
+  return updatedResult(
+    state,
+    ctx.lockEntry.ref ?? null,
+    seriesBefore.length,
+    rebasedSeries(result.patches),
+    result.patches.length
+  );
 };
 
 const abortUpdate = async function abortUpdate(
   cwd: string,
   name: string,
   opts: DispatchOpts
-): Promise<void> {
+): Promise<UpdateAbortResult> {
   if (!isUpdateInProgress(cwd, name)) {
-    throw new Error(`No update in progress for "${name}".`);
+    throw new InrepoError(
+      "NO_UPDATE_IN_PROGRESS",
+      `No update in progress for "${name}".`,
+      { details: { package: name } }
+    );
   }
   // Finalize snapshots the series before replacing it. If a later write
   // failed — or the process died after the swap — put the original back.
   await restoreUpdateSeries(cwd, name);
   await clearUpdate(cwd, name);
-  console.log(`Discarded the in-progress update for "${name}".`);
+  say(`Discarded the in-progress update for "${name}".`);
   if (!opts.suppressBanners) {
     outro(`"${name}" is unchanged.`);
   }
+  return { package: name, status: "aborted" };
 };
 
 /**
@@ -555,13 +837,25 @@ const abortUpdate = async function abortUpdate(
  * clean rebase rewrites the series, the pin, and the generated module in one
  * go; a conflicted one leaves that scratch repository in place for the user to
  * resolve and changes nothing else.
+ *
+ * Under the global `--dry-run`, only the target commit is resolved and the
+ * would-be outcome is returned; nothing is written.
  */
 export const cmdUpdate = async function cmdUpdate(
   cwd: string,
   argv: string[],
   opts: DispatchOpts = {}
-): Promise<void> {
+): Promise<UpdateResult> {
   const args = parseUpdateArgs(argv);
+  if (isDryRun() && (args.continue || args.abort)) {
+    throw new InrepoError(
+      "USAGE",
+      `--dry-run cannot be combined with ${args.continue ? "--continue" : "--abort"}.`,
+      {
+        hint: `Preview with "inrepo update ${args.name} --dry-run"; inspect a paused update with "inrepo status ${args.name}".`,
+      }
+    );
+  }
   if (!opts.suppressBanners) {
     printBanner();
   }
@@ -570,19 +864,24 @@ export const cmdUpdate = async function cmdUpdate(
     if (!opts.suppressBanners) {
       intro(`inrepo update — ${args.name} (abort)`);
     }
-    await abortUpdate(cwd, args.name, opts);
-    return;
+    return await abortUpdate(cwd, args.name, opts);
   }
   if (args.continue) {
     if (!opts.suppressBanners) {
       intro(`inrepo update — ${args.name} (continue)`);
     }
-    await continueUpdate(cwd, args.name, opts);
-    return;
+    return await continueUpdate(cwd, args.name, opts);
+  }
+
+  if (isDryRun()) {
+    if (!opts.suppressBanners) {
+      intro(`inrepo update — ${args.name} (dry run)`);
+    }
+    return await previewUpdate(cwd, args, opts);
   }
 
   if (!opts.suppressBanners) {
     intro(`inrepo update — ${args.name}`);
   }
-  await startUpdate(cwd, args, opts);
+  return await startUpdate(cwd, args, opts);
 };

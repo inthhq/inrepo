@@ -1,7 +1,7 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import nodePath from "node:path";
 
-import { diffTrees } from "../../diff/diff-trees.js";
+import { diffTreesWithFiles } from "../../diff/diff-trees.js";
 import { assemblePatchedTree } from "../../overlay/assemble-module.js";
 import { ensurePristine } from "../../overlay/cache.js";
 import { overlayDirPath, seriesDirPath } from "../../overlay/overlay-paths.js";
@@ -9,7 +9,10 @@ import { listLegacyOverlayEntries } from "../../series/legacy-overlay.js";
 import { readSeriesHeaders } from "../../series/read-patch-header.js";
 import type { SeriesPatchHeader } from "../../series/read-patch-header.js";
 import { parseDiffArgs } from "../args.js";
-import { selectPackages } from "../package-selection.js";
+import { projectRelativePath, toFileChangeStats } from "../json-results.js";
+import { isJsonMode } from "../output.js";
+import { requireLockEntry, selectPackages } from "../package-selection.js";
+import type { DiffPackageResult, DiffResult } from "../types.js";
 import { mergedVendorExcludes, mergedVendorKeeps } from "../vendor.js";
 
 const plural = function plural(
@@ -51,23 +54,38 @@ const patchProvenanceLines = function patchProvenanceLines(
   });
 };
 
+const sourceLabel = function sourceLabel(
+  source: DiffPackageResult["source"],
+  patchCount: number
+): string {
+  if (source === "series") {
+    return `patch series (${plural(patchCount, "patch", "patches")})`;
+  }
+  return source === "legacy-overlay"
+    ? "legacy overlay"
+    : "no committed changes";
+};
+
 /**
  * Show the effective delta between each package's pinned upstream commit and
  * its patched tree.
  *
  * This is a viewer, not a check: it always exits 0 whether or not the trees
- * differ. Errors are reserved for packages inrepo cannot resolve.
+ * differ. Errors are reserved for packages inrepo cannot resolve. Under
+ * `--json` nothing is printed; the result carries the same information.
  */
 export const cmdDiff = async function cmdDiff(
   cwd: string,
   argv: string[]
-): Promise<void> {
+): Promise<DiffResult> {
   const args = parseDiffArgs(argv);
   const { packages, modules, globalExclude, globalKeep } = await selectPackages(
     cwd,
     args.name,
     "diff"
   );
+  const print = !isJsonMode();
+  const results: DiffPackageResult[] = [];
 
   const workRoot = nodePath.join(cwd, ".inrepo", "diff");
   await mkdir(workRoot, { recursive: true });
@@ -75,12 +93,11 @@ export const cmdDiff = async function cmdDiff(
   let first = true;
   for (const pkg of packages) {
     const module = pkg.module ?? pkg.name;
-    const lockEntry = modules[module];
-    if (!lockEntry) {
-      throw new Error(
-        `Cannot diff "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`
-      );
-    }
+    const lockEntry = requireLockEntry(
+      modules,
+      module,
+      `Cannot diff "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`
+    );
 
     const pristine = await ensurePristine({
       artifact: lockEntry.artifact,
@@ -110,33 +127,51 @@ export const cmdDiff = async function cmdDiff(
         pristineRoot: pristine.dir,
         targetRoot: patched,
       });
-      const rendered = await diffTrees({
+      const { files, rendered } = await diffTreesWithFiles({
         baseRoot: pristine.dir,
         stat: args.stat,
         targetRoot: patched,
       });
 
-      if (!first) {
-        console.log("");
-      }
-      first = false;
-
-      let source: string;
+      let source: DiffPackageResult["source"] = "none";
       if (headers.length > 0) {
-        source = `patch series (${plural(headers.length, "patch", "patches")})`;
+        source = "series";
       } else if (legacyEntries.length > 0) {
-        source = "legacy overlay";
-      } else {
-        source = "no committed changes";
+        source = "legacy-overlay";
       }
-      console.log(`${module} @ ${pristine.commit.slice(0, 7)} — ${source}`);
-      for (const line of patchProvenanceLines(headers)) {
-        console.log(line);
+      const result: DiffPackageResult = {
+        commit: pristine.commit,
+        files: toFileChangeStats(files),
+        module,
+        patches: headers.map((header) => ({
+          file: projectRelativePath(cwd, header.path),
+          number: header.index,
+          subject: header.subject,
+        })),
+        source,
+      };
+      if (!args.stat) {
+        result.diff = rendered;
       }
-      console.log("");
-      console.log(rendered === "" ? "  (no differences)" : rendered);
+      results.push(result);
+
+      if (print) {
+        if (!first) {
+          console.log("");
+        }
+        first = false;
+        console.log(
+          `${module} @ ${pristine.commit.slice(0, 7)} — ${sourceLabel(source, headers.length)}`
+        );
+        for (const line of patchProvenanceLines(headers)) {
+          console.log(line);
+        }
+        console.log("");
+        console.log(rendered === "" ? "  (no differences)" : rendered);
+      }
     } finally {
       await rm(work, { force: true, recursive: true });
     }
   }
+  return { packages: results };
 };
