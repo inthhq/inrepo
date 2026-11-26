@@ -1,3 +1,5 @@
+import { InrepoError } from "../cli/errors.js";
+import { asUpstreamGitError } from "./clone-package.js";
 import { runGitCapture } from "./run-git-capture.js";
 
 const FULL_SHA = /^[0-9a-f]{40}$/iu;
@@ -63,21 +65,33 @@ export const resolveRemoteCommit = async function resolveRemoteCommit(
   }
 
   const pattern = wanted && wanted !== "" ? wanted : "HEAD";
-  const raw = await runGitCapture(["ls-remote", gitUrl, pattern], {
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
-  });
+  let raw: string;
+  try {
+    raw = await runGitCapture(["ls-remote", gitUrl, pattern], {
+      env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    });
+  } catch (error) {
+    throw asUpstreamGitError(error, { ref: wanted, url: gitUrl });
+  }
   const commit = pickRemoteCommit(parseLsRemote(raw), pattern);
 
   if (commit == null) {
     if (wanted && ABBREVIATED_SHA.test(wanted)) {
-      throw new Error(
-        `Cannot resolve a moving tip from ref "${wanted}" in ${gitUrl}: it looks like a commit id. Pass --ref <branch or tag> to move the pin.`
+      throw new InrepoError(
+        "USAGE",
+        `Cannot resolve a moving tip from ref "${wanted}" in ${gitUrl}: it looks like a commit id. Pass --ref <branch or tag> to move the pin.`,
+        { details: { ref: wanted, url: gitUrl } }
       );
     }
-    throw new Error(
+    throw new InrepoError(
+      "UPSTREAM_UNAVAILABLE",
       wanted
         ? `Could not resolve ref "${wanted}" in ${gitUrl}`
-        : `Could not resolve the default branch in ${gitUrl}`
+        : `Could not resolve the default branch in ${gitUrl}`,
+      {
+        details: { ref: wanted ?? null, url: gitUrl },
+        hint: `Check the ref name; list what the remote advertises with: git ls-remote ${gitUrl}`,
+      }
     );
   }
   return commit;

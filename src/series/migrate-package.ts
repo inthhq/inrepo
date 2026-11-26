@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
 
+import { InrepoError } from "../cli/errors.js";
 import { applyLegacyOverlayTree } from "../overlay/assemble-module.js";
 import { overlayDirPath, seriesDirPath } from "../overlay/overlay-paths.js";
 import { applySeries } from "./apply-series.js";
@@ -13,11 +14,18 @@ import {
 } from "./legacy-overlay.js";
 import { readSeries } from "./read-series.js";
 import { resolveSeriesAuthor } from "./resolve-series-author.js";
+import type { StagedFileChange } from "./series-git.js";
 
 export interface MigrateResult {
   /** Absolute path of the patch that now carries the package's changes. */
   patchPath: string;
   patchFileName: string;
+  /** Numeric prefix of the generated patch (always the first in the series). */
+  number: number;
+  /** Commit subject recorded in the generated patch. */
+  subject: string;
+  /** Paths the generated patch touches, sorted. */
+  files: StagedFileChange[];
   /** Legacy overlay entries that were deleted after verification passed. */
   removedLegacyEntries: string[];
   /** Empty directories the overlay used to create that git cannot record. */
@@ -57,14 +65,24 @@ export const migratePackageToSeries =
     const seriesDir = seriesDirPath(opts.cwd, opts.name);
 
     if ((await readSeries(seriesDir)).length > 0) {
-      throw new Error(
-        `"${opts.name}" already has a patch series in ${seriesDir}`
+      throw new InrepoError(
+        "USAGE",
+        `"${opts.name}" already has a patch series in ${seriesDir}`,
+        {
+          details: { package: opts.name, seriesDir },
+          hint: `Nothing to migrate. Capture new edits with: inrepo patch ${opts.name} -m "<reason>"`,
+        }
       );
     }
     const legacyEntries = await listLegacyOverlayEntries(overlayRoot);
     if (legacyEntries.length === 0) {
-      throw new Error(
-        `No legacy overlay to migrate for "${opts.name}" (looked in ${overlayRoot})`
+      throw new InrepoError(
+        "USAGE",
+        `No legacy overlay to migrate for "${opts.name}" (looked in ${overlayRoot})`,
+        {
+          details: { overlayRoot, package: opts.name },
+          hint: `Nothing to migrate. Capture edits with: inrepo patch ${opts.name} -m "<reason>"`,
+        }
       );
     }
 
@@ -84,12 +102,13 @@ export const migratePackageToSeries =
         targetRoot: legacyTree,
       });
 
+      const subject = opts.subject ?? defaultSubject(opts.name);
       const patch = await formatSeriesPatch({
         author: await resolveSeriesAuthor(opts.cwd),
         baseRoot: opts.pristineRoot,
         patchedRoot: legacyTree,
         startNumber: 1,
-        subject: opts.subject ?? defaultSubject(opts.name),
+        subject,
       });
 
       await mkdir(seriesDir, { recursive: true });
@@ -99,6 +118,7 @@ export const migratePackageToSeries =
       let droppedEmptyDirectories: string[] = [];
       try {
         await applySeries({
+          name: opts.name,
           pristineRoot: opts.pristineRoot,
           seriesDir,
           targetRoot: seriesTree,
@@ -126,9 +146,12 @@ export const migratePackageToSeries =
         await removeLegacyOverlayEntries(overlayRoot);
       return {
         droppedEmptyDirectories,
+        files: patch.files,
+        number: 1,
         patchFileName: patch.fileName,
         patchPath,
         removedLegacyEntries,
+        subject,
       };
     } finally {
       await rm(work, { force: true, recursive: true });

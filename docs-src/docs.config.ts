@@ -1,6 +1,11 @@
 import { defineDocsConfig } from "leadtype";
 
 export default defineDocsConfig({
+  // The shipped agent skill is hand-written at skills/inrepo/SKILL.md; keep
+  // leadtype from generating (and overwriting) a generic root SKILL.md.
+  agents: {
+    skills: { docsSkill: false },
+  },
   llms: {
     sections: [
       {
@@ -28,6 +33,18 @@ export default defineDocsConfig({
           },
           {
             description:
+              "The --json envelope, exit and error codes, the agent loop, and the update conflict loop.",
+            title: "Using inrepo from agents and scripts",
+            urlPath: "/docs/agents",
+          },
+          {
+            description:
+              "Every command's flags, writes, --dry-run support, JSON data shape, and error codes.",
+            title: "Commands",
+            urlPath: "/docs/commands",
+          },
+          {
+            description:
               "Configuration fields, filtering, and generated files.",
             title: "Config",
             urlPath: "/docs/config",
@@ -40,8 +57,9 @@ export default defineDocsConfig({
   navigation: [
     "index",
     "quickstart",
+    "agents",
     {
-      pages: ["config"],
+      pages: ["commands", "config"],
       title: "Reference",
     },
   ],

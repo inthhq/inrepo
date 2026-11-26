@@ -90,6 +90,7 @@ Then work like this:
 
 ```bash
 npx inrepo sync
+npx inrepo status            # pin, patches, and uncaptured edits per package
 # edit files in inrepo_modules/<package>/
 npx inrepo patch <package> -m "why this change"
 npx inrepo diff <package>
@@ -107,6 +108,38 @@ CI can check that nothing drifted:
 ```bash
 npx inrepo verify
 ```
+
+## Using inrepo with AI agents
+
+Every command takes `--json`. stdout then carries exactly one result envelope and all human output goes to stderr, so an agent or script never has to parse prose. Start with `inrepo status`. It is read-only and lists each package's `condition` and the `nextActions` that move it forward. In a freshly initialized project:
+
+```bash
+npx inrepo status --json
+```
+
+```json
+{
+  "command": "status",
+  "data": {
+    "configPath": "inrepo.json",
+    "lockfilePath": null,
+    "nextActions": ["inrepo add <name>"],
+    "packages": []
+  },
+  "ok": true,
+  "schemaVersion": 1
+}
+```
+
+A failure has `"ok": false` and an `error` with a stable `code`, a `message`, and usually a `hint` and a `nextCommand`. Under `--json` the exit code tells the class of failure: 0 ok, 1 failure or verify drift, 2 usage or config, 3 needs resolution (an update conflict or uncaptured edits), 4 upstream or network. Without `--json`, every failure still exits 1. `add`, `sync`, `patch`, and `update` accept `--dry-run` to report what they would change without writing.
+
+To give a project's coding agents the rules (capture edits with `patch -m` before any sync or update, never hand-edit the lockfile or patch files, run `verify` before finishing), add them to its `AGENTS.md`:
+
+```bash
+npx inrepo init --agents
+```
+
+The npm package ships its docs for agents to read offline, matched to the installed version. Point agents at `node_modules/inrepo/AGENTS.md`. The full contract, with every error code and the update conflict loop, is in [Using inrepo from agents and scripts](./docs/agents.md). Each command's flags and JSON output are in the [command reference](./docs/commands.md).
 
 ## The files
 
@@ -390,6 +423,8 @@ node dist/cli.mjs --help
 - [Overview](./docs/index.md)
 - [Quickstart](./docs/quickstart.md)
 - [Config reference](./docs/config.md)
+- [Command reference](./docs/commands.md)
+- [Using inrepo from agents and scripts](./docs/agents.md)
 - CLI usage: `npx inrepo --help`
 
 ## Support

@@ -1,6 +1,5 @@
 import { existsSync } from "node:fs";
 import { rename, rm } from "node:fs/promises";
-import nodePath from "node:path";
 
 import { assembleModuleTree } from "../../overlay/assemble-module.js";
 import { ensurePristine } from "../../overlay/cache.js";
@@ -14,9 +13,12 @@ import {
   updateInProgressError,
 } from "../../series/update-state.js";
 import { parseMigrateArgs } from "../args.js";
-import { selectPackages } from "../package-selection.js";
+import { InrepoError, isInrepoError } from "../errors.js";
+import { projectRelativePath, toFileChanges } from "../json-results.js";
+import type { PackageSelection } from "../package-selection.js";
+import { requireLockEntry, selectPackages } from "../package-selection.js";
 import { printBanner } from "../rendering.js";
-import type { DispatchOpts } from "../types.js";
+import type { DispatchOpts, MigrateResult } from "../types.js";
 import { intro, outro, spinner, warn } from "../ui.js";
 import {
   makeSiblingStage,
@@ -33,36 +35,33 @@ export const cmdMigrate = async function cmdMigrate(
   cwd: string,
   argv: string[],
   opts: DispatchOpts = {}
-): Promise<void> {
+): Promise<MigrateResult> {
   const args = parseMigrateArgs(argv);
   if (!opts.suppressBanners) {
     printBanner();
   }
 
-  let selection: Awaited<ReturnType<typeof selectPackages>>;
+  const notLocked = `Cannot migrate "${args.name}" without a lockfile entry. Run "inrepo add ${args.name}" or "inrepo sync" first.`;
+  let selection: PackageSelection;
   try {
     selection = await selectPackages(cwd, args.name, "migrate");
   } catch (error) {
     if (
       error instanceof Error &&
-      error.message.includes("No configured or locked package")
+      isInrepoError(error) &&
+      error.code === "PACKAGE_NOT_FOUND"
     ) {
-      throw new Error(
-        `Cannot migrate "${args.name}" without a lockfile entry. Run "inrepo add ${args.name}" or "inrepo sync" first.`,
-        { cause: error }
-      );
+      throw new InrepoError("PACKAGE_NOT_FOUND", notLocked, {
+        cause: error,
+        details: { package: args.name },
+      });
     }
     throw error;
   }
   const { packages, modules, globalExclude, globalKeep } = selection;
   const [pkg] = packages;
   const module = pkg.module ?? pkg.name;
-  const lockEntry = modules[module];
-  if (!lockEntry) {
-    throw new Error(
-      `Cannot migrate "${args.name}" without a lockfile entry. Run "inrepo add ${args.name}" or "inrepo sync" first.`
-    );
-  }
+  const lockEntry = requireLockEntry(modules, module, notLocked);
   if (isUpdateInProgress(cwd, module)) {
     throw updateInProgressError(cwd, module, "migrating");
   }
@@ -73,6 +72,7 @@ export const cmdMigrate = async function cmdMigrate(
 
   const s = spinner();
   s.start(`Migrating "${module}" to a patch series`);
+  let data: MigrateResult;
   try {
     s.message(`Preparing upstream cache @ ${lockEntry.commit.slice(0, 7)}`);
     const pristine = await ensurePristine({
@@ -130,9 +130,17 @@ export const cmdMigrate = async function cmdMigrate(
       overlayHash: await hashTree(overlayDirPath(cwd, module)),
     });
 
-    s.stop(
-      `Migrated "${module}" → ${nodePath.relative(cwd, result.patchPath)}`
-    );
+    const patchFile = projectRelativePath(cwd, result.patchPath);
+    data = {
+      droppedEmptyDirectories: result.droppedEmptyDirectories,
+      files: toFileChanges(result.files),
+      module,
+      patches: [
+        { file: patchFile, number: result.number, subject: result.subject },
+      ],
+      removedOverlayEntries: result.removedLegacyEntries,
+    };
+    s.stop(`Migrated "${module}" → ${patchFile}`);
   } catch (error) {
     s.error(`Failed to migrate "${module}"`);
     throw error;
@@ -141,4 +149,5 @@ export const cmdMigrate = async function cmdMigrate(
   if (!opts.suppressBanners) {
     outro(`Legacy overlay for "${module}" replaced by a patch series.`);
   }
+  return data;
 };

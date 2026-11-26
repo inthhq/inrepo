@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import nodePath from "node:path";
 
 import { seriesDirPath } from "../overlay/overlay-paths.js";
@@ -20,17 +21,22 @@ import {
   seriesPatchFileName,
 } from "./read-series.js";
 import { resolveSeriesAuthor } from "./resolve-series-author.js";
-import type { SeriesAuthor } from "./series-git.js";
+import type { SeriesAuthor, StagedFileChange } from "./series-git.js";
 
 export type SeriesCaptureResult =
   | { captured: false }
   | {
       captured: true;
-      /** Absolute path of the patch that was appended to the series. */
+      /**
+       * Absolute path of the patch that was appended to the series (or, under
+       * `dryRun`, the path it would have been written to).
+       */
       patchPath: string;
       patchFileName: string;
       /** Numeric prefix given to the new patch. */
       number: number;
+      /** Paths the new patch touches, sorted. */
+      files: StagedFileChange[];
       /**
        * Directories the working tree added but left empty. Git cannot record
        * them, so they will not come back on the next sync.
@@ -91,6 +97,8 @@ export const captureSeriesPatch = async function captureSeriesPatch(opts: {
   author?: SeriesAuthor;
   /** Pass `null` to skip the rewiring round-trip; omit to resolve it from committed state. */
   rewire?: RewirePlan | null;
+  /** Compute the patch that would be captured without writing it. */
+  dryRun?: boolean;
 }): Promise<SeriesCaptureResult> {
   const subject = opts.subject.trim();
   if (subject === "") {
@@ -103,16 +111,21 @@ export const captureSeriesPatch = async function captureSeriesPatch(opts: {
   const patches = await readSeries(seriesDir);
   const number = nextSeriesNumber(patches);
 
-  const workRoot = nodePath.join(opts.cwd, ".inrepo", "capture");
-  await mkdir(workRoot, { recursive: true });
-  const work = await mkdtemp(
-    nodePath.join(workRoot, `${opts.name.replaceAll("/", "__")}-`)
-  );
+  // A dry run leaves the project untouched, scratch space included.
+  const slug = opts.name.replaceAll("/", "__");
+  let workPrefix = nodePath.join(tmpdir(), `inrepo-capture-${slug}-`);
+  if (opts.dryRun !== true) {
+    const workRoot = nodePath.join(opts.cwd, ".inrepo", "capture");
+    await mkdir(workRoot, { recursive: true });
+    workPrefix = nodePath.join(workRoot, `${slug}-`);
+  }
+  const work = await mkdtemp(workPrefix);
   const baseTree = nodePath.join(work, "base");
 
   try {
     await (patches.length > 0
       ? applySeries({
+          name: opts.name,
           pristineRoot: opts.pristineRoot,
           seriesDir,
           targetRoot: baseTree,
@@ -166,12 +179,15 @@ export const captureSeriesPatch = async function captureSeriesPatch(opts: {
       opts.moduleRoot
     );
 
-    await mkdir(seriesDir, { recursive: true });
-    await writeFile(patchPath, patch.content);
+    if (opts.dryRun !== true) {
+      await mkdir(seriesDir, { recursive: true });
+      await writeFile(patchPath, patch.content);
+    }
 
     return {
       captured: true,
       droppedEmptyDirectories,
+      files: patch.files,
       number,
       patchFileName: fileName,
       patchPath,

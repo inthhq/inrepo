@@ -15,21 +15,31 @@ export interface VerifyLockGraphInput {
   moduleSources?: Map<string, string>;
 }
 
+/** One graph inconsistency, attributed to the graph node it was found on. */
+export interface LockGraphIssue {
+  module: string;
+  message: string;
+}
+
 /**
  * Check a committed dependency graph against the lockfile and the vendored
  * checkouts. Purely offline: every input is read from files this project
  * already commits, so `inrepo verify` never contacts the npm registry.
  */
-export const verifyLockGraph = function verifyLockGraph(
+export const verifyLockGraphIssues = function verifyLockGraphIssues(
   input: VerifyLockGraphInput
-): string[] {
+): LockGraphIssue[] {
   const { graph, moduleNames, vendoredVersions } = input;
-  const errors: string[] = [];
+  const errors: LockGraphIssue[] = [];
+  const report = (module: string, message: string): void => {
+    errors.push({ message, module });
+  };
 
   for (const name of Object.keys(graph).toSorted()) {
     const node = graph[name];
     if (!moduleNames.has(name)) {
-      errors.push(
+      report(
+        name,
         `"${name}" is in the dependency graph but not in inrepo.lock.json "modules"`
       );
     }
@@ -43,7 +53,8 @@ export const verifyLockGraph = function verifyLockGraph(
       vendoredVersion != null &&
       vendoredVersion !== node.version
     ) {
-      errors.push(
+      report(
+        name,
         `"${name}": vendored version ${vendoredVersion} does not match graph version ${node.version}`
       );
     }
@@ -53,14 +64,16 @@ export const verifyLockGraph = function verifyLockGraph(
     ).toSorted((a, b) => a[0].localeCompare(b[0]))) {
       const target = graph[edge.module];
       if (!target) {
-        errors.push(
+        report(
+          name,
           `"${name}" depends on "${dependency}" resolved to module "${edge.module}", which is not in the dependency graph`
         );
         continue;
       }
       const targetSource = input.moduleSources?.get(edge.module);
       if (targetSource != null && targetSource !== dependency) {
-        errors.push(
+        report(
+          name,
           `"${name}" depends on "${dependency}" but module "${edge.module}" contains "${targetSource}"`
         );
       }
@@ -69,13 +82,15 @@ export const verifyLockGraph = function verifyLockGraph(
         target.version != null &&
         edge.version !== target.version
       ) {
-        errors.push(
+        report(
+          name,
           `"${name}" depends on "${dependency}" at ${edge.version}, but "${edge.module}" is vendored at ${target.version}`
         );
       }
       const resolvedVersion = edge.version ?? target.version;
       if (resolvedVersion != null && !satisfies(resolvedVersion, edge.range)) {
-        errors.push(
+        report(
+          name,
           `"${name}" depends on "${dependency}" ${edge.range}, which ${resolvedVersion} does not satisfy`
         );
       }
@@ -83,4 +98,11 @@ export const verifyLockGraph = function verifyLockGraph(
   }
 
   return errors;
+};
+
+/** {@link verifyLockGraphIssues}, as plain messages. */
+export const verifyLockGraph = function verifyLockGraph(
+  input: VerifyLockGraphInput
+): string[] {
+  return verifyLockGraphIssues(input).map((issue) => issue.message);
 };

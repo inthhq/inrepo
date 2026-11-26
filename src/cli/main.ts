@@ -18,8 +18,16 @@ import { APP_NAME, readOwnPackageInfo } from "./app-info.js";
 import type { InrepoPackageInfo } from "./app-info.js";
 import { commands } from "./command-table.js";
 import { cmdInit } from "./commands/init.js";
+import { EXIT, exitCodeFor, InrepoError, toErrorPayload } from "./errors.js";
 import { cmdInteractive } from "./interactive.js";
-import { showInrepoHelp } from "./rendering.js";
+import {
+  configureOutput,
+  emitFailure,
+  emitResult,
+  isDryRun,
+  isJsonMode,
+} from "./output.js";
+import { inrepoGlobalFlags, showInrepoHelp } from "./rendering.js";
 import { createInrepoTelemetryOptions } from "./telemetry.js";
 import { error as printError } from "./ui.js";
 
@@ -27,6 +35,10 @@ const startUpdateCheck = function startUpdateCheck(
   context: CliContext,
   packageInfo: InrepoPackageInfo
 ): void {
+  // Update hints are human-facing noise in a JSON session.
+  if (isJsonMode()) {
+    return;
+  }
   startBackgroundUpdateCheck({
     appName: APP_NAME,
     currentVersion: packageInfo.version,
@@ -39,6 +51,15 @@ const handleNoCommand = async function handleNoCommand(
   context: CliContext,
   packageInfo: InrepoPackageInfo
 ): Promise<void> {
+  if (isJsonMode() || isDryRun()) {
+    // The bare invocation can run first-time setup or an interactive menu;
+    // neither has a JSON result or a dry-run preview.
+    throw new InrepoError("USAGE", "No command given.", {
+      hint: "Run: inrepo --help",
+      nextCommand: "inrepo status --json",
+    });
+  }
+
   // Bare `inrepo` invocation:
   //   - interactive TTY: first-time init wizard if needed.
   //   - interactive TTY + initialized project: action menu.
@@ -60,12 +81,68 @@ const handleNoCommand = async function handleNoCommand(
   }
 };
 
+interface HelpData {
+  commands: { description: string; name: string }[];
+  globalFlags: string[];
+  version: string;
+}
+
+/** Machine-readable help: the command table plus inrepo's global flags. */
+const helpData = function helpData(packageInfo: InrepoPackageInfo): HelpData {
+  return {
+    commands: commands.map((command) => ({
+      description: command.description,
+      name: command.name,
+    })),
+    globalFlags: inrepoGlobalFlags.flatMap((flag) => flag.names),
+    version: packageInfo.version,
+  };
+};
+
+const reportFailure = function reportFailure(
+  err: Error,
+  commandName: string
+): void {
+  const payload = toErrorPayload(err);
+  if (isJsonMode()) {
+    emitFailure(commandName, payload);
+  } else {
+    printError(err.message);
+    if (payload.hint !== undefined && !err.message.includes(payload.hint)) {
+      printError(`Hint: ${payload.hint}`);
+    }
+  }
+  // Exit-status classes are part of the --json contract. Human runs keep the
+  // historical "every failure exits 1" behavior so existing scripts don't break.
+  process.exitCode = isJsonMode() ? exitCodeFor(err) : EXIT.FAILURE;
+};
+
+/** Flags are parsed by hexbus later; peek early so output is routed first. */
+const hasRawFlag = function hasRawFlag(
+  rawArgs: string[],
+  flag: string
+): boolean {
+  return rawArgs.includes(flag);
+};
+
 export const main = async function main(): Promise<void> {
   const cwd = nodePath.resolve(process.cwd());
   const rawArgs = process.argv.slice(2);
   const packageInfo = readOwnPackageInfo();
 
+  configureOutput({
+    dryRun: hasRawFlag(rawArgs, "--dry-run"),
+    json: hasRawFlag(rawArgs, "--json"),
+  });
+
   if (isVersionRequest(rawArgs)) {
+    if (isJsonMode()) {
+      emitResult("version", {
+        name: packageInfo.name,
+        version: packageInfo.version,
+      });
+      return;
+    }
     await printVersionInfo({
       appName: APP_NAME,
       currentVersion: packageInfo.version,
@@ -74,17 +151,33 @@ export const main = async function main(): Promise<void> {
     return;
   }
 
-  const context = await createCliContext({
-    appName: APP_NAME,
-    commands,
-    configName: APP_NAME,
-    cwd,
-    interactivePackageManagerDetection: false,
-    rawArgs,
-    telemetry: createInrepoTelemetryOptions(packageInfo),
-  });
+  let context: CliContext;
+  try {
+    context = await createCliContext({
+      appName: APP_NAME,
+      commands,
+      configName: APP_NAME,
+      cwd,
+      globalFlags: inrepoGlobalFlags,
+      interactivePackageManagerDetection: false,
+      rawArgs,
+      telemetry: createInrepoTelemetryOptions(packageInfo),
+    });
+  } catch (error) {
+    // Argument parsing runs inside context creation; report it as usage.
+    const err = error instanceof Error ? error : new Error(String(error));
+    reportFailure(
+      new InrepoError("USAGE", err.message, { cause: error }),
+      "inrepo"
+    );
+    return;
+  }
 
   if (context.flags.help === true) {
+    if (isJsonMode()) {
+      emitResult("help", helpData(packageInfo));
+      return;
+    }
     showInrepoHelp(context, packageInfo, commands);
     return;
   }
@@ -109,7 +202,8 @@ export const main = async function main(): Promise<void> {
       },
       unknownCommand: {
         action: ({ commandName }) => {
-          throw new Error(
+          throw new InrepoError(
+            "USAGE",
             `Unknown command: ${commandName}\nRun: inrepo --help`
           );
         },
@@ -130,7 +224,6 @@ export const main = async function main(): Promise<void> {
     const err = error instanceof Error ? error : new Error(String(error));
     context.telemetry.trackError(err, context.commandName ?? "interactive");
     await context.telemetry.flush();
-    printError(err.message);
-    process.exitCode = 1;
+    reportFailure(err, context.commandName ?? "inrepo");
   }
 };

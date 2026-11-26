@@ -338,15 +338,22 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
     const wrongOld = await writeTree(nodePath.join(tmp, "wrong"), {
       "a.txt": "totally different\n",
     });
-    await expect(
-      startSeriesRebase({
-        author: AUTHOR,
-        oldRoot: wrongOld,
-        repoRoot,
-        resolveNewRoot: () => Promise.resolve(wrongOld),
-        seriesDir,
-      })
-    ).rejects.toThrow(/does not apply to the pinned commit/u);
+    const refused = startSeriesRebase({
+      author: AUTHOR,
+      name: "pkg",
+      oldRoot: wrongOld,
+      repoRoot,
+      resolveNewRoot: () => Promise.resolve(wrongOld),
+      seriesDir,
+    });
+    await expect(refused).rejects.toThrow(
+      /does not apply to the pinned commit/u
+    );
+    // A hard apply failure, not a rebase conflict the user could resolve.
+    await expect(refused).rejects.toMatchObject({
+      code: "PATCH_APPLY_FAILED",
+      details: { package: "pkg" },
+    });
   });
 
   test("the new upstream tree is only materialized after the old one is captured", async () => {

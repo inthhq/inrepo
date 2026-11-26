@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 
+import { InrepoError } from "../cli/errors.js";
 import { isBoolean, isJsonObject, isString } from "../json/unknown.js";
 import type { JsonValue } from "../json/unknown.js";
 import { inrepoConfigPath } from "../paths/inrepo-config-path.js";
@@ -12,9 +13,47 @@ import { validateExcludeList } from "./validate-exclude-list.js";
 import { validateKeepList } from "./validate-keep-list.js";
 
 /** Thrown when neither inrepo.json nor package.json declares inrepo config. */
-export class LoadConfigNotFoundError extends Error {
+export class LoadConfigNotFoundError extends InrepoError {
   override readonly name = "LoadConfigNotFoundError";
+
+  constructor(message: string) {
+    super("CONFIG_NOT_FOUND", message, { nextCommand: "inrepo init" });
+  }
 }
+
+/**
+ * Re-tag a parse/validation failure as `CONFIG_INVALID`, keeping its message.
+ * Errors that already carry a code pass through unchanged.
+ */
+const asConfigInvalid = function asConfigInvalid<E>(
+  error: E,
+  file: string
+): Error {
+  if (error instanceof InrepoError) {
+    return error;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return new InrepoError("CONFIG_INVALID", message, {
+    cause: error,
+    details: { file },
+    hint: `Fix ${file}; see inrepo.schema.json for the expected shape.`,
+  });
+};
+
+/** Run a config read, surfacing malformed config as `CONFIG_INVALID`. */
+const withConfigErrors = async function withConfigErrors<T>(
+  cwd: string,
+  read: () => Promise<T>
+): Promise<T> {
+  try {
+    return await read();
+  } catch (error) {
+    throw asConfigInvalid(
+      error,
+      existsSync(inrepoConfigPath(cwd)) ? "inrepo.json" : "package.json"
+    );
+  }
+};
 
 const rootExcludeFromParsed = function rootExcludeFromParsed(
   parsed: JsonValue,
@@ -156,8 +195,7 @@ const validatePackage = function validatePackage(
   return pkg;
 };
 
-/** Load declarative config from inrepo.json (preferred) or package.json#inrepo. */
-export const loadConfig = async function loadConfig(
+const readConfig = async function readConfig(
   cwd: string
 ): Promise<LoadedConfig> {
   const inrepoPath = inrepoConfigPath(cwd);
@@ -229,6 +267,18 @@ export const loadConfig = async function loadConfig(
 };
 
 /**
+ * Load declarative config from inrepo.json (preferred) or package.json#inrepo.
+ *
+ * Throws `CONFIG_NOT_FOUND` when neither location declares config, and
+ * `CONFIG_INVALID` when the config exists but is malformed.
+ */
+export const loadConfig = function loadConfig(
+  cwd: string
+): Promise<LoadedConfig> {
+  return withConfigErrors(cwd, () => readConfig(cwd));
+};
+
+/**
  * Parsed root for global `exclude` / `keep`: prefer inrepo.json, else package.json#inrepo object.
  * Returns null when there is nothing to read (same empty-array behavior as before).
  */
@@ -283,35 +333,39 @@ const readGlobalInrepoRaw = async function readGlobalInrepoRaw(
  * Root `exclude` list only (no `packages` required). Used by `inrepo add` so global
  * excludes apply even when sync has not been run.
  */
-export const loadGlobalExclude = async function loadGlobalExclude(
+export const loadGlobalExclude = function loadGlobalExclude(
   cwd: string
 ): Promise<string[]> {
-  const ctx = await readGlobalInrepoRaw(cwd);
-  if (!ctx) {
-    return [];
-  }
-  const label =
-    ctx.source === "inrepo.json"
-      ? 'inrepo.json "exclude"'
-      : 'package.json "inrepo.exclude"';
-  return rootExcludeFromParsed(ctx.parsed, label);
+  return withConfigErrors(cwd, async () => {
+    const ctx = await readGlobalInrepoRaw(cwd);
+    if (!ctx) {
+      return [];
+    }
+    const label =
+      ctx.source === "inrepo.json"
+        ? 'inrepo.json "exclude"'
+        : 'package.json "inrepo.exclude"';
+    return rootExcludeFromParsed(ctx.parsed, label);
+  });
 };
 
 /**
  * Root `keep` list only. Used by `inrepo add` when full `loadConfig` is unavailable.
  */
-export const loadGlobalKeep = async function loadGlobalKeep(
+export const loadGlobalKeep = function loadGlobalKeep(
   cwd: string
 ): Promise<string[]> {
-  const ctx = await readGlobalInrepoRaw(cwd);
-  if (!ctx) {
-    return [];
-  }
-  const label =
-    ctx.source === "inrepo.json"
-      ? 'inrepo.json "keep"'
-      : 'package.json "inrepo.keep"';
-  return rootKeepFromParsed(ctx.parsed, label);
+  return withConfigErrors(cwd, async () => {
+    const ctx = await readGlobalInrepoRaw(cwd);
+    if (!ctx) {
+      return [];
+    }
+    const label =
+      ctx.source === "inrepo.json"
+        ? 'inrepo.json "keep"'
+        : 'package.json "inrepo.keep"';
+    return rootKeepFromParsed(ctx.parsed, label);
+  });
 };
 
 /** True when loadConfig failed because no config file/field exists (safe to fall back to globals-only). */

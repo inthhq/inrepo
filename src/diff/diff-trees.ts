@@ -5,11 +5,13 @@ import nodePath from "node:path";
 import { copyTree, defaultSkipTreePath } from "../overlay/tree-utils.js";
 import {
   initSeriesBaseRepo,
+  listStagedFileChanges,
   replaceWorkTree,
   runSeriesGitCapture,
   skipGitDir,
   stageAll,
 } from "../series/series-git.js";
+import type { StagedFileChange } from "../series/series-git.js";
 
 export interface DiffTreesOptions {
   /** Left side of the diff, normally the pinned upstream checkout. */
@@ -20,20 +22,28 @@ export interface DiffTreesOptions {
   stat?: boolean;
 }
 
+export interface DiffTreesResult {
+  /** Unified diff (or `--stat` summary); empty when the trees are identical. */
+  rendered: string;
+  /** Per-file change kind and line counts, sorted by path. */
+  files: StagedFileChange[];
+}
+
 const diffSkip = function diffSkip(relPosix: string): boolean {
   return skipGitDir(relPosix) || defaultSkipTreePath(relPosix);
 };
 
 /**
- * Render `baseRoot -> targetRoot` as a unified diff using git itself.
+ * Render `baseRoot -> targetRoot` as a unified diff using git itself, plus a
+ * per-file summary.
  *
  * Both trees are staged in a throwaway repository so git decides how to present
- * deletions, mode changes, symlinks, and binary files. Returns an empty string
- * when the trees are identical.
+ * deletions, mode changes, symlinks, and binary files. `rendered` is an empty
+ * string when the trees are identical.
  */
-export const diffTrees = async function diffTrees(
+export const diffTreesWithFiles = async function diffTreesWithFiles(
   opts: DiffTreesOptions
-): Promise<string> {
+): Promise<DiffTreesResult> {
   const work = await mkdtemp(nodePath.join(tmpdir(), "inrepo-diff-"));
   const repo = nodePath.join(work, "repo");
 
@@ -59,8 +69,16 @@ export const diffTrees = async function diffTrees(
       ],
       { cwd: repo, trim: false }
     );
-    return rendered.replace(/\s+$/u, "");
+    const files = await listStagedFileChanges(repo);
+    return { files, rendered: rendered.replace(/\s+$/u, "") };
   } finally {
     await rm(work, { force: true, recursive: true });
   }
+};
+
+/** {@link diffTreesWithFiles}, keeping only the rendered text. */
+export const diffTrees = async function diffTrees(
+  opts: DiffTreesOptions
+): Promise<string> {
+  return (await diffTreesWithFiles(opts)).rendered;
 };

@@ -1,6 +1,8 @@
 import { mkdir, rm } from "node:fs/promises";
 import nodePath from "node:path";
 
+import { InrepoError } from "../cli/errors.js";
+import type { JsonObject } from "../json/unknown.js";
 import {
   assertPatchedSymlinksWithinRoot,
   copyTree,
@@ -19,17 +21,46 @@ const abortInFlightApply = async function abortInFlightApply(
   }
 };
 
+const patchApplyFailed = function patchApplyFailed(
+  error: Error,
+  patch: SeriesPatch,
+  name: string | undefined
+): InrepoError {
+  const details: JsonObject = { file: patch.path, patch: patch.fileName };
+  if (name !== undefined) {
+    details.package = name;
+  }
+  const update =
+    name === undefined
+      ? ""
+      : ` To move the series onto a newer upstream commit, run: inrepo update ${name}`;
+  return new InrepoError(
+    "PATCH_APPLY_FAILED",
+    `Failed to apply ${patch.fileName}: ${error.message}`,
+    {
+      cause: error,
+      details,
+      hint: `${patch.fileName} does not apply to the pinned upstream tree. Fix or remove ${patch.path}, then rerun.${update}`,
+    }
+  );
+};
+
 /**
  * Apply patch files onto the current `HEAD` of a scratch repository, in order,
  * leaving one commit per patch.
  *
  * `git am --3way` keeps the recorded author, date, and subject, so the commits
- * carry the same provenance as the patch files that produced them.
+ * carry the same provenance as the patch files that produced them. A patch
+ * that does not apply fails with `PATCH_APPLY_FAILED`.
  */
 export const applySeriesToRepo = async function applySeriesToRepo(
   repoRoot: string,
   patches: SeriesPatch[],
-  opts: { onPatch?: (patch: SeriesPatch) => void } = {}
+  opts: {
+    onPatch?: (patch: SeriesPatch) => void;
+    /** Package the series belongs to; reported when a patch fails to apply. */
+    name?: string;
+  } = {}
 ): Promise<void> {
   for (const patch of patches) {
     opts.onPatch?.(patch);
@@ -45,9 +76,7 @@ export const applySeriesToRepo = async function applySeriesToRepo(
     } catch (error) {
       await abortInFlightApply(repoRoot);
       const err = error instanceof Error ? error : new Error(String(error));
-      throw new Error(`Failed to apply ${patch.fileName}: ${err.message}`, {
-        cause: error,
-      });
+      throw patchApplyFailed(err, patch, opts.name);
     }
   }
 };
@@ -64,6 +93,8 @@ export const applySeries = async function applySeries(opts: {
   pristineRoot: string;
   seriesDir: string;
   targetRoot: string;
+  /** Package the series belongs to; reported when a patch fails to apply. */
+  name?: string;
 }): Promise<{ applied: SeriesPatch[] }> {
   const patches = await readSeries(opts.seriesDir);
   if (patches.length === 0) {
@@ -78,7 +109,7 @@ export const applySeries = async function applySeries(opts: {
   });
   await initSeriesBaseRepo(opts.targetRoot);
 
-  await applySeriesToRepo(opts.targetRoot, patches);
+  await applySeriesToRepo(opts.targetRoot, patches, { name: opts.name });
 
   await rm(nodePath.join(opts.targetRoot, ".git"), {
     force: true,

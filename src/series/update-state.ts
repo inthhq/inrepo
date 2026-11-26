@@ -2,10 +2,12 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
 
+import { InrepoError } from "../cli/errors.js";
 import { isJsonObject, isString } from "../json/unknown.js";
 import {
   seriesDirPath,
   updateDirPath,
+  updateRepoPath,
   updateSeriesSnapshotPath,
   updateStatePath,
 } from "../overlay/overlay-paths.js";
@@ -114,13 +116,24 @@ export const updateInProgressError = function updateInProgressError(
   cwd: string,
   name: string,
   action?: string
-): Error {
+): InrepoError {
   const finish = `Finish it with "inrepo update ${name} --continue" or discard it with "inrepo update ${name} --abort"`;
-  return new Error(
+  const updateDir = nodePath.relative(cwd, updateDirPath(cwd, name));
+  return new InrepoError(
+    "UPDATE_IN_PROGRESS",
     [
-      `An update for "${name}" is already in progress in ${nodePath.relative(cwd, updateDirPath(cwd, name))}.`,
+      `An update for "${name}" is already in progress in ${updateDir}.`,
       action ? `${finish} before ${action}.` : `${finish}.`,
-    ].join("\n")
+    ].join("\n"),
+    {
+      details: {
+        package: name,
+        repoPath: nodePath.relative(cwd, updateRepoPath(cwd, name)),
+        updateDir,
+      },
+      hint: `Inspect it with: inrepo status ${name}`,
+      nextCommand: `inrepo update ${name} --continue`,
+    }
   );
 };
 

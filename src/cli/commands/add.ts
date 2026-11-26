@@ -9,6 +9,7 @@ import {
 } from "../../config/load-config.js";
 import { buildLockGraph } from "../../deps/build-lock-graph.js";
 import { renderDependencyTree } from "../../deps/render-dependency-tree.js";
+import type { ResolvedNode } from "../../deps/resolve-dependency-graph.js";
 import { orderByDependencies } from "../../deps/vendored-graph.js";
 import { upsertInrepoJson } from "../../inrepo-json/upsert-inrepo-json.js";
 import type { InrepoJsonEntry } from "../../inrepo-json/upsert-inrepo-json.js";
@@ -20,10 +21,21 @@ import { inrepoConfigPath } from "../../paths/inrepo-config-path.js";
 import { moduleDestPath } from "../../paths/module-dest-path.js";
 import type { InrepoPackage } from "../../types/inrepo-package.js";
 import { parseAddArgs } from "../args.js";
+import { isDryRun } from "../output.js";
 import { printBanner } from "../rendering.js";
-import type { AddArgs, DispatchOpts } from "../types.js";
+import type {
+  AddArgs,
+  DispatchOpts,
+  MaterializeOptions,
+  PackageSpec,
+} from "../types.js";
 import { cancel, confirm, intro, isCancel, outro, text, ui } from "../ui.js";
-import { materializePackage } from "../vendor.js";
+import {
+  countSeriesPatches,
+  materializePackage,
+  planMaterialize,
+} from "../vendor.js";
+import type { MaterializeResult } from "../vendor.js";
 import {
   dependencySpec,
   planWithDeps,
@@ -31,6 +43,63 @@ import {
   resolveExistingRootPin,
 } from "../with-deps.js";
 import type { WithDepsPlan } from "../with-deps.js";
+
+export type { MaterializeAction, MaterializeResult } from "../vendor.js";
+
+export interface AddedPackage extends MaterializeResult {
+  /** Linked under devDependencies rather than dependencies. */
+  dev: boolean;
+}
+
+export interface AddResult {
+  /** The package named on the command line. */
+  package: AddedPackage;
+  /** Whether the package is (or, under --dry-run, would be) recorded in config. */
+  saved: boolean;
+  /**
+   * `--with-deps` only: every dependency in the resolved closure, in
+   * resolution order. Already-satisfied pins have action `reused`.
+   */
+  dependencies?: MaterializeResult[];
+}
+
+/** Report a dependency an existing vendored pin already satisfied. */
+const reusedResult = async function reusedResult(
+  cwd: string,
+  node: ResolvedNode
+): Promise<MaterializeResult> {
+  const path = moduleDestPath(cwd, node.module);
+  return {
+    action: "reused",
+    backup: null,
+    commit: node.commit,
+    git: node.gitUrl,
+    module: node.module,
+    name: node.name,
+    patches: await countSeriesPatches(cwd, node.module),
+    path: `inrepo_modules/${node.module}`,
+    previousCommit: existsSync(path) ? node.commit : null,
+    ref: node.ref,
+    repositoryDirectory: node.repositoryDirectory,
+  };
+};
+
+/** Dependency results in plan (resolution) order: vendored or reused. */
+const dependencyResults = async function dependencyResults(
+  cwd: string,
+  plan: WithDepsPlan,
+  vendored: Map<string, MaterializeResult>
+): Promise<MaterializeResult[]> {
+  const results: MaterializeResult[] = [];
+  for (const node of plan.graph.nodes) {
+    if (node.root) {
+      continue;
+    }
+    const done = vendored.get(node.module);
+    results.push(done ?? (await reusedResult(cwd, node)));
+  }
+  return results;
+};
 
 /** Persist a package entry to whichever config location the project uses. */
 const saveConfigEntry = async function saveConfigEntry(
@@ -40,6 +109,45 @@ const saveConfigEntry = async function saveConfigEntry(
   await (existsSync(inrepoConfigPath(cwd))
     ? upsertInrepoJson(cwd, entry)
     : upsertPackageJsonInrepo(cwd, entry));
+};
+
+const dependencyMaterializeOptions = function dependencyMaterializeOptions(
+  cwd: string,
+  node: ResolvedNode,
+  modules: Awaited<ReturnType<typeof readLockfile>>["modules"],
+  config: InrepoPackage | undefined
+): MaterializeOptions {
+  return {
+    force:
+      config == null &&
+      !modules[node.module] &&
+      existsSync(moduleDestPath(cwd, node.module)),
+    lockEntry: modules[node.module],
+    mode: "add",
+    resolvedCommit: node.commit,
+  };
+};
+
+/** `--dry-run` preview of {@link vendorPlannedDependencies}; writes nothing. */
+const planPlannedDependencies = async function planPlannedDependencies(
+  cwd: string,
+  plan: WithDepsPlan,
+  ctx: { dev: boolean; configByName: Map<string, InrepoPackage> }
+): Promise<Map<string, MaterializeResult>> {
+  const { modules } = await readLockfile(cwd);
+  const results = new Map<string, MaterializeResult>();
+  for (const node of plan.pending) {
+    const config = ctx.configByName.get(node.module);
+    results.set(
+      node.module,
+      await planMaterialize(
+        cwd,
+        dependencySpec(node, ctx.dev, config),
+        dependencyMaterializeOptions(cwd, node, modules, config)
+      )
+    );
+  }
+  return results;
 };
 
 /**
@@ -58,7 +166,7 @@ const vendorPlannedDependencies = async function vendorPlannedDependencies(
     globalKeep: string[];
     configByName: Map<string, InrepoPackage>;
   }
-): Promise<void> {
+): Promise<Map<string, MaterializeResult>> {
   const graph = buildLockGraph(plan.graph);
   await upsertLockGraph(cwd, graph);
 
@@ -82,32 +190,44 @@ const vendorPlannedDependencies = async function vendorPlannedDependencies(
   }
 
   const { modules } = await readLockfile(cwd);
+  const results = new Map<string, MaterializeResult>();
   for (const node of orderByDependencies(plan.pending, graph)) {
     const config = ctx.configByName.get(node.module);
     const spec = dependencySpec(node, ctx.dev, config);
-    await materializePackage(cwd, spec, ctx.globalExclude, ctx.globalKeep, {
-      force:
-        config == null &&
-        !modules[node.module] &&
-        existsSync(moduleDestPath(cwd, node.module)),
-      lockEntry: modules[node.module],
-      mode: "add",
-      resolvedCommit: node.commit,
-    });
+    results.set(
+      node.module,
+      await materializePackage(
+        cwd,
+        spec,
+        ctx.globalExclude,
+        ctx.globalKeep,
+        dependencyMaterializeOptions(cwd, node, modules, config)
+      )
+    );
   }
+  return results;
 };
 
+/**
+ * Vendor (or refresh) one package and record it in config.
+ *
+ * Under the global `--dry-run`, resolves the same pin and dependency plan but
+ * writes no config, lockfile, package.json, or `inrepo_modules/` checkout.
+ * Only `--with-deps` touches the `.inrepo/` cache, because resolving the
+ * closure needs the root's manifest at the pinned commit.
+ */
 export const performAdd = async function performAdd(
   cwd: string,
   args: AddArgs,
   opts: DispatchOpts = {}
-): Promise<void> {
+): Promise<AddResult> {
+  const dryRun = isDryRun();
   if (!opts.suppressBanners) {
     printBanner();
   }
   // First-time setup is only required when we're going to persist the entry.
-  // `--no-save` is an explicit one-off vendor operation.
-  if (args.save) {
+  // `--no-save` is an explicit one-off vendor operation; a dry run writes nothing.
+  if (args.save && !dryRun) {
     await ensureInrepoInitialized(cwd);
   }
 
@@ -141,7 +261,9 @@ export const performAdd = async function performAdd(
   }
 
   if (!opts.suppressBanners) {
-    intro(`inrepo add — ${args.name}${args.dev ? " (dev)" : ""}`);
+    intro(
+      `inrepo add${dryRun ? " (dry run)" : ""} — ${args.name}${args.dev ? " (dev)" : ""}`
+    );
   }
 
   const lockEntry = modules[args.name];
@@ -186,6 +308,7 @@ export const performAdd = async function performAdd(
     });
   }
 
+  const plannedRoot = plan?.graph.nodes.find((node) => node.root);
   const rootEntry: InrepoJsonEntry | null = args.save
     ? { dev: args.dev, name: args.name }
     : null;
@@ -196,7 +319,6 @@ export const performAdd = async function performAdd(
     if (args.ref !== undefined && args.ref !== "") {
       rootEntry.ref = args.ref;
     }
-    const plannedRoot = plan?.graph.nodes.find((node) => node.root);
     const repositoryDirectory =
       args.repositoryDirectory ??
       plannedRoot?.repositoryDirectory ??
@@ -206,51 +328,57 @@ export const performAdd = async function performAdd(
     }
   }
 
-  const vendorRoot = (): Promise<void> =>
-    materializePackage(
-      cwd,
-      {
-        commit: pin.commit,
-        dev: args.dev,
-        exclude: pkgExclude,
-        git: pin.git,
-        keep: pkgKeep,
-        name: args.name,
-        ref: pin.ref,
-        repositoryDirectory:
-          args.repositoryDirectory ??
-          plan?.graph.nodes.find((node) => node.root)?.repositoryDirectory ??
-          pkgRepositoryDirectory,
-      },
-      globalExclude,
-      globalKeep,
-      {
-        force:
-          !hasConfigEntry &&
-          !modules[args.name] &&
-          existsSync(moduleDestPath(cwd, args.name)),
-        lockEntry: modules[args.name],
-        mode: "add",
-        resolvedCommit: plan?.graph.nodes.find((node) => node.root)?.commit,
-      }
-    );
+  const rootSpec: PackageSpec = {
+    commit: pin.commit,
+    dev: args.dev,
+    exclude: pkgExclude,
+    git: pin.git,
+    keep: pkgKeep,
+    name: args.name,
+    ref: pin.ref,
+    repositoryDirectory:
+      args.repositoryDirectory ??
+      plannedRoot?.repositoryDirectory ??
+      pkgRepositoryDirectory,
+  };
+  const rootOpts: MaterializeOptions = {
+    force:
+      !hasConfigEntry &&
+      !modules[args.name] &&
+      existsSync(moduleDestPath(cwd, args.name)),
+    lockEntry: modules[args.name],
+    mode: "add",
+    resolvedCommit: plannedRoot?.commit,
+  };
+  const vendorRoot = (): Promise<MaterializeResult> =>
+    materializePackage(cwd, rootSpec, globalExclude, globalKeep, rootOpts);
 
-  if (plan) {
+  let root: MaterializeResult;
+  let vendored = new Map<string, MaterializeResult>();
+  if (dryRun) {
+    if (plan) {
+      vendored = await planPlannedDependencies(cwd, plan, {
+        configByName,
+        dev: args.dev,
+      });
+    }
+    root = await planMaterialize(cwd, rootSpec, rootOpts);
+  } else if (plan) {
     // The root is vendored last so that import rewiring finds every dependency
     // checkout already in place. Its config entry is written first so the
     // recorded `packages` list still starts with the package the user named.
     if (rootEntry) {
       await saveConfigEntry(cwd, rootEntry);
     }
-    await vendorPlannedDependencies(cwd, plan, {
+    vendored = await vendorPlannedDependencies(cwd, plan, {
       configByName,
       dev: args.dev,
       globalExclude,
       globalKeep,
     });
-    await vendorRoot();
+    root = await vendorRoot();
   } else {
-    await vendorRoot();
+    root = await vendorRoot();
     if (rootEntry) {
       const { modules: updatedModules } = await readLockfile(cwd);
       const updatedLockEntry = updatedModules[args.name];
@@ -261,28 +389,43 @@ export const performAdd = async function performAdd(
     }
   }
 
+  const result: AddResult = {
+    package: { ...root, dev: args.dev },
+    saved: args.save,
+  };
+  if (plan) {
+    result.dependencies = await dependencyResults(cwd, plan, vendored);
+  }
+
   if (!opts.suppressBanners) {
-    if (plan) {
+    if (dryRun) {
+      const count = plan ? plan.pending.length + 1 : 1;
+      outro(
+        `Dry run — no files written. Would vendor ${count} package(s) for "${args.name}" @ ${root.commit.slice(0, 7)}` +
+          `${args.save ? " and record it in inrepo config" : ""}.`
+      );
+    } else if (plan) {
       const reused = plan.reused.length;
       outro(
         `Vendored ${plan.pending.length + 1} package(s) for "${args.name}"` +
           `${reused > 0 ? `; ${reused} already vendored` : ""}.`
       );
-      return;
+    } else {
+      outro(
+        args.save
+          ? `Recorded "${args.name}" in inrepo config.`
+          : `Vendored "${args.name}" (not saved to config).`
+      );
     }
-    outro(
-      args.save
-        ? `Recorded "${args.name}" in inrepo config.`
-        : `Vendored "${args.name}" (not saved to config).`
-    );
   }
+  return result;
 };
 
-export const cmdAdd = async function cmdAdd(
+export const cmdAdd = function cmdAdd(
   cwd: string,
   argv: string[]
-): Promise<void> {
-  await performAdd(cwd, parseAddArgs(argv));
+): Promise<AddResult> {
+  return performAdd(cwd, parseAddArgs(argv));
 };
 
 /**

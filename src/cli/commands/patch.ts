@@ -1,7 +1,9 @@
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import nodePath from "node:path";
 
+import { diffTreesWithFiles } from "../../diff/diff-trees.js";
 import { assembleModuleTree } from "../../overlay/assemble-module.js";
 import { buildOverlay } from "../../overlay/build-overlay.js";
 import { ensurePristine } from "../../overlay/cache.js";
@@ -21,9 +23,17 @@ import {
   updateInProgressError,
 } from "../../series/update-state.js";
 import { parsePatchArgs } from "../args.js";
-import { selectPackages } from "../package-selection.js";
+import { InrepoError } from "../errors.js";
+import { projectRelativePath, toFileChanges } from "../json-results.js";
+import { isDryRun } from "../output.js";
+import { requireLockEntry, selectPackages } from "../package-selection.js";
 import { printBanner } from "../rendering.js";
-import type { DispatchOpts } from "../types.js";
+import type {
+  DispatchOpts,
+  FileChange,
+  PatchPackageResult,
+  PatchResult,
+} from "../types.js";
 import { intro, outro, spinner, warn } from "../ui.js";
 import {
   EMPTY_TREE_HASH,
@@ -34,18 +44,77 @@ import {
   overlayConflictMessage,
 } from "../vendor.js";
 
-const missingMessageError = function missingMessageError(name: string): Error {
-  return new Error(
-    `Capturing a patch for "${name}" needs a reason: inrepo patch ${name} -m "why this change"`
+/**
+ * A series patch records why it exists, so capture never invents a message.
+ * This is a usage error in every session: interactive runs see the same
+ * pointer an agent gets as `nextCommand`.
+ */
+const missingMessageError = function missingMessageError(
+  name: string
+): InrepoError {
+  return new InrepoError(
+    "USAGE",
+    `Capturing a patch for "${name}" needs a reason: inrepo patch ${name} -m "why this change"`,
+    {
+      details: { package: name },
+      hint: "Pass -m with a one-line reason; it becomes the patch subject.",
+      nextCommand: `inrepo patch ${name} -m "<reason>"`,
+    }
   );
+};
+
+/**
+ * `--dry-run` may preview a capture before a reason is chosen. The patch file
+ * name derives from the message, so it is reported as unknown in that case.
+ */
+const DRY_RUN_SUBJECT = "inrepo dry run preview";
+
+const needsSync = function needsSync(message: string): InrepoError {
+  return new InrepoError("ERROR", message, { nextCommand: "inrepo sync" });
+};
+
+/** Every path the overlay for `moduleRoot` holds relative to upstream. */
+const overlayFileChanges = async function overlayFileChanges(
+  pristineRoot: string,
+  moduleRoot: string
+): Promise<FileChange[]> {
+  const { files } = await diffTreesWithFiles({
+    baseRoot: pristineRoot,
+    stat: true,
+    targetRoot: moduleRoot,
+  });
+  return toFileChanges(files);
+};
+
+/**
+ * Hash of the overlay a capture would write, without touching the real one.
+ * Only `--dry-run` asks, so the scratch tree lives outside the project.
+ */
+const previewOverlayHash = async function previewOverlayHash(opts: {
+  moduleRoot: string;
+  pristineRoot: string;
+}): Promise<string> {
+  const work = await mkdtemp(nodePath.join(tmpdir(), "inrepo-patch-preview-"));
+  try {
+    const overlayRoot = nodePath.join(work, "overlay");
+    await buildOverlay({
+      moduleRoot: opts.moduleRoot,
+      overlayRoot,
+      pristineRoot: opts.pristineRoot,
+    });
+    return await hashTree(overlayRoot);
+  } finally {
+    await rm(work, { force: true, recursive: true });
+  }
 };
 
 export const cmdPatch = async function cmdPatch(
   cwd: string,
   argv: string[],
   opts: DispatchOpts = {}
-): Promise<void> {
+): Promise<PatchResult> {
   const args = parsePatchArgs(argv);
+  const dryRun = isDryRun();
   if (!opts.suppressBanners) {
     printBanner();
   }
@@ -61,14 +130,14 @@ export const cmdPatch = async function cmdPatch(
     intro(`inrepo patch — ${packageList.length} package(s)`);
   }
 
+  const results: PatchPackageResult[] = [];
   for (const pkg of packageList) {
     const module = pkg.module ?? pkg.name;
-    const lockEntry = modules[module];
-    if (!lockEntry) {
-      throw new Error(
-        `Cannot patch "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`
-      );
-    }
+    const lockEntry = requireLockEntry(
+      modules,
+      module,
+      `Cannot patch "${pkg.name}" without a lockfile entry. Run "inrepo add ${pkg.name}" or "inrepo sync" first.`
+    );
     if (isUpdateInProgress(cwd, pkg.name)) {
       throw updateInProgressError(cwd, pkg.name, "patching");
     }
@@ -80,7 +149,7 @@ export const cmdPatch = async function cmdPatch(
 
     try {
       if (!existsSync(dest)) {
-        throw new Error(`Missing directory for "${module}": ${dest}`);
+        throw needsSync(`Missing directory for "${module}": ${dest}`);
       }
 
       // A package is on the patch series once it has one, and new packages
@@ -90,7 +159,7 @@ export const cmdPatch = async function cmdPatch(
       const legacyEntries = await listLegacyOverlayEntries(overlayRoot);
       const useSeries = seriesPatches.length > 0 || legacyEntries.length === 0;
 
-      if (useSeries && !args.message) {
+      if (useSeries && !args.message && !dryRun) {
         throw missingMessageError(module);
       }
       if (!useSeries && args.message) {
@@ -124,15 +193,18 @@ export const cmdPatch = async function cmdPatch(
         const overlayChanged = overlayHashBefore !== state.overlayHash;
         const moduleChanged = moduleHash !== state.moduleHash;
         if (overlayChanged && moduleChanged) {
-          throw new Error(overlayConflictMessage(module));
+          throw needsSync(overlayConflictMessage(module));
         }
         if (overlayChanged) {
-          throw new Error(
+          throw needsSync(
             `overlay for "${module}" changed since the last sync; run "inrepo sync" before patching`
           );
         }
       } else if (overlayHashBefore !== EMPTY_TREE_HASH) {
-        const stage = await makeSiblingStage(dest, ".inrepo-patch-check-");
+        // `--dry-run` must not touch inrepo_modules, not even transiently.
+        const stage = dryRun
+          ? await mkdtemp(nodePath.join(tmpdir(), "inrepo-patch-check-"))
+          : await makeSiblingStage(dest, ".inrepo-patch-check-");
         try {
           await assembleModuleTree({
             commit: pristine.commit,
@@ -146,7 +218,7 @@ export const cmdPatch = async function cmdPatch(
           });
           const drift = await compareTrees(stage, dest);
           if (hasTreeDrift(drift)) {
-            throw new Error(
+            throw needsSync(
               `overlay for "${module}" exists but this checkout has no sync state; run "inrepo sync" before patching`
             );
           }
@@ -159,14 +231,21 @@ export const cmdPatch = async function cmdPatch(
         s.message("Appending a patch to the series");
         const result = await captureSeriesPatch({
           cwd,
+          dryRun,
           moduleRoot: dest,
           name: module,
           pristineRoot: pristine.dir,
-          subject: args.message ?? "",
+          subject: args.message ?? DRY_RUN_SUBJECT,
         });
 
         if (!result.captured) {
           s.stop(`Nothing to capture for "${module}"`);
+          results.push({
+            captured: false,
+            files: [],
+            format: "series",
+            module,
+          });
           continue;
         }
         if (result.droppedEmptyDirectories.length > 0) {
@@ -175,13 +254,48 @@ export const cmdPatch = async function cmdPatch(
           );
         }
 
+        const patchFile = args.message
+          ? projectRelativePath(cwd, result.patchPath)
+          : null;
+        results.push({
+          captured: true,
+          files: toFileChanges(result.files),
+          format: "series",
+          module,
+          patch: {
+            file: patchFile,
+            number: result.number,
+            subject: args.message ?? null,
+          },
+        });
+        if (dryRun) {
+          s.stop(
+            `Would patch "${module}" → ${patchFile ?? `patch ${String(result.number).padStart(4, "0")} (pass -m to name it)`}`
+          );
+          continue;
+        }
+
         await writeModuleState(cwd, module, {
           moduleHash,
           overlayHash: await hashTree(overlayRoot),
         });
-        s.stop(
-          `Patched "${module}" → ${nodePath.relative(cwd, result.patchPath)}`
-        );
+        s.stop(`Patched "${module}" → ${patchFile ?? result.patchPath}`);
+        continue;
+      }
+
+      const files = await overlayFileChanges(pristine.dir, dest);
+      if (dryRun) {
+        const previewHash = await previewOverlayHash({
+          moduleRoot: dest,
+          pristineRoot: pristine.dir,
+        });
+        results.push({
+          captured: previewHash !== overlayHashBefore,
+          files,
+          format: "overlay",
+          module,
+        });
+        s.stop(`Would patch "${module}" → ${overlayRoot}`);
         continue;
       }
 
@@ -196,6 +310,12 @@ export const cmdPatch = async function cmdPatch(
         moduleHash,
         overlayHash: overlayHashAfter,
       });
+      results.push({
+        captured: overlayHashAfter !== overlayHashBefore,
+        files,
+        format: "overlay",
+        module,
+      });
       s.stop(`Patched "${module}" → ${overlayRoot}`);
     } catch (error) {
       s.error(`Failed to patch "${module}"`);
@@ -204,6 +324,11 @@ export const cmdPatch = async function cmdPatch(
   }
 
   if (!opts.suppressBanners) {
-    outro(`Done. ${packageList.length} package(s) patched.`);
+    outro(
+      dryRun
+        ? `Dry run: nothing written. ${packageList.length} package(s) checked.`
+        : `Done. ${packageList.length} package(s) patched.`
+    );
   }
+  return { packages: results };
 };

@@ -94,7 +94,11 @@ describe("verifyLock", () => {
       await seedGeneratedModule(cwd, fx, {
         overlayIndex: "export const v = 10;\n",
       });
-      expect(await verifyLock(cwd)).toEqual({ ok: true });
+      expect(await verifyLock(cwd)).toEqual({
+        errors: [],
+        issues: [],
+        ok: true,
+      });
     } finally {
       await fx.cleanup();
       await cleanupTmpDir(cwd);
@@ -118,6 +122,10 @@ describe("verifyLock", () => {
       expect(r.ok).toBe(false);
       if (!r.ok) {
         expect(r.errors[0]).toMatch(/Missing directory for "upstream"/u);
+        expect(r.issues[0]).toMatchObject({
+          kind: "missing-directory",
+          module: "upstream",
+        });
       }
     } finally {
       await fx.cleanup();
@@ -216,7 +224,11 @@ describe("verifyLock", () => {
           updatedAt: "2026-01-01T00:00:00.000Z",
         },
       });
-      expect(await verifyLock(cwd)).toEqual({ ok: true });
+      expect(await verifyLock(cwd)).toEqual({
+        errors: [],
+        issues: [],
+        ok: true,
+      });
     } finally {
       await fx.cleanup();
       await cleanupTmpDir(cwd);

@@ -3,6 +3,7 @@ import type { CliError } from "hexbus";
 
 import { isString } from "../json/unknown.js";
 import { normalizeRepositoryDirectory } from "../registry/normalize-repository-directory.js";
+import { InrepoError, isInrepoError } from "./errors.js";
 import type {
   AddArgs,
   DiffArgs,
@@ -11,6 +12,19 @@ import type {
   SyncArgs,
   UpdateArgs,
 } from "./types.js";
+
+/** Every argument problem is a usage error: exit 2, code `USAGE`. */
+const usageError = function usageError(message: string): InrepoError {
+  return new InrepoError("USAGE", message);
+};
+
+/** Reclassify a validation failure raised while parsing as a usage error. */
+const asUsageError = function asUsageError(error: Error): Error {
+  if (isInrepoError(error)) {
+    return error;
+  }
+  return new InrepoError("USAGE", error.message, { cause: error });
+};
 
 const parserDetails = function parserDetails(error: CliError): string {
   const details = error.context?.details;
@@ -23,21 +37,21 @@ const rethrowCommandArgError = function rethrowCommandArgError(
 ): never {
   const details = parserDetails(error);
   if (error.code === "UNKNOWN_OPTION") {
-    throw new Error(`Unknown option: ${details}`);
+    throw usageError(`Unknown option: ${details}`);
   }
   if (error.code === "UNEXPECTED_POSITIONAL") {
-    throw new Error(
+    throw usageError(
       messages.UNEXPECTED_POSITIONAL ?? `Unexpected arguments: ${details}`
     );
   }
   if (error.code === "POSITIONAL_REQUIRED" && messages.POSITIONAL_REQUIRED) {
-    throw new Error(messages.POSITIONAL_REQUIRED);
+    throw usageError(messages.POSITIONAL_REQUIRED);
   }
   if (error.code === "FLAG_VALUE_REQUIRED" && messages[details]) {
-    throw new Error(messages[details]);
+    throw usageError(messages[details]);
   }
 
-  throw error;
+  throw new InrepoError("USAGE", error.message, { cause: error });
 };
 
 export const parseAddArgs = function parseAddArgs(argv: string[]): AddArgs {
@@ -68,10 +82,10 @@ export const parseAddArgs = function parseAddArgs(argv: string[]): AddArgs {
     });
 
     if (parsed.flags.git !== undefined && parsed.flags.git.trim() === "") {
-      throw new Error("--git requires a URL");
+      throw usageError("--git requires a URL");
     }
     if (parsed.flags.ref !== undefined && parsed.flags.ref.trim() === "") {
-      throw new Error("--ref requires a value");
+      throw usageError("--ref requires a value");
     }
     const repositoryDirectory =
       parsed.flags.repositoryDirectory === undefined
@@ -84,12 +98,14 @@ export const parseAddArgs = function parseAddArgs(argv: string[]): AddArgs {
       parsed.flags.repositoryDirectory !== undefined &&
       repositoryDirectory == null
     ) {
-      throw new Error("--repository-directory requires a package subdirectory");
+      throw usageError(
+        "--repository-directory requires a package subdirectory"
+      );
     }
     // The dependency graph is only replayable from committed files, so there is
     // nothing meaningful `--with-deps --no-save` could leave behind.
     if (parsed.flags.withDeps && !parsed.flags.save) {
-      throw new Error("--with-deps cannot be combined with --no-save");
+      throw usageError("--with-deps cannot be combined with --no-save");
     }
 
     const args: AddArgs = {
@@ -106,7 +122,7 @@ export const parseAddArgs = function parseAddArgs(argv: string[]): AddArgs {
     return args;
   } catch (error) {
     if (!isCliError(error)) {
-      throw error;
+      throw error instanceof Error ? asUsageError(error) : error;
     }
     return rethrowCommandArgError(error, {
       "--git": "--git requires a URL",
@@ -135,7 +151,7 @@ export const parseSyncArgs = function parseSyncArgs(
     return { force: parsed.flags.force };
   } catch (error) {
     if (!isCliError(error)) {
-      throw error;
+      throw error instanceof Error ? asUsageError(error) : error;
     }
     return rethrowCommandArgError(error, {
       UNEXPECTED_POSITIONAL: "sync does not take arguments",
@@ -160,7 +176,7 @@ export const parsePatchArgs = function parsePatchArgs(
 
     const message = parsed.flags.message?.trim();
     if (parsed.flags.message !== undefined && !message) {
-      throw new Error("-m requires a message");
+      throw usageError("-m requires a message");
     }
 
     const args: PatchArgs = {};
@@ -173,7 +189,7 @@ export const parsePatchArgs = function parsePatchArgs(
     return args;
   } catch (error) {
     if (!isCliError(error)) {
-      throw error;
+      throw error instanceof Error ? asUsageError(error) : error;
     }
     return rethrowCommandArgError(error, {
       "--message": "-m requires a message",
@@ -200,7 +216,7 @@ export const parseDiffArgs = function parseDiffArgs(argv: string[]): DiffArgs {
     return args;
   } catch (error) {
     if (!isCliError(error)) {
-      throw error;
+      throw error instanceof Error ? asUsageError(error) : error;
     }
     return rethrowCommandArgError(error, {
       UNEXPECTED_POSITIONAL: "diff takes a single package <name>",
@@ -227,13 +243,13 @@ export const parseUpdateArgs = function parseUpdateArgs(
 
     const ref = parsed.flags.ref?.trim();
     if (parsed.flags.ref !== undefined && !ref) {
-      throw new Error("--ref requires a value");
+      throw usageError("--ref requires a value");
     }
     if (parsed.flags.continue && parsed.flags.abort) {
-      throw new Error("update takes either --continue or --abort, not both");
+      throw usageError("update takes either --continue or --abort, not both");
     }
     if (ref && (parsed.flags.continue || parsed.flags.abort)) {
-      throw new Error("--ref cannot be combined with --continue or --abort");
+      throw usageError("--ref cannot be combined with --continue or --abort");
     }
 
     const args: UpdateArgs = {
@@ -247,7 +263,7 @@ export const parseUpdateArgs = function parseUpdateArgs(
     return args;
   } catch (error) {
     if (!isCliError(error)) {
-      throw error;
+      throw error instanceof Error ? asUsageError(error) : error;
     }
     return rethrowCommandArgError(error, {
       "--ref": "--ref requires a value",
@@ -268,7 +284,7 @@ export const parseMigrateArgs = function parseMigrateArgs(
     return { name: parsed.positionals.name };
   } catch (error) {
     if (!isCliError(error)) {
-      throw error;
+      throw error instanceof Error ? asUsageError(error) : error;
     }
     return rethrowCommandArgError(error, {
       POSITIONAL_REQUIRED: "migrate requires a package <name>",

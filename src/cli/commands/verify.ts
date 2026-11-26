@@ -1,17 +1,27 @@
+import type { VerifyResult } from "../../types/verify-result.js";
 import { verifyLock } from "../../verify/verify-lock.js";
 import { printBanner } from "../rendering.js";
 import type { DispatchOpts } from "../types.js";
 import { cancel, error, intro, outro, spinner } from "../ui.js";
 
+export type {
+  VerifyIssue,
+  VerifyIssueKind,
+  VerifyResult,
+  VerifyTreeDrift,
+} from "../../types/verify-result.js";
+
 /**
- * Returns `true` when every lockfile entry matches its checkout, `false`
- * otherwise. Callers decide whether a failed verification should set process
- * exit status or simply drive an interactive branch.
+ * Returns `{ ok: true, issues: [] }` when every lockfile entry matches its
+ * checkout, `{ ok: false, issues }` otherwise. Each issue names its module and
+ * a stable `kind`; `errors` repeats the messages for line-oriented output.
+ * Callers decide whether a failed verification should set process exit status
+ * or simply drive an interactive branch.
  */
 export const cmdVerify = async function cmdVerify(
   cwd: string,
   opts: DispatchOpts = {}
-): Promise<boolean> {
+): Promise<VerifyResult> {
   if (!opts.suppressBanners) {
     printBanner();
     intro("inrepo verify");
@@ -19,7 +29,7 @@ export const cmdVerify = async function cmdVerify(
 
   const s = spinner();
   s.start("Checking lockfile entries");
-  let result;
+  let result: VerifyResult;
   try {
     result = await verifyLock(cwd);
   } catch (verifyError) {
@@ -35,7 +45,7 @@ export const cmdVerify = async function cmdVerify(
     if (!opts.suppressBanners) {
       cancel("inrepo verify: lockfile and checkouts disagree.");
     }
-    return false;
+    return result;
   }
 
   // Final stop message preserves the e2e contract.
@@ -43,5 +53,5 @@ export const cmdVerify = async function cmdVerify(
   if (!opts.suppressBanners) {
     outro("All vendored modules match the lockfile.");
   }
-  return true;
+  return result;
 };
