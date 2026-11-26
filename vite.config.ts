@@ -5,6 +5,7 @@ import { defineConfig } from "vite-plus";
 
 const sharedIgnorePatterns = [
   ".agents/**",
+  ".claude/skills/**",
   ".inrepo/**",
   "examples/**/vendor/**",
   "inrepo_modules/**",
