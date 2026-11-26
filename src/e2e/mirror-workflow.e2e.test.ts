@@ -503,7 +503,8 @@ describe("CLI: mirror (e2e)", () => {
         ...ENV,
         GIT_CONFIG_COUNT: "1",
         GIT_CONFIG_KEY_0: `url.${elsewhere}.pushInsteadOf`,
-        GIT_CONFIG_VALUE_0: target,
+        // The configured "../public.git", as git receives it.
+        GIT_CONFIG_VALUE_0: `${host}${nodePath.sep}../public.git`,
       },
     });
     expect(r.exitCode).not.toBe(0);

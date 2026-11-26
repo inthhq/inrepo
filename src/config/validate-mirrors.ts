@@ -1,9 +1,6 @@
-import nodePath from "node:path";
-import { fileURLToPath } from "node:url";
-
 import { isJsonObject, isString } from "../json/unknown.js";
 import type { JsonValue } from "../json/unknown.js";
-import { resolveTargetUrl } from "../mirror/resolve-target-url.js";
+import { targetIdentity } from "../mirror/resolve-target-url.js";
 import { selectMirrorPaths } from "../mirror/select-mirror-paths.js";
 import { normalizeRepositoryDirectory } from "../registry/normalize-repository-directory.js";
 import type { InrepoMirror } from "../types/inrepo-mirror.js";
@@ -50,22 +47,6 @@ const assertExactPaths = function assertExactPaths(
       );
     }
   }
-};
-
-/**
- * Compare targets the way publishing resolves them: `./a/`, `a`, and the
- * absolute path to `a` are the same repository.
- */
-const targetKey = function targetKey(git: string, configDir: string): string {
-  const trimmed = git.replace(/\/+$/u, "");
-  if (trimmed.startsWith("file://")) {
-    try {
-      return nodePath.resolve(fileURLToPath(trimmed));
-    } catch {
-      return trimmed;
-    }
-  }
-  return resolveTargetUrl(configDir, trimmed);
 };
 
 const validateMirror = function validateMirror(
@@ -148,7 +129,7 @@ export const validateMirrors = function validateMirrors(
     }
     seen.add(mirror.name);
     // Two mirrors on one branch would each replace the other's files.
-    const target = `${targetKey(mirror.git, configDir)}\n${mirror.branch}`;
+    const target = `${targetIdentity(configDir, mirror.git)}\n${mirror.branch}`;
     const other = targets.get(target);
     if (other != null) {
       throw new Error(
