@@ -206,8 +206,8 @@ export const performAdd = async function performAdd(
     }
   }
 
-  const vendorRoot = (): Promise<void> =>
-    materializePackage(
+  const vendorRoot = async (): Promise<void> => {
+    await materializePackage(
       cwd,
       {
         commit: pin.commit,
@@ -234,6 +234,7 @@ export const performAdd = async function performAdd(
         resolvedCommit: plan?.graph.nodes.find((node) => node.root)?.commit,
       }
     );
+  };
 
   if (plan) {
     // The root is vendored last so that import rewiring finds every dependency
@@ -355,11 +356,11 @@ export const promptAddArgs = async function promptAddArgs(
   const trimmedRef = isString(ref) ? ref.trim() : "";
   // SAFETY: value was parsed or constructed by the surrounding function before this assertion.
   return {
-    dev: dev === true,
+    dev,
     git: trimmedGit === "" ? undefined : trimmedGit,
-    name: (name as string).trim(),
+    name: name.trim(),
     ref: trimmedRef === "" ? undefined : trimmedRef,
     save: true,
-    withDeps: withDeps === true,
+    withDeps,
   };
 };

@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { makeLocalGitFixture } from "../test-utils/local-git-fixture.js";
 import type { LocalGitFixture } from "../test-utils/local-git-fixture.js";

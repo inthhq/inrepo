@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { defaultInrepoJsonSchemaRef } from "../inrepo-json/default-inrepo-json-schema-ref.js";
 import { restoreEnv, snapshotEnv } from "../test-utils/test-env.js";
@@ -57,7 +58,11 @@ describe("ensureInrepoInitialized (non-interactive)", () => {
     process.env.INREPO_CONFIG = "inrepo.json";
     await ensureInrepoInitialized(cwd);
     const raw = await readFile(nodePath.join(cwd, "inrepo.json"), "utf-8");
-    const parsed = JSON.parse(raw);
+    // SAFETY: inrepo.json was just written as JSON by ensureInrepoInitialized.
+    const parsed = JSON.parse(raw) as {
+      $schema?: string;
+      packages?: unknown[];
+    };
     expect(parsed).toEqual({
       $schema: defaultInrepoJsonSchemaRef,
       packages: [],
@@ -82,9 +87,10 @@ describe("ensureInrepoInitialized (non-interactive)", () => {
     );
     process.env.INREPO_CONFIG = "package.json";
     await ensureInrepoInitialized(cwd);
+    // SAFETY: package.json was just written as JSON by ensureInrepoInitialized.
     const pkg = JSON.parse(
       await readFile(nodePath.join(cwd, "package.json"), "utf-8")
-    );
+    ) as { inrepo?: { packages: unknown[] }; name?: string };
     expect(pkg.inrepo).toEqual({ packages: [] });
     expect(pkg.name).toBe("host");
     expect(await readFile(nodePath.join(cwd, ".gitignore"), "utf-8")).toBe(

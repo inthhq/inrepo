@@ -1,9 +1,44 @@
+import { once } from "node:events";
 import { mkdir, rm, writeFile } from "node:fs/promises";
+import { createServer } from "node:http";
+import type { Server } from "node:http";
 import nodePath from "node:path";
 
+import { isString } from "../json/unknown.js";
 import type { JsonObject } from "../json/unknown.js";
 import { runGit } from "./run-git.js";
 import { makeTmpDir } from "./tmp-dir.js";
+
+const startPackumentServer = async function startPackumentServer(
+  packuments: Map<string, JsonObject>
+): Promise<{ port: number; server: Server }> {
+  const server = createServer((req, res) => {
+    const { pathname } = new URL(req.url ?? "/", "http://127.0.0.1");
+    const name = decodeURIComponent(pathname.slice(1));
+    const packument = packuments.get(name);
+    res.setHeader("content-type", "application/json");
+    if (!packument) {
+      res.statusCode = 404;
+      res.end(JSON.stringify({ error: "Not found" }));
+      return;
+    }
+    res.statusCode = 200;
+    res.end(JSON.stringify(packument));
+  });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (address == null || isString(address)) {
+    throw new Error("Expected TCP address for fixture registry server");
+  }
+  return { port: address.port, server };
+};
+
+const stopServer = async function stopServer(server: Server): Promise<void> {
+  server.closeAllConnections();
+  server.close();
+  await once(server, "close");
+};
 
 export interface FixtureVersion {
   /** Runtime dependency specifiers published for this version. */
@@ -186,22 +221,11 @@ export const makePackageGraphFixture = async function makePackageGraphFixture(
     packuments.set(spec.name, packumentFor(spec, bare));
   }
 
-  const server = Bun.serve({
-    fetch(request) {
-      const name = decodeURIComponent(new URL(request.url).pathname.slice(1));
-      const packument = packuments.get(name);
-      if (!packument) {
-        return Response.json({ error: "Not found" }, { status: 404 });
-      }
-      return Response.json(packument);
-    },
-    hostname: "127.0.0.1",
-    port: 0,
-  });
+  const { port, server } = await startPackumentServer(packuments);
 
   return {
     cleanup: async () => {
-      await server.stop(true);
+      await stopServer(server);
       await rm(root, { force: true, recursive: true });
     },
     commitUpstream: async (name, files, message) => {
@@ -217,7 +241,7 @@ export const makePackageGraphFixture = async function makePackageGraphFixture(
       await runGit(["add", "--all", "."], work);
       await runGit(["commit", "-m", message], work);
       await runGit(["push", "origin", "HEAD"], work);
-      return runGit(["rev-parse", "HEAD"], work);
+      return await runGit(["rev-parse", "HEAD"], work);
     },
     gitUrl(name: string): string {
       const url = repos.get(name);
@@ -226,7 +250,7 @@ export const makePackageGraphFixture = async function makePackageGraphFixture(
       }
       return url;
     },
-    registryUrl: `http://127.0.0.1:${server.port}`,
+    registryUrl: `http://127.0.0.1:${port}`,
   };
 };
 
@@ -281,7 +305,7 @@ export const makeMonorepoPackageGraphFixture =
 
     await runGit(["add", "--all", "."], work);
     await runGit(["commit", "-m", "publish workspace packages"], work);
-    const commit = await (await runGit(["rev-parse", "HEAD"], work)).trim();
+    const commit = (await runGit(["rev-parse", "HEAD"], work)).trim();
     for (const version of new Set(specs.map((spec) => spec.version))) {
       await runGit(["tag", `v${version}`], work);
     }
@@ -322,22 +346,11 @@ export const makeMonorepoPackageGraphFixture =
       });
     }
 
-    const server = Bun.serve({
-      fetch(request) {
-        const name = decodeURIComponent(new URL(request.url).pathname.slice(1));
-        const packument = packuments.get(name);
-        if (packument) {
-          return Response.json(packument);
-        }
-        return Response.json({ error: "Not found" }, { status: 404 });
-      },
-      hostname: "127.0.0.1",
-      port: 0,
-    });
+    const { port, server } = await startPackumentServer(packuments);
 
     return {
       cleanup: async () => {
-        await server.stop(true);
+        await stopServer(server);
         await rm(root, { force: true, recursive: true });
       },
       commit,
@@ -348,6 +361,6 @@ export const makeMonorepoPackageGraphFixture =
         }
         return publicGitUrl;
       },
-      registryUrl: `http://127.0.0.1:${server.port}`,
+      registryUrl: `http://127.0.0.1:${port}`,
     };
   };

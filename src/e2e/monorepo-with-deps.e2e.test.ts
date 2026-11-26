@@ -1,3 +1,10 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { existsSync } from "node:fs";
+import { readFile, readdir, rm, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+import { text } from "node:stream/consumers";
+
 import {
   afterAll,
   afterEach,
@@ -6,10 +13,7 @@ import {
   describe,
   expect,
   test,
-} from "bun:test";
-import { existsSync } from "node:fs";
-import { readFile, readdir, rm, writeFile } from "node:fs/promises";
-import nodePath from "node:path";
+} from "vite-plus/test";
 
 import {
   bootstrapHostPackageJson,
@@ -162,15 +166,17 @@ describe("CLI: monorepo add --with-deps (e2e)", () => {
       )
     ).toBe(false);
 
-    const execution = Bun.spawn(["node", rootIndex], {
+    const execution = spawn("node", [rootIndex], {
       cwd,
-      stderr: "pipe",
-      stdout: "pipe",
+      stdio: ["ignore", "pipe", "pipe"],
     });
-    expect(await execution.exited).toBe(0);
-    expect(await new Response(execution.stdout).text()).toBe(
-      "shared-checkout\n"
-    );
+    const [stdout] = await Promise.all([
+      text(execution.stdout),
+      text(execution.stderr),
+      once(execution, "close"),
+    ]);
+    expect(execution.exitCode).toBe(0);
+    expect(stdout).toBe("shared-checkout\n");
 
     await rm(nodePath.join(cwd, "inrepo_modules"), {
       force: true,

@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { upsertLockModule } from "../lockfile/upsert-lock-module.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";

@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import type { JsonObject } from "../json/unknown.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";

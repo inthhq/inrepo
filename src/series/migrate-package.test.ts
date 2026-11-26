@@ -1,4 +1,3 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import {
   chmod,
@@ -10,6 +9,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { applyLegacyOverlayTree } from "../overlay/assemble-module.js";
 import { overlayDirPath, seriesDirPath } from "../overlay/overlay-paths.js";

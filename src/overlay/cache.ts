@@ -391,7 +391,7 @@ export const ensurePristine = async function ensurePristine(opts: {
       `Repository directory "${repositoryDirectory}" for "${opts.name}" does not exist at ${repository.commit}`
     );
   }
-  if (!(await (await lstat(repositoryRoot)).isDirectory())) {
+  if (!(await lstat(repositoryRoot)).isDirectory()) {
     throw new Error(
       `Repository directory "${repositoryDirectory}" for "${opts.name}" is not a directory at ${repository.commit}`
     );

@@ -1,4 +1,3 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import {
   mkdir,
@@ -9,6 +8,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { seriesDirPath } from "../overlay/overlay-paths.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
@@ -74,8 +75,8 @@ describe("captureSeriesPatch", () => {
     await cleanupTmpDir(cwd);
   });
 
-  const capture = function capture(subject: string) {
-    return captureSeriesPatch({
+  const capture = async function capture(subject: string) {
+    return await captureSeriesPatch({
       author: AUTHOR,
       cwd,
       moduleRoot: module,
@@ -181,7 +182,7 @@ describe("captureSeriesPatch", () => {
     }
     expect(third.number).toBe(3);
 
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-First-change.patch",
       "0002-Second-change.patch",
       "0003-Third-change.patch",
@@ -240,7 +241,7 @@ describe("captureSeriesPatch", () => {
     }
     expect(result.patchFileName).toBe("0001-patch.patch");
     expect(
-      await (await readSeries(seriesDir)).map((patch) => patch.fileName)
+      (await readSeries(seriesDir)).map((patch) => patch.fileName)
     ).toEqual(["0001-patch.patch"]);
   });
 

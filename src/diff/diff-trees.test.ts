@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { chmod, mkdir, rm, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
 import { diffTrees } from "./diff-trees.js";

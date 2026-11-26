@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { readFile, rename, symlink } from "node:fs/promises";
+import nodePath from "node:path";
+
 import {
   afterAll,
   afterEach,
@@ -6,10 +10,7 @@ import {
   describe,
   expect,
   test,
-} from "bun:test";
-import { existsSync } from "node:fs";
-import { readFile, rename, symlink } from "node:fs/promises";
-import nodePath from "node:path";
+} from "vite-plus/test";
 
 import { makeLocalGitFixture } from "../test-utils/local-git-fixture.js";
 import type { LocalGitFixture } from "../test-utils/local-git-fixture.js";

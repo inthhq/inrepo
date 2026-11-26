@@ -1,24 +1,26 @@
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  mock,
-  test,
-} from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
 
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  test,
+  vi,
+} from "vite-plus/test";
+
 import { overlayDirPath, seriesDirPath } from "../overlay/overlay-paths.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
-import { comparePatchedTrees } from "./compare-patched-trees.js";
 import { migratePackageToSeries } from "./migrate-package.js";
 
-const COMPARE_MODULE = new URL("compare-patched-trees.ts", import.meta.url)
-  .pathname;
-const realComparePatchedTrees = comparePatchedTrees;
+vi.mock("./compare-patched-trees.js", () => ({
+  comparePatchedTrees: () => ({
+    differences: ["content changed: src/index.ts"],
+    droppedEmptyDirectories: [],
+  }),
+}));
 
 const NAME = "upstream";
 
@@ -63,20 +65,7 @@ describe("migratePackageToSeries verification failure", () => {
     await cleanupTmpDir(cwd);
   });
 
-  afterAll(() => {
-    mock.module(COMPARE_MODULE, () => ({
-      comparePatchedTrees: realComparePatchedTrees,
-    }));
-  });
-
   test("leaves the legacy overlay untouched and reports the mismatch", async () => {
-    mock.module(COMPARE_MODULE, () => ({
-      comparePatchedTrees: () => ({
-        differences: ["content changed: src/index.ts"],
-        droppedEmptyDirectories: [],
-      }),
-    }));
-
     await expect(
       migratePackageToSeries({ cwd, name: NAME, pristineRoot: pristine })
     ).rejects.toThrow(

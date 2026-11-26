@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+
 import {
   afterAll,
   afterEach,
@@ -6,10 +10,7 @@ import {
   describe,
   expect,
   test,
-} from "bun:test";
-import { existsSync } from "node:fs";
-import { writeFile } from "node:fs/promises";
-import nodePath from "node:path";
+} from "vite-plus/test";
 
 import {
   bootstrapHostPackageJson,

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "vite-plus/test";
 
 import { makeLocalGitFixture } from "../test-utils/local-git-fixture.js";
 import type { LocalGitFixture } from "../test-utils/local-git-fixture.js";

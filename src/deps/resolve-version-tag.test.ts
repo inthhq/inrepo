@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, test } from "vite-plus/test";
 
 import { parseLsRemote } from "../git/resolve-remote-commit.js";
 import { pickVersionTag, versionTagCandidates } from "./resolve-version-tag.js";

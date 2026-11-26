@@ -114,7 +114,7 @@ const normalizeCandidate = function normalizeCandidate(
 
 const isFile = async function isFile(path: string): Promise<boolean> {
   try {
-    return await (await stat(path)).isFile();
+    return (await stat(path)).isFile();
   } catch {
     return false;
   }
@@ -122,7 +122,7 @@ const isFile = async function isFile(path: string): Promise<boolean> {
 
 const isDirectory = async function isDirectory(path: string): Promise<boolean> {
   try {
-    return await (await stat(path)).isDirectory();
+    return (await stat(path)).isDirectory();
   } catch {
     return false;
   }
@@ -245,13 +245,12 @@ const replaceStars = function replaceStars(
   if (!isJsonObject(value)) {
     return value;
   }
-  // SAFETY: Object.fromEntries of string keys and JsonValue entries is a JsonObject.
-  return Object.fromEntries(
+  return Object.fromEntries<JsonValue>(
     Object.entries(value).map(([key, entry]) => [
       key,
       replaceStars(entry, replacement) ?? null,
     ])
-  ) as JsonObject;
+  );
 };
 
 const exportedSubpathValue = function exportedSubpathValue(
