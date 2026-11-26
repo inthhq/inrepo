@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+
 import {
   afterAll,
   afterEach,
@@ -6,10 +10,7 @@ import {
   describe,
   expect,
   test,
-} from "bun:test";
-import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import nodePath from "node:path";
+} from "vite-plus/test";
 
 import {
   bootstrapHostPackageJson,
@@ -192,7 +193,7 @@ describe("CLI: patch series workflow (e2e)", () => {
 
     // The capture stays a snapshot-free patch: only `series/` under the overlay.
     expect(await readdir(overlayDir)).toEqual(["series"]);
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-Import-legacy-inrepo-overlay-for-upstream.patch",
       "0002-Bump-the-exported-version.patch",
     ]);
@@ -273,7 +274,7 @@ describe("CLI: patch series workflow (e2e)", () => {
       ).exitCode
     ).toBe(0);
 
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-First-change.patch",
       "0002-Second-change.patch",
       "0003-Third-change.patch",
@@ -311,7 +312,7 @@ describe("CLI: patch series workflow (e2e)", () => {
     });
     expect(patch.exitCode).toBe(0);
     expect(patch.stdout).toMatch(/Nothing to capture for "upstream"/u);
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-Import-legacy-inrepo-overlay-for-upstream.patch",
     ]);
   });
@@ -330,7 +331,7 @@ describe("CLI: patch series workflow (e2e)", () => {
     });
     expect(patch.exitCode).toBe(1);
     expect(patch.stderr).toMatch(/needs a reason: inrepo patch upstream -m/u);
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-Import-legacy-inrepo-overlay-for-upstream.patch",
     ]);
 
@@ -361,7 +362,7 @@ describe("CLI: patch series workflow (e2e)", () => {
     );
     expect(patch.exitCode).toBe(0);
     expect(await readdir(overlayDir)).toEqual(["series"]);
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-Start-the-series.patch",
     ]);
     expect(

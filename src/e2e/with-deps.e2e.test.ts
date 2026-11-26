@@ -1,3 +1,7 @@
+import { existsSync } from "node:fs";
+import { cp, writeFile } from "node:fs/promises";
+import nodePath from "node:path";
+
 import {
   afterAll,
   afterEach,
@@ -6,10 +10,7 @@ import {
   describe,
   expect,
   test,
-} from "bun:test";
-import { existsSync } from "node:fs";
-import { cp } from "node:fs/promises";
-import nodePath from "node:path";
+} from "vite-plus/test";
 
 import { isJsonObject, isString } from "../json/unknown.js";
 import {
@@ -203,7 +204,7 @@ describe("CLI: add --with-deps (e2e)", () => {
       throw new Error("Expected alpha → gamma dependency in lock graph");
     }
     alphaDeps.range = "^9.0.0";
-    await Bun.write(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
+    await writeFile(lockPath, `${JSON.stringify(lock, null, 2)}\n`, "utf-8");
 
     const verify = await runCli(["verify"], {
       cwd,
@@ -382,7 +383,11 @@ describe("CLI: add --with-deps (e2e)", () => {
         ...existingDeps,
         extra: "^1.0.0",
       };
-      await Bun.write(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+      await writeFile(
+        manifestPath,
+        `${JSON.stringify(manifest, null, 2)}\n`,
+        "utf-8"
+      );
 
       const patch = await runCli(
         ["patch", "root-pkg", "-m", "Add extra runtime dependency"],
@@ -592,6 +597,7 @@ describe("CLI: add --with-deps failure modes (e2e)", () => {
         packages
           .filter((pkg) => pkg.name === "shared")
           .map((pkg) => pkg.module)
+          .filter((moduleName): moduleName is string => moduleName != null)
           .toSorted()
       ).toEqual(["shared@1.0.0", "shared@2.0.0"]);
 

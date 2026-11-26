@@ -229,11 +229,11 @@ const loadUpdateContext = async function loadUpdateContext(
 };
 
 /** Upstream checkout for one end of the update, filtered like every other command. */
-const pristineFor = function pristineFor(
+const pristineFor = async function pristineFor(
   ctx: UpdateContext,
   opts: { ref: string | null; commit: string | null }
 ): Promise<{ dir: string; commit: string }> {
-  return ensurePristine({
+  return await ensurePristine({
     artifact: ctx.lockEntry.artifact,
     commit: opts.commit,
     cwd: ctx.cwd,
@@ -375,8 +375,8 @@ const prepareUpdate = async function prepareUpdate(
 
   // The checkout is authoritative about which commit the ref names; the
   // `ls-remote` probe above only decides whether there is work to do.
-  const materializeNew = (): Promise<{ dir: string; commit: string }> =>
-    pristineFor(ctx, { commit: null, ref: targetRef });
+  const materializeNew = async (): Promise<{ dir: string; commit: string }> =>
+    await pristineFor(ctx, { commit: null, ref: targetRef });
 
   if (patches.length === 0 || resolved === lockEntry.commit) {
     // Nothing to rebase: this is a re-pin plus a rebuild.
@@ -402,7 +402,9 @@ const prepareUpdate = async function prepareUpdate(
   const started = await startSeriesRebase({
     author: await resolveSeriesAuthor(cwd),
     oldRoot: oldPristine.dir,
-    onPatch: (patch) => s.message(`Replaying ${patch.fileName}`),
+    onPatch: (patch) => {
+      s.message(`Replaying ${patch.fileName}`);
+    },
     repoRoot: updateRepoPath(cwd, name),
     resolveNewRoot: async () => {
       const pristine = await materializeNew();

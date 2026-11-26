@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
 import { applySeries } from "./apply-series.js";
@@ -95,7 +96,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
 
@@ -153,7 +154,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
 
@@ -186,7 +187,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
     if (result.status !== "rebased") {
@@ -224,7 +225,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
 
@@ -246,7 +247,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
 
@@ -277,7 +278,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
     expect(started.result.status).toBe("conflict");
@@ -309,7 +310,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
     expect(started.result.status).toBe("conflict");
@@ -359,7 +360,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       author: AUTHOR,
       oldRoot,
       repoRoot,
-      resolveNewRoot: () => Promise.resolve(newRoot),
+      resolveNewRoot: async () => newRoot,
       seriesDir,
     });
     expect(started.result.status).toBe("conflict");
@@ -391,7 +392,7 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
         author: AUTHOR,
         oldRoot: wrongOld,
         repoRoot,
-        resolveNewRoot: () => Promise.resolve(wrongOld),
+        resolveNewRoot: async () => wrongOld,
         seriesDir,
       })
     ).rejects.toThrow(/does not apply to the pinned commit/u);
@@ -405,8 +406,8 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
       oldRoot: shared,
       // Stand-in for the pristine cache being refreshed in place.
       repoRoot,
-      resolveNewRoot: () =>
-        writeTree(shared, { ...BASE_FILES, "c.txt": "new\n" }),
+      resolveNewRoot: async () =>
+        await writeTree(shared, { ...BASE_FILES, "c.txt": "new\n" }),
       seriesDir,
     });
 
@@ -458,15 +459,15 @@ describe("writeRebasedSeries", () => {
       rebasedPatch(2, "second"),
     ]);
 
-    expect(await (await readdir(seriesDir)).toSorted()).toEqual([
+    expect((await readdir(seriesDir)).toSorted()).toEqual([
       "0001-first.patch",
       "0002-second.patch",
     ]);
+    expect((await readSeries(seriesDir)).map((entry) => entry.index)).toEqual([
+      1, 2,
+    ]);
     expect(
-      await (await readSeries(seriesDir)).map((entry) => entry.index)
-    ).toEqual([1, 2]);
-    expect(
-      await (await readdir(tmp)).filter((name) => name.startsWith(".series-"))
+      (await readdir(tmp)).filter((name) => name.startsWith(".series-"))
     ).toEqual([]);
   });
 

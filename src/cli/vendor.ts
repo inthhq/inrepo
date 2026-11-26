@@ -82,7 +82,7 @@ export const makeSiblingStage = async function makeSiblingStage(
 ): Promise<string> {
   const parent = nodePath.dirname(dest);
   await mkdir(parent, { recursive: true });
-  return mkdtemp(nodePath.join(parent, prefix));
+  return await mkdtemp(nodePath.join(parent, prefix));
 };
 
 const backupTimestamp = function backupTimestamp(): string {

@@ -114,7 +114,7 @@ const appendGitignoreLines = async function appendGitignoreLines(
       initialValue: true,
       message: `Add these lines to .gitignore?\n${missing.map((line) => `  ${line}`).join("\n")}`,
     });
-    if (isCancel(shouldAppend) || shouldAppend !== true) {
+    if (isCancel(shouldAppend) || !shouldAppend) {
       return [];
     }
   }
@@ -161,7 +161,7 @@ const promptToStarOnGithub =
       initialValue: true,
       message: "Would you like to open GitHub and star inrepo?",
     });
-    if (isCancel(shouldOpen) || shouldOpen !== true) {
+    if (isCancel(shouldOpen) || !shouldOpen) {
       return;
     }
 

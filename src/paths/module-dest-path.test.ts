@@ -1,5 +1,6 @@
-import { describe, expect, test } from "bun:test";
 import nodePath from "node:path";
+
+import { describe, expect, test } from "vite-plus/test";
 
 import { moduleDestPath } from "./module-dest-path.js";
 

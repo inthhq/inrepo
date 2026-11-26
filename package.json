@@ -28,26 +28,27 @@
   ],
   "type": "module",
   "scripts": {
-    "build": "rolldown -c rolldown.config.ts",
+    "build": "vp pack",
     "changeset": "changeset",
-    "check": "ultracite check",
+    "check": "vp check",
     "ci:publish": "bunx changeset tag && bun publish",
     "ci:version": "changeset version",
-    "dev": "rolldown -c rolldown.config.ts --watch",
+    "dev": "vp pack --watch",
     "docs:bundle": "node ./node_modules/leadtype/dist/cli.js generate --bundle --src . --docs-dir docs-src --out . --name inrepo",
     "docs:check": "node ./node_modules/leadtype/dist/cli.js lint docs-src --max-warnings 0",
-    "fix": "ultracite fix",
+    "fix": "vp check --fix",
     "prepack": "bun run build && bun run docs:bundle",
     "release": "bun run build && changeset publish",
-    "typecheck": "tsc --noEmit",
-    "test": "bun test ./src",
+    "typecheck": "vp check --no-fmt --no-lint",
+    "test": "vp test",
     "test:c15t-cli-case": "bun examples/c15t-cli/probe.ts",
     "test:c15t-cli-with-deps": "bun examples/c15t-cli/with-deps-probe.ts",
     "test:c15t-cli-full": "cd examples/c15t-cli && npm run full:prepare && npm run full:check",
     "test:scriptc-example": "bun examples/scriptc/verify.ts",
-    "test:watch": "bun test --watch ./src",
+    "test:watch": "vp test watch",
     "version": "changeset version && bun install",
-    "prepublishOnly": "bun run build"
+    "prepublishOnly": "bun run build",
+    "prepare": "vp config"
   },
   "dependencies": {
     "hexbus": "0.6.0",
@@ -60,11 +61,13 @@
     "@types/safe-regex": "1.1.6",
     "jiti": "2.7.0",
     "leadtype": "0.2.1",
-    "oxfmt": "0.63.0",
-    "oxlint": "1.78.0",
-    "rolldown": "1.0.0-rc.17",
     "typescript": "6.0.3",
-    "ultracite": "7.10.5"
+    "ultracite": "7.10.5",
+    "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8001",
+    "vite-plus": "1.8.0"
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@8.3.8001"
   },
   "engines": {
     "bun": ">=1.3",

@@ -129,7 +129,8 @@ export const sha256File = async function sha256File(
 ): Promise<string> {
   const hash = createHash("sha256");
   for await (const chunk of createReadStream(absPath)) {
-    hash.update(chunk);
+    // SAFETY: createReadStream without an encoding yields Buffer chunks.
+    hash.update(chunk as Buffer);
   }
   return hash.digest("hex");
 };

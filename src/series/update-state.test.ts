@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import {
   seriesDirPath,
@@ -119,7 +120,7 @@ describe("update state", () => {
     await writeFile(nodePath.join(live, "0001-new.patch"), "new\n", "utf-8");
 
     await restoreUpdateSeries(cwd, "pkg");
-    expect(await (await readdir(live)).toSorted()).toEqual(["0001-old.patch"]);
+    expect((await readdir(live)).toSorted()).toEqual(["0001-old.patch"]);
     expect(await readFile(nodePath.join(live, "0001-old.patch"), "utf-8")).toBe(
       "old\n"
     );

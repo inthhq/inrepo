@@ -1,7 +1,8 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
 import { applyVendorKeep } from "./apply-vendor-keep.js";

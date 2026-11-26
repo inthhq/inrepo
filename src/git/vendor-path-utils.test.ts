@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
 import { tmpdir } from "node:os";
 import nodePath from "node:path";
+
+import { describe, expect, test } from "vite-plus/test";
 
 import { assertSafeUnderDest } from "./vendor-path-utils.js";
 

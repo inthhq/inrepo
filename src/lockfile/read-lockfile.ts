@@ -89,7 +89,7 @@ const assertLockModule = function assertLockModule(
   const result: LockModule = {
     commit: rec.commit as string,
     gitUrl: rec.gitUrl as string,
-    ref: rec.ref as string | null,
+    ref: rec.ref,
     source: rec.source as string,
     updatedAt: rec.updatedAt as string,
   };
@@ -234,7 +234,9 @@ export const readLockfile = async function readLockfile(cwd: string): Promise<{
     !isNumber(lockfileVersion) ||
     !SUPPORTED_LOCKFILE_VERSIONS.includes(lockfileVersion as 1 | 2 | 3 | 4 | 5)
   ) {
-    throw new Error(`Unsupported lockfileVersion: ${String(lockfileVersion)}`);
+    throw new Error(
+      `Unsupported lockfileVersion: ${JSON.stringify(lockfileVersion)}`
+    );
   }
   return {
     graph: assertLockGraph(graph),

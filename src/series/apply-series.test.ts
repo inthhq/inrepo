@@ -1,4 +1,3 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import {
   chmod,
@@ -12,6 +11,8 @@ import {
   writeFile,
 } from "node:fs/promises";
 import nodePath from "node:path";
+
+import { afterEach, beforeEach, describe, expect, test } from "vite-plus/test";
 
 import { copyTree } from "../overlay/tree-utils.js";
 import { cleanupTmpDir, makeTmpDir } from "../test-utils/tmp-dir.js";
@@ -204,7 +205,7 @@ describe("applySeries", () => {
     // Applied in order this series is fine; swapping the numeric prefixes makes
     // the dependent patch run first, which cannot apply to the upstream tree.
     expect(
-      await (
+      (
         await applySeries({
           pristineRoot: pristine,
           seriesDir,

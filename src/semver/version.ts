@@ -75,12 +75,10 @@ const compareIdentifiers = function compareIdentifiers(
   if (bNumeric) {
     return 1;
   }
-  const aText = String(a);
-  const bText = String(b);
-  if (aText < bText) {
+  if (a < b) {
     return -1;
   }
-  if (aText > bText) {
+  if (a > b) {
     return 1;
   }
   return 0;

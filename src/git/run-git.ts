@@ -46,7 +46,7 @@ export const runGit = async function runGit(
   } catch (error) {
     if (error instanceof Error) {
       // SAFETY: node execFile rejects with Error & { code, stderr, status }.
-      throw formatExecError(error as ExecFileFailure, args);
+      throw formatExecError(error, args);
     }
     throw new Error(`git ${args.join(" ")} failed: ${String(error)}`, {
       cause: error,
