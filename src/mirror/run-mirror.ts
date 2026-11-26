@@ -308,29 +308,28 @@ const addTargetRemote = async function addTargetRemote(
     cwd: scratch.dir,
     env: scratch.env,
   });
-  const urls = async (push: boolean): Promise<string[]> =>
-    (
-      await scratchCapture(
-        scratch,
-        [
-          "remote",
-          "get-url",
-          "--all",
-          ...(push ? ["--push"] : []),
-          TARGET_REMOTE,
-        ],
-        false
-      )
-    )
-      .split("\n")
-      .filter(Boolean);
-  const fetchUrls = await urls(false);
-  const pushUrls = await urls(true);
-  const [fetchUrl = ""] = fetchUrls;
-  const [pushUrl = ""] = pushUrls;
-  if (fetchUrls.length !== 1 || pushUrls.length !== 1 || fetchUrl !== pushUrl) {
+  // Raw output, not split on newlines: a path may itself contain one. A
+  // direction has exactly one URL when --all prints the same as without it.
+  const getUrl = (push: boolean, all: boolean): Promise<string> =>
+    scratchCapture(
+      scratch,
+      [
+        "remote",
+        "get-url",
+        ...(all ? ["--all"] : []),
+        ...(push ? ["--push"] : []),
+        TARGET_REMOTE,
+      ],
+      false
+    );
+  const fetchUrl = await getUrl(false, false);
+  const pushUrl = await getUrl(true, false);
+  const single =
+    fetchUrl === (await getUrl(false, true)) &&
+    pushUrl === (await getUrl(true, true));
+  if (!single || fetchUrl !== pushUrl) {
     throw new Error(
-      `git resolves the mirror target to different repositories for fetch (${fetchUrls.join(", ")}) and push (${pushUrls.join(", ")}), ` +
+      `git resolves the mirror target to different or multiple repositories for fetch (${fetchUrl.trim()}) and push (${pushUrl.trim()}), ` +
         "so inrepo cannot check the repository it would publish to. Remove the url.*.pushInsteadOf rule or point the mirror at the push URL."
     );
   }
@@ -387,6 +386,8 @@ const readMirrorTrailers = async function readMirrorTrailers(
     "trailer.separators=:",
     "log",
     "-1",
+    // Decode the message as UTF-8 whatever i18n.logOutputEncoding says.
+    "--encoding=UTF-8",
     "--format=%(trailers:only,unfold)",
     tip,
   ]);
@@ -569,7 +570,7 @@ const writeFilteredTree = async function writeFilteredTree(
 };
 
 interface MirrorSource {
-  /** `<config dir>:<name>`, recorded in the name trailer. */
+  /** `<name>@<12-hex sha256 of the config dir>`, recorded in the name trailer. */
   identity: string;
   sourceCommit: string;
   entries: TreeEntry[];
@@ -721,7 +722,15 @@ const publish = async function publish(
   }
 
   const changes = await listChanges(scratch, tipTree, newTree);
-  const commitArgs = ["-c", "user.useConfigOnly=true", "commit-tree", newTree];
+  const commitArgs = [
+    "-c",
+    "user.useConfigOnly=true",
+    // The message is passed as UTF-8; record it as such.
+    "-c",
+    "i18n.commitEncoding=UTF-8",
+    "commit-tree",
+    newTree,
+  ];
   if (tip != null) {
     commitArgs.push("-p", tip);
   }

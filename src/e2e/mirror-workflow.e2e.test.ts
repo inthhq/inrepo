@@ -512,7 +512,7 @@ describe("CLI: mirror (e2e)", () => {
       },
     });
     expect(r.exitCode).not.toBe(0);
-    expect(r.stderr + r.stdout).toMatch(/different repositories for fetch/u);
+    expect(r.stderr + r.stdout).toMatch(/different or multiple repositories for fetch/u);
     expect(await runGit(["--git-dir", elsewhere, "branch", "--list"])).toBe("");
   });
 
