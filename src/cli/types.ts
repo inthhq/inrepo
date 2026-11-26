@@ -155,3 +155,13 @@ export interface MigrateResult {
   /** Empty directories the overlay created that git cannot record. */
   droppedEmptyDirectories: string[];
 }
+
+export interface MirrorArgs {
+  /** Mirror to publish; omitted publishes every configured mirror. */
+  name?: string;
+  /** Source revision to publish. */
+  ref: string;
+  overwrite: boolean;
+  /** Subject line for the mirror commit. */
+  message?: string;
+}

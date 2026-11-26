@@ -8,6 +8,7 @@ import type {
   AddArgs,
   DiffArgs,
   MigrateArgs,
+  MirrorArgs,
   PatchArgs,
   SyncArgs,
   UpdateArgs,
@@ -289,6 +290,60 @@ export const parseMigrateArgs = function parseMigrateArgs(
     return rethrowCommandArgError(error, {
       POSITIONAL_REQUIRED: "migrate requires a package <name>",
       UNEXPECTED_POSITIONAL: "migrate takes a single package <name>",
+    });
+  }
+};
+
+export const parseMirrorArgs = function parseMirrorArgs(
+  argv: string[]
+): MirrorArgs {
+  try {
+    const parsed = parseCommandArgs(argv, {
+      flags: {
+        message: {
+          names: ["-m", "--message"],
+          type: "string",
+          valueName: "subject",
+        },
+        overwrite: {
+          defaultValue: false,
+          names: ["--overwrite"],
+          type: "boolean",
+        },
+        ref: { names: ["--ref"], type: "string", valueName: "ref" },
+      },
+      positionals: [{ name: "name" }],
+    });
+
+    const ref = parsed.flags.ref?.trim();
+    if (parsed.flags.ref !== undefined && !ref) {
+      throw new Error("--ref requires a value");
+    }
+    const message = parsed.flags.message?.trim();
+    if (parsed.flags.message !== undefined && !message) {
+      throw new Error("-m requires a message");
+    }
+
+    const args: MirrorArgs = {
+      overwrite: parsed.flags.overwrite,
+      ref: ref ?? "HEAD",
+    };
+    if (parsed.positionals.name !== undefined) {
+      args.name = parsed.positionals.name;
+    }
+    if (message) {
+      args.message = message;
+    }
+    return args;
+  } catch (error) {
+    if (!isCliError(error)) {
+      throw error;
+    }
+    return rethrowCommandArgError(error, {
+      "--message": "-m requires a message",
+      "--ref": "--ref requires a value",
+      "-m": "-m requires a message",
+      UNEXPECTED_POSITIONAL: "mirror takes a single mirror <name>",
     });
   }
 };

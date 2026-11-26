@@ -43,28 +43,19 @@ const tryParseSlashDelimitedRegex = function tryParseSlashDelimitedRegex(
   return re;
 };
 
+/** `exclude` entries split into literal relative POSIX paths and regexes. */
+export interface ExcludeEntries {
+  literals: string[];
+  regexes: RegExp[];
+}
+
 /**
- * Remove paths under `dest` (typically after `git clone`).
- *
- * - **Literal** entries: relative POSIX-style paths (no leading `/`), same as before.
- * - **Regex** entries: slash-delimited `/pattern/optionalflags` (e.g. `/^\\.git$/`).
- *   Patterns are tested against paths relative to the module root using `/` separators.
+ * Split `exclude` entries into slash-delimited regexes and literal relative
+ * POSIX paths. Throws on malformed, unsafe, or absolute entries.
  */
-export const applyVendorExcludes = async function applyVendorExcludes(
-  dest: string,
+export const parseExcludeEntries = function parseExcludeEntries(
   paths: string[]
-): Promise<void> {
-  if (paths.length === 0) {
-    return;
-  }
-
-  let destRoot: string;
-  try {
-    destRoot = await realpath(dest);
-  } catch {
-    throw new Error(`Cannot resolve vendor directory for excludes: ${dest}`);
-  }
-
+): ExcludeEntries {
   const regexes: RegExp[] = [];
   const literals: string[] = [];
 
@@ -94,6 +85,32 @@ export const applyVendorExcludes = async function applyVendorExcludes(
 
     literals.push(trimmed.split(nodePath.sep).join("/"));
   }
+  return { literals, regexes };
+};
+
+/**
+ * Remove paths under `dest` (typically after `git clone`).
+ *
+ * - **Literal** entries: relative POSIX-style paths (no leading `/`), same as before.
+ * - **Regex** entries: slash-delimited `/pattern/optionalflags` (e.g. `/^\\.git$/`).
+ *   Patterns are tested against paths relative to the module root using `/` separators.
+ */
+export const applyVendorExcludes = async function applyVendorExcludes(
+  dest: string,
+  paths: string[]
+): Promise<void> {
+  if (paths.length === 0) {
+    return;
+  }
+
+  let destRoot: string;
+  try {
+    destRoot = await realpath(dest);
+  } catch {
+    throw new Error(`Cannot resolve vendor directory for excludes: ${dest}`);
+  }
+
+  const { literals, regexes } = parseExcludeEntries(paths);
 
   const toRemove = new Set<string>();
 

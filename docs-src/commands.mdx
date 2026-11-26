@@ -13,7 +13,7 @@ Two flags work with every command:
 | Flag | Effect |
 | --- | --- |
 | `--json` | stdout carries exactly one JSON envelope. All human output (progress, warnings, banners) goes to stderr. |
-| `--dry-run` | Only `add`, `sync`, `patch`, and `update` accept it. Other commands fail with `USAGE` (exit 2). |
+| `--dry-run` | Only `add`, `sync`, `patch`, `update`, and `mirror` accept it. Other commands fail with `USAGE` (exit 2). |
 
 Every command can also raise `USAGE` for an unknown option or an unexpected argument, `CONFIG_INVALID` for a malformed `inrepo.json` or `package.json#inrepo`, and `LOCKFILE_INVALID` for a malformed `inrepo.lock.json`. The per-command lists below leave these three out.
 
@@ -473,3 +473,63 @@ type VerifyIssueKind =
 Branch on `issues[].kind`, not on `message`; message text can change between releases. An empty lockfile is itself a failure (`empty-lockfile`).
 
 `tree-drift` usually means uncaptured edits. Run `inrepo patch <name> -m "<reason>"` to keep them, or `inrepo sync --force` to discard them. Do not follow `nextCommand: "inrepo sync"` blindly in that case: a plain sync refuses with `UNCAPTURED_EDITS`.
+
+## inrepo mirror
+
+```bash
+inrepo mirror [<name>] [--ref <rev>] [--overwrite] [-m "<subject>"]
+```
+
+Publishes a filtered snapshot of a committed directory to each configured mirror target (or just `<name>`), as one commit on top of the target branch. See [Mirrors](/docs/mirrors) (`docs/mirrors.md` in the npm package) for the config and the safety checks.
+
+- `--ref <rev>`: source revision to publish. Defaults to `HEAD`.
+- `--overwrite`: publish even when the target changed, another mirror wrote it, or the run would roll it back. It still adds a commit on top; target history is never rewritten.
+- `-m "<subject>"`: subject of the mirror commit. Defaults to `Mirror <short sha>`.
+
+Writes: nothing in the project. It pushes to the target repository.
+
+Dry run: builds the commit and reports the changes, but pushes nothing. `action` is `would-push` or `up-to-date`. A dry run still contacts the target, so it can fail with `UPSTREAM_UNAVAILABLE`, and it still runs every safety check.
+
+```ts
+interface MirrorResult {
+  /** One entry per published mirror, in config order. */
+  mirrors: Array<{
+    name: string;
+    /** Target URL or path, with any user:token@ removed. */
+    target: string;
+    branch: string;
+    /** Full source commit published. */
+    sourceCommit: string;
+    /** Target branch tip before this run; null for a new branch. */
+    previousTip: string | null;
+    action: "pushed" | "up-to-date" | "would-push";
+    /** The mirror commit; null when up to date. */
+    commit: string | null;
+    includedCount: number;
+    excludedCount: number;
+    /** Target tree changes, sorted by path. Paths are relative to the target root. */
+    changes: Array<{ path: string; status: "added" | "deleted" | "modified" }>;
+  }>;
+}
+```
+
+Errors:
+
+- `CONFIG_INVALID`:
+  - no `mirrors` array;
+  - an invalid mirror entry;
+  - `directory` missing at the revision;
+  - nothing left to publish;
+  - submodules or non-UTF-8 paths;
+  - a config on disk that differs from the one committed at the revision;
+  - git config that sends fetch and push to different repositories.
+- `MIRROR_NOT_FOUND`: no mirror named `<name>`. `details.known` lists the configured names.
+- `MIRROR_TARGET_CHANGED` (exit 3): the target cannot be published to without `--overwrite`. `details.reason` is:
+  - `foreign-tip`: the tip was not written by inrepo, or was edited after.
+  - `other-mirror`: another mirror wrote the branch.
+  - `rollback`: the revision does not descend from the last mirrored one.
+
+  `nextCommand` is `inrepo mirror <name> --overwrite`. Port any changes made on the target first.
+
+- `MIRROR_HISTORY_MISSING`: the clone lacks the last mirrored commit or is shallow. Fetch full history.
+- `UPSTREAM_UNAVAILABLE` (exit 4): fetching from or pushing to the target failed, including a push rejected because the branch moved. `details.url` is redacted.

@@ -13,6 +13,7 @@
 import type { VerifyResult } from "../types/verify-result.js";
 import type { AddResult } from "./commands/add.js";
 import type { InitResult } from "./commands/init.js";
+import type { MirrorResult } from "./commands/mirror.js";
 import type { StatusReport } from "./commands/status.js";
 import type { SyncResult } from "./commands/sync.js";
 import type { UpdateResult } from "./commands/update.js";
@@ -42,6 +43,7 @@ export type CommandData =
   | HelpData
   | InitResult
   | MigrateResult
+  | MirrorResult
   | PatchResult
   | StatusReport
   | SyncResult

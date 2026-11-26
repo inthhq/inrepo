@@ -131,7 +131,7 @@ npx inrepo status --json
 }
 ```
 
-A failure has `"ok": false` and an `error` with a stable `code`, a `message`, and usually a `hint` and a `nextCommand`. Under `--json` the exit code tells the class of failure: 0 ok, 1 failure or verify drift, 2 usage or config, 3 needs resolution (an update conflict or uncaptured edits), 4 upstream or network. Without `--json`, every failure still exits 1. `add`, `sync`, `patch`, and `update` accept `--dry-run` to report what they would change without writing.
+A failure has `"ok": false` and an `error` with a stable `code`, a `message`, and usually a `hint` and a `nextCommand`. Under `--json` the exit code tells the class of failure: 0 ok, 1 failure or verify drift, 2 usage or config, 3 needs resolution (an update conflict or uncaptured edits), 4 upstream or network. Without `--json`, every failure still exits 1. `add`, `sync`, `patch`, `update`, and `mirror` accept `--dry-run` to report what they would change without writing or pushing.
 
 To give a project's coding agents the rules (capture edits with `patch -m` before any sync or update, never hand-edit the lockfile or patch files, run `verify` before finishing), add them to its `AGENTS.md`:
 
@@ -403,6 +403,35 @@ npx inrepo migrate <package>
 
 This replays the current overlay over the pinned upstream commit, records the result as `inrepo_patches/<package>/series/0001-*.patch`, and removes the snapshot files only after confirming that applying the series reproduces the identical tree. If it does not, the overlay is left exactly as it was and the command reports why. Empty directories are the one thing a series cannot carry over, because git has no way to record them; the command lists any it had to drop.
 
+## Mirroring to another repository
+
+Mirrors run the other way from vendored packages. Your repository stays the source of truth, and `inrepo mirror` publishes a filtered copy of one of its directories to another git repository. For example, keep an SDK and its tests in a private monorepo, and publish it to a public repository without the tests or internal files:
+
+```json
+{
+  "packages": [],
+  "mirrors": [
+    {
+      "name": "sdk",
+      "git": "https://github.com/acme/sdk.git",
+      "directory": "packages/sdk",
+      "exclude": [
+        "/\\.(test|spec)\\.[cm]?[jt]sx?$/",
+        "/(^|/)__tests__$/",
+        "internal"
+      ]
+    }
+  ]
+}
+```
+
+```bash
+npx inrepo mirror --dry-run   # list what would change, push nothing
+npx inrepo mirror             # publish every mirror
+```
+
+Each run publishes the committed tree at `HEAD` (or `--ref <rev>`) as one commit on top of the target branch, with `Inrepo-Mirror-Source`, `Inrepo-Mirror-Tree` and `Inrepo-Mirror-Name` trailers. It never rewrites target history. It stops if someone changed the target directly, or if publishing would roll the target back to an older source commit; `--overwrite` publishes anyway. Run it from CI on your protected branch with a bot identity. See the [mirrors reference](./docs/mirrors.md) for every field.
+
 ## Local development
 
 From a clone of this repository:
@@ -425,6 +454,7 @@ node dist/cli.mjs --help
 - [Config reference](./docs/config.md)
 - [Command reference](./docs/commands.md)
 - [Using inrepo from agents and scripts](./docs/agents.md)
+- [Mirrors reference](./docs/mirrors.md)
 - CLI usage: `npx inrepo --help`
 
 ## Support

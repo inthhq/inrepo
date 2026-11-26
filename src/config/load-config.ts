@@ -7,10 +7,12 @@ import type { JsonValue } from "../json/unknown.js";
 import { inrepoConfigPath } from "../paths/inrepo-config-path.js";
 import { packageJsonPath } from "../paths/package-json-path.js";
 import { normalizeRepositoryDirectory } from "../registry/normalize-repository-directory.js";
+import type { InrepoMirror } from "../types/inrepo-mirror.js";
 import type { InrepoPackage } from "../types/inrepo-package.js";
 import type { LoadedConfig } from "../types/loaded-config.js";
 import { validateExcludeList } from "./validate-exclude-list.js";
 import { validateKeepList } from "./validate-keep-list.js";
+import { validateMirrors } from "./validate-mirrors.js";
 
 /** Thrown when neither inrepo.json nor package.json declares inrepo config. */
 export class LoadConfigNotFoundError extends InrepoError {
@@ -366,6 +368,54 @@ export const loadGlobalKeep = async function loadGlobalKeep(
         : 'package.json "inrepo.keep"';
     return rootKeepFromParsed(ctx.parsed, label);
   });
+};
+
+/** The `mirrors` list from inrepo.json or package.json#inrepo; empty when none is declared. */
+export const loadMirrors = async function loadMirrors(
+  cwd: string
+): Promise<InrepoMirror[]> {
+  return await withConfigErrors(cwd, async () => {
+    const ctx = await readGlobalInrepoRaw(cwd);
+    if (!ctx || !isJsonObject(ctx.parsed)) {
+      return [];
+    }
+    const label =
+      ctx.source === "inrepo.json"
+        ? 'inrepo.json "mirrors"'
+        : 'package.json "inrepo.mirrors"';
+    return validateMirrors(ctx.parsed.mirrors, label, cwd);
+  });
+};
+
+/**
+ * The `mirrors` list from config file contents (for example, read from a
+ * commit), with the same rules as {@link loadMirrors}.
+ */
+export const mirrorsFromConfigText = function mirrorsFromConfigText(
+  text: string,
+  file: "inrepo.json" | "package.json",
+  configDir: string
+): InrepoMirror[] {
+  if (!text.trim()) {
+    return [];
+  }
+  // SAFETY: JSON.parse produces a JSON value from file contents.
+  const parsed = JSON.parse(text) as JsonValue;
+  if (!isJsonObject(parsed)) {
+    return [];
+  }
+  if (file === "inrepo.json") {
+    return validateMirrors(parsed.mirrors, 'inrepo.json "mirrors"', configDir);
+  }
+  const { inrepo } = parsed;
+  if (!isJsonObject(inrepo)) {
+    return [];
+  }
+  return validateMirrors(
+    inrepo.mirrors,
+    'package.json "inrepo.mirrors"',
+    configDir
+  );
 };
 
 /** True when loadConfig failed because no config file/field exists (safe to fall back to globals-only). */

@@ -6,6 +6,7 @@ import { cmdAdd } from "./commands/add.js";
 import { cmdDiff } from "./commands/diff.js";
 import { cmdInit } from "./commands/init.js";
 import { cmdMigrate } from "./commands/migrate.js";
+import { cmdMirror } from "./commands/mirror.js";
 import { cmdPatch } from "./commands/patch.js";
 import { cmdStatus } from "./commands/status.js";
 import { cmdSync } from "./commands/sync.js";
@@ -15,7 +16,7 @@ import { InrepoError } from "./errors.js";
 import { emitFailure, emitResult, isDryRun, isJsonMode } from "./output.js";
 
 /** Commands that honor the global `--dry-run` flag. */
-const DRY_RUN_COMMANDS = new Set(["add", "sync", "patch", "update"]);
+const DRY_RUN_COMMANDS = new Set(["add", "sync", "patch", "update", "mirror"]);
 
 const assertDryRunSupported = function assertDryRunSupported(
   command: string
@@ -187,5 +188,19 @@ export const commands: CliCommand[] = [
     hint: "Vendor a package",
     label: "Add",
     name: "add",
+  },
+  {
+    action: async (context) => {
+      const data = await cmdMirror(
+        nodePath.resolve(context.cwd),
+        context.commandArgs
+      );
+      emitResult("mirror", data);
+    },
+    description:
+      "Publish a filtered snapshot of this repository to a configured mirror repository as one fast-forward commit (--dry-run, --ref, --overwrite).",
+    hint: "Publish to a mirror repo",
+    label: "Mirror",
+    name: "mirror",
   },
 ];

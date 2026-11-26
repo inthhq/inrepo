@@ -52,6 +52,24 @@ export const ERROR_CODES = {
   INTERACTIVE_REQUIRED: { exit: EXIT.USAGE },
   /** Lockfile is malformed or references something inconsistent. */
   LOCKFILE_INVALID: { exit: EXIT.USAGE },
+  /** The clone lacks the history needed to check the last mirrored commit. */
+  MIRROR_HISTORY_MISSING: {
+    exit: EXIT.USAGE,
+    hint: "Fetch full history (for example, actions/checkout with fetch-depth: 0)",
+  },
+  /** No mirror with that name in the config. */
+  MIRROR_NOT_FOUND: {
+    exit: EXIT.USAGE,
+    hint: 'Check the "mirrors" array in the config',
+  },
+  /**
+   * The mirror target has changes inrepo did not make, was written by another
+   * mirror, or would be rolled back. `details.reason` says which.
+   */
+  MIRROR_TARGET_CHANGED: {
+    exit: EXIT.NEEDS_RESOLUTION,
+    hint: "Port any changes made on the target into this repository, then rerun with --overwrite",
+  },
   /** `--continue`/`--abort` with no update in progress. */
   NO_UPDATE_IN_PROGRESS: { exit: EXIT.USAGE },
   /** Named package is not in the config or lockfile. */

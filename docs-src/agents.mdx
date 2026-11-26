@@ -133,6 +133,9 @@ Codes are stable: a code may be added, but renaming or removing one is a breakin
 | `UNCAPTURED_EDITS` | 3 | `inrepo_modules/<name>/` has edits that are not in `inrepo_patches/`. `sync`, `add`, and `update` refuse to overwrite them. | `inrepo patch <name> -m "<reason>"`; `inrepo sync --force` when `inrepo_patches/` also changed. |
 | `UPDATE_CONFLICT` | 3 | `inrepo update` stopped on a rebase conflict. | `inrepo update <name> --continue` |
 | `UPDATE_IN_PROGRESS` | 3 | An update for this package is paused; `patch`, `migrate`, and a new `update` refuse to run. | `inrepo update <name> --continue` |
+| `MIRROR_NOT_FOUND` | 2 | `inrepo mirror <name>` names no configured mirror. `details.known` lists the names. | None. |
+| `MIRROR_HISTORY_MISSING` | 2 | `inrepo mirror` cannot check the last mirrored commit: the clone is shallow or lacks it. | None. Fetch full history. |
+| `MIRROR_TARGET_CHANGED` | 3 | The mirror target changed outside inrepo, was written by another mirror, or would be rolled back. `details.reason` says which. | `inrepo mirror <name> --overwrite`, after porting any target changes. |
 | `PATCH_APPLY_FAILED` | 3 | A committed patch does not apply to the pinned commit. `details.patch` and `details.file` name it. | None. The hint suggests `inrepo update <name>`. |
 | `UPSTREAM_UNAVAILABLE` | 4 | A git remote, the npm registry, or the network failed. `details` has the URL. | None. Retry. |
 | `VERIFY_FAILED` | 1 | `inrepo verify` found checkouts that disagree with the lockfile. `data` holds the issues. | `inrepo sync` (see the note below). |
@@ -205,7 +208,7 @@ Until the update finishes or is aborted, `patch`, `migrate`, and another `update
 
 ## What does --dry-run guarantee?
 
-`--dry-run` works with `add`, `sync`, `patch`, and `update`. Any other command fails with `USAGE`. A dry run never writes the config, `inrepo.lock.json`, `package.json`, `inrepo_modules/`, `inrepo_patches/`, or inrepo's state under `.inrepo/` (sync state, in-progress updates). The one exception is the gitignored download cache `.inrepo/cache/`, which a dry run may fill so later runs are faster. Scratch work happens in the OS temp directory. The success envelope has `"dryRun": true`.
+`--dry-run` works with `add`, `sync`, `patch`, `update`, and `mirror`. Any other command fails with `USAGE`. A dry run never writes the config, `inrepo.lock.json`, `package.json`, `inrepo_modules/`, `inrepo_patches/`, or inrepo's state under `.inrepo/` (sync state, in-progress updates). The one exception is the gitignored download cache `.inrepo/cache/`, which a dry run may fill so later runs are faster. Scratch work happens in the OS temp directory. The success envelope has `"dryRun": true`.
 
 | Command | Under `--dry-run` |
 | --- | --- |
@@ -213,6 +216,7 @@ Until the update finishes or is aborted, `patch`, `migrate`, and another `update
 | `sync` | Reports an action per package. It skips first-time setup, so a project without config fails with `CONFIG_NOT_FOUND`. It still fails with `UNCAPTURED_EDITS` when a real sync would. |
 | `patch` | Computes the patch that would be appended. `-m` is optional; without it, `patch.file` and `patch.subject` are `null`. The upstream cache may be filled. |
 | `update` | Resolves the target commit and reports `would-update` or `up-to-date`. It cannot predict conflicts and cannot be combined with `--continue` or `--abort`. |
+| `mirror` | Builds the mirror commit, runs every safety check, and reports `would-push` or `up-to-date` with the file changes. It pushes nothing. |
 
 A dry run can contact git remotes and the npm registry, so it can fail with `UPSTREAM_UNAVAILABLE`.
 

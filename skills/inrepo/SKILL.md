@@ -25,7 +25,7 @@ inrepo diff <name> --stat --json         #    optional review of the committed d
 inrepo verify --json                     # 4. must exit 0 before you finish
 ```
 
-Preview `add`, `sync`, `patch`, or `update` with `--dry-run`. It writes no config, lockfile, `package.json`, checkout, or patch.
+Preview `add`, `sync`, `patch`, `update`, or `mirror` with `--dry-run`. It writes no config, lockfile, `package.json`, checkout, or patch.
 
 ## Reading results
 
@@ -40,8 +40,8 @@ Always pass `--json`. Branch on `error.code` and the exit code (exit classes app
 | --- | --- | --- |
 | 0 | ok |  |
 | 1 | check failed or unclassified | `VERIFY_FAILED`, `ERROR` |
-| 2 | fix the command or input | `USAGE`, `CONFIG_NOT_FOUND`, `CONFIG_INVALID`, `LOCKFILE_INVALID`, `PACKAGE_NOT_FOUND`, `NO_UPDATE_IN_PROGRESS` |
-| 3 | needs resolution | `UNCAPTURED_EDITS`, `UPDATE_CONFLICT`, `UPDATE_IN_PROGRESS`, `PATCH_APPLY_FAILED` |
+| 2 | fix the command or input | `USAGE`, `CONFIG_NOT_FOUND`, `CONFIG_INVALID`, `LOCKFILE_INVALID`, `PACKAGE_NOT_FOUND`, `NO_UPDATE_IN_PROGRESS`, `MIRROR_NOT_FOUND`, `MIRROR_HISTORY_MISSING` |
+| 3 | needs resolution | `UNCAPTURED_EDITS`, `UPDATE_CONFLICT`, `UPDATE_IN_PROGRESS`, `PATCH_APPLY_FAILED`, `MIRROR_TARGET_CHANGED` |
 | 4 | upstream or network; retry | `UPSTREAM_UNAVAILABLE` |
 
 `error.nextCommand` is a suggestion with placeholders such as `<reason>`; fill them in and read `hint` first. For `UNCAPTURED_EDITS`, run `inrepo patch <name> -m "<reason>"`.
@@ -53,6 +53,15 @@ Always pass `--json`. Branch on `error.code` and the exit code (exit classes app
 3. Exit 3 with `UPDATE_CONFLICT`: for each path in `error.details.conflictedFiles`, edit `<error.details.repoPath>/<path>` and remove every conflict marker, keeping the intent of both upstream and the patch in `error.details.patch`. Do not run git commands there, and do not touch `inrepo_modules/`.
 4. `inrepo update <name> --continue --json`. Exit 3 with `UPDATE_CONFLICT` again means markers remain or a later patch conflicts: repeat step 3. To give up, run `inrepo update <name> --abort --json`; nothing outside `.inrepo/` changed.
 5. `inrepo verify --json`, then commit `inrepo_patches/<name>/series/`, `inrepo.lock.json`, and the config.
+
+## Mirrors
+
+A `mirrors` entry publishes a filtered copy of a committed directory to another repository, such as a public SDK repo.
+
+- Preview first: `inrepo mirror <name> --dry-run --json`. Check that `data.mirrors[].changes` lists no tests or internal files before you publish.
+- Then publish: `inrepo mirror <name> --json`.
+- Commit `inrepo.json` before mirroring; the run refuses when the config on disk differs from the committed one.
+- `MIRROR_TARGET_CHANGED` (exit 3) means someone changed the target or another mirror wrote it. Do not pass `--overwrite` on your own: ask a person, because it replaces those changes.
 
 ## Non-interactive sessions
 
