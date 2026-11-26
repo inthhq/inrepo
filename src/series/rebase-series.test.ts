@@ -129,6 +129,54 @@ describe("startSeriesRebase / continueSeriesRebase", () => {
     expect(after.date).toBe(before.date);
   });
 
+  test("a clean rebase keeps a bracketed tag at the start of a subject", async () => {
+    const t2 = nodePath.join(tmp, "t2");
+    const t3 = await writeTree(nodePath.join(tmp, "t3"), {
+      ...BASE_FILES,
+      "a.txt": "a1\nPATCHED\na3\n",
+      "b.txt": "b1\nb2\nb3\n",
+    });
+    const tagged = await formatSeriesPatch({
+      author: AUTHOR,
+      baseRoot: t2,
+      patchedRoot: t3,
+      startNumber: 9,
+      subject: "[security] Extend b again",
+    });
+    await writeFile(nodePath.join(seriesDir, tagged.fileName), tagged.content);
+    const newRoot = await writeTree(nodePath.join(tmp, "new"), {
+      ...BASE_FILES,
+      "c.txt": "from upstream\n",
+    });
+
+    const { result } = await startSeriesRebase({
+      author: AUTHOR,
+      oldRoot,
+      repoRoot,
+      resolveNewRoot: () => Promise.resolve(newRoot),
+      seriesDir,
+    });
+
+    expect(result.status).toBe("rebased");
+    if (result.status !== "rebased") {
+      return;
+    }
+    expect(result.patches.map((patch) => patch.subject)).toEqual([
+      "Patch the middle line",
+      "Extend b",
+      "[security] Extend b again",
+    ]);
+    expect(result.patches[2].fileName).toBe(
+      "0003-security-Extend-b-again.patch"
+    );
+    expect(
+      parsePatchHeader(
+        { fileName: "x", index: 3, path: "x" },
+        result.patches[2].content.toString("utf-8")
+      ).subject
+    ).toBe("[security] Extend b again");
+  });
+
   test("the rebased series replays onto the new upstream tree", async () => {
     const newRoot = await writeTree(nodePath.join(tmp, "new"), {
       ...BASE_FILES,
