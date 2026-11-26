@@ -134,4 +134,31 @@ describe("validateMirrors", () => {
       )
     ).toThrow(/both publish/u);
   });
+
+  test("rejects null keep and directory instead of widening the selection", () => {
+    expect(() =>
+      validateMirrors([{ git: "g", keep: null, name: "n" }], "mirrors")
+    ).toThrow(/at least one path/u);
+    expect(() =>
+      validateMirrors([{ directory: null, git: "g", name: "n" }], "mirrors")
+    ).toThrow(/directory must be a string/u);
+  });
+
+  test("treats .. segments and file:// URLs to one target as duplicates", () => {
+    for (const other of [
+      "/work/host/../public.git",
+      "file:///work/public.git",
+    ]) {
+      expect(() =>
+        validateMirrors(
+          [
+            { directory: "a", git: "../public.git", name: "one" },
+            { directory: "b", git: other, name: "two" },
+          ],
+          "mirrors",
+          "/work/host"
+        )
+      ).toThrow(/both publish/u);
+    }
+  });
 });

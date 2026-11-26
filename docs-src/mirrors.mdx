@@ -54,7 +54,7 @@ Every mirror commit ends with two trailers: `Inrepo-Mirror-Source: <sha>`, the s
 
 The target's root becomes exactly `directory`. Anything else on the target, such as a `LICENSE` or `.github/` folder that only exists there, is deleted by the first run, so keep those files inside `directory` in your repository.
 
-Submodules and paths that are not valid UTF-8 are refused rather than published; exclude them.
+Submodules and paths that are not valid UTF-8 are refused rather than published; exclude them. A run that would publish no files at all stops instead of emptying the target, since that usually means a wrong `directory` or filter; to retire a mirror, delete its branch on the target.
 
 ## Running it in CI
 

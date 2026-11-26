@@ -93,12 +93,21 @@ export const redactCredentials = function redactCredentials(
   );
 };
 
+/**
+ * Environment for git reads of the source repository. Replacement objects
+ * (`git replace`) are ignored so the published tree and the config that
+ * filters it are exactly what the source commit records.
+ */
+const hostEnv = function hostEnv(): NodeJS.ProcessEnv {
+  return { ...process.env, GIT_NO_REPLACE_OBJECTS: "1" };
+};
+
 const tryCapture = async function tryCapture(
   args: string[],
   cwd: string
 ): Promise<string | null> {
   try {
-    return await runGitCapture(args, { cwd });
+    return await runGitCapture(args, { cwd, env: hostEnv() });
   } catch {
     return null;
   }
@@ -113,7 +122,11 @@ const resolveSourceTree = async function resolveSourceTree(
   try {
     // Keep path whitespace: strip only git's terminating newline.
     prefix = (
-      await runGitCapture(["rev-parse", "--show-prefix"], { cwd, trim: false })
+      await runGitCapture(["rev-parse", "--show-prefix"], {
+        cwd,
+        env: hostEnv(),
+        trim: false,
+      })
     ).replace(/\n$/u, "");
   } catch {
     throw new Error("inrepo mirror must run inside a git repository");
@@ -158,6 +171,7 @@ const listTree = async function listTree(
   // --full-tree: list `tree` itself, not the subdirectory matching cwd.
   const raw = await runGitBytes(["ls-tree", "-r", "-z", "--full-tree", tree], {
     cwd,
+    env: hostEnv(),
   });
   const entries: TreeEntry[] = [];
   let start = 0;
@@ -236,10 +250,11 @@ const initScratchRepo = async function initScratchRepo(
 ): Promise<Scratch> {
   const objects = await runGitCapture(["rev-parse", "--git-path", "objects"], {
     cwd,
+    env: hostEnv(),
   });
   const objectFormat = await runGitCapture(
     ["rev-parse", "--show-object-format"],
-    { cwd }
+    { cwd, env: hostEnv() }
   );
   const baseEnv = await isolatedEnv(dir);
   await runGit(["init", "-q", `--object-format=${objectFormat}`, dir], {
@@ -532,6 +547,7 @@ const readCommittedMirrors = async function readCommittedMirrors(
   for (const file of ["inrepo.json", "package.json"] as const) {
     const listing = await runGitCapture(["ls-tree", sourceCommit, "--", file], {
       cwd,
+      env: hostEnv(),
     });
     if (!listing) {
       continue;
@@ -546,6 +562,7 @@ const readCommittedMirrors = async function readCommittedMirrors(
     }
     const text = await runGitCapture(["cat-file", "blob", oid], {
       cwd,
+      env: hostEnv(),
       trim: false,
     });
     return mirrorsFromConfigText(text, file, cwd);

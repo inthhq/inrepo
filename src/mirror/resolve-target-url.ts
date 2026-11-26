@@ -9,8 +9,11 @@ export const resolveTargetUrl = function resolveTargetUrl(
   configDir: string,
   git: string
 ): string {
-  if (nodePath.isAbsolute(git) || git.includes("://")) {
+  if (git.includes("://")) {
     return git;
+  }
+  if (nodePath.isAbsolute(git)) {
+    return nodePath.resolve(git);
   }
   const colon = git.indexOf(":");
   const slash = git.indexOf("/");

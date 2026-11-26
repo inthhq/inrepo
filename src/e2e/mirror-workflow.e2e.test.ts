@@ -562,4 +562,19 @@ describe("CLI: mirror (e2e)", () => {
     expect(await runGit(["--git-dir", elsewhere, "branch", "--list"])).toBe("");
     expect(await runGit(["--git-dir", target, "branch", "--list"])).toBe("");
   });
+
+  test("ignores git replace objects when reading the source", async () => {
+    const config = nodePath.join(host, "inrepo.json");
+    const committed = await Bun.file(config).text();
+    const looser = committed.replace(',"internal"', "");
+    await writeFile(config, looser, "utf-8");
+    const looserBlob = await runGit(["hash-object", "-w", "inrepo.json"], host);
+    const committedBlob = await runGit(["rev-parse", "HEAD:inrepo.json"], host);
+    await runGit(["replace", committedBlob, looserBlob], host);
+
+    const r = await runCli(["mirror"], { cwd: host, env: ENV });
+    expect(r.exitCode).not.toBe(0);
+    expect(r.stderr + r.stdout).toMatch(/does not match the one committed/u);
+    expect(await runGit(["--git-dir", target, "branch", "--list"])).toBe("");
+  });
 });

@@ -1,3 +1,6 @@
+import nodePath from "node:path";
+import { fileURLToPath } from "node:url";
+
 import { isJsonObject, isString } from "../json/unknown.js";
 import type { JsonValue } from "../json/unknown.js";
 import { resolveTargetUrl } from "../mirror/resolve-target-url.js";
@@ -54,7 +57,15 @@ const assertExactPaths = function assertExactPaths(
  * absolute path to `a` are the same repository.
  */
 const targetKey = function targetKey(git: string, configDir: string): string {
-  return resolveTargetUrl(configDir, git.replace(/\/+$/u, ""));
+  const trimmed = git.replace(/\/+$/u, "");
+  if (trimmed.startsWith("file://")) {
+    try {
+      return nodePath.resolve(fileURLToPath(trimmed));
+    } catch {
+      return trimmed;
+    }
+  }
+  return resolveTargetUrl(configDir, trimmed);
 };
 
 const validateMirror = function validateMirror(
@@ -64,7 +75,11 @@ const validateMirror = function validateMirror(
   if (!isJsonObject(entry)) {
     throw new Error(`${label} must be an object`);
   }
-  if (Array.isArray(entry.keep) && entry.keep.length === 0) {
+  // An omitted keep publishes the whole directory; a present one must narrow it.
+  if (
+    Object.hasOwn(entry, "keep") &&
+    (!Array.isArray(entry.keep) || entry.keep.length === 0)
+  ) {
     throw new Error(
       `${label}.keep must list at least one path when set; omit it to publish the whole directory`
     );
@@ -92,7 +107,7 @@ const validateMirror = function validateMirror(
       );
     }
   }
-  if (entry.directory != null) {
+  if (Object.hasOwn(entry, "directory")) {
     if (!isString(entry.directory)) {
       throw new TypeError(`${label}.directory must be a string when set`);
     }
